@@ -1,0 +1,28 @@
+fractal-midi
+Copyright 2026 Stephen Staker
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full license text.
+
+---
+
+TRADEMARKS
+
+This project is an unaffiliated community library. "Fractal Audio",
+"AM4", "Axe-Fx", "Axe-Fx II", "Axe-Fx III", "FM3", "FM9", and
+related product names are trademarks of Fractal Audio Systems, Inc.
+
+This project neither claims endorsement from, nor affiliation with,
+Fractal Audio Systems. It is a software library that builds and
+parses MIDI / SysEx wire bytes for Fractal Audio hardware the
+consuming application's user already owns. Decode work is based on
+publicly-documented protocol information, including Fractal Audio's
+own "MIDI for Third-Party Devices" specifications, plus community
+reverse-engineering of editor binaries (JUCE BinaryData extraction,
+Ghidra symbol mining).
+
+The package name `fractal-midi` uses the "Fractal" trademark
+descriptively (nominative fair use) to identify the hardware family
+this library targets. The library does not embed Fractal Audio
+firmware, factory presets, branding assets, or any other Fractal-
+copyrighted material.

@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "outDir": "dist",
+    "rootDir": ".",
+    "declaration": false,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mcp-midi-control/core/*": ["packages/core/src/*"],
+      "@mcp-midi-control/am4/*": ["packages/am4/src/*"],
+      "@mcp-midi-control/axe-fx-ii/*": ["packages/axe-fx-ii/src/*"],
+      "@mcp-midi-control/axe-fx-iii/*": ["packages/axe-fx-iii/src/*"],
+      "@mcp-midi-control/hydrasynth/*": ["packages/hydrasynth/src/*"],
+      "@mcp-midi-control/server-all/*": ["packages/server-all/src/*"]
+    }
+  },
+  "include": ["scripts/**/*", "types/**/*"],
+  "exclude": ["node_modules", "dist", "packages/*/dist", "scripts/_research/**"]
+}

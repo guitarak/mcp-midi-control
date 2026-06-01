@@ -1,0 +1,9 @@
+# Normalize line endings to LF everywhere. Node's writeFileSync
+# produces LF; git's core.autocrlf=true (Windows default) converts to
+# CRLF on checkout. Without this, generated-file drift checks
+# (docs/TOOLS.md, README.md) false-trigger on CRLF/LF mismatch.
+* text=auto eol=lf
+
+# Installer shell scripts need CRLF for Windows cmd.exe.
+# build-installer.ts handles this via copyAsCrlf at staging time,
+# so source stays LF; only the staged/shipped copies get CRLF.

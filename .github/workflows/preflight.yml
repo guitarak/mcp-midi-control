@@ -1,0 +1,41 @@
+name: preflight
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  preflight:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test suite
+        run: npm test
+
+      - name: Lint (no internal refs)
+        run: npm run verify-no-internal-refs
+
+      - name: Cookbook verify
+        run: npm run cookbook-verify
+
+      - name: Tools inventory check
+        run: npm run tools:inventory-check

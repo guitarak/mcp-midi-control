@@ -1,0 +1,308 @@
+# Contributing
+
+Thanks for your interest. There are three contribution paths, ordered
+from "no code" to "deep RE work":
+
+1. **Test what's shipped and report back.** You own a supported device,
+   install the server, run a small list of tool calls, and report
+   whether the front panel matches the response. Five minutes per
+   device, no developer setup. **This is the most valuable
+   contribution right now**, especially for Axe-Fx III owners. See
+   [`docs/AXEFX3-BETA-TESTING.md`](docs/AXEFX3-BETA-TESTING.md)
+   for the III test menu. Same shape works for any device: pick a
+   handful of tool calls, run them, paste the JSON.
+2. **Add a device.** Write a `DeviceDescriptor` for a new piece of MIDI
+   gear. The unified tool surface is device-agnostic; adding FM9, FM3,
+   or a new vendor's synth is a TypeScript object, not new MCP tools.
+   See [Adding a new device](#path-2-add-a-device) below.
+3. **Decode a protocol.** Capture wire traffic from a device, decode
+   the envelope, and add a byte-exact golden. See
+   [Capturing MIDI traffic](#capturing-midi-traffic) below.
+
+## Two-repo layout (read this first)
+
+The codec lives in `fractal-midi`, currently a **workspace package** at
+`packages/fractal-midi/` inside this monorepo (published independently
+to npm). Wire builders / parsers, the param dictionaries, the
+amp/drive/cab lineage JSON, block tables, and any other "what the
+device speaks" data live there, not in the MCP server packages.
+
+| Repo | What |
+|---|---|
+| `fractal-midi` (separate repo, published on npm) | Pure-TypeScript codec. Builders, parsers, param dictionaries, block tables, lineage JSON (`amp-lineage.json`, `cab-lineage.json`, etc.). NO MIDI transport, NO MCP server. |
+| `mcp-midi-control` (this repo) | MCP server, descriptors, dispatcher, agent guidance, tool registrations. Imports from `fractal-midi/*`. Consumes the codec; does not define it. |
+
+**If your contribution edits ANY of these, you are working in the codec repo, not here:**
+- `amp-lineage.json` / `cab-lineage.json` / `drive-lineage.json` / similar
+- A `KNOWN_PARAMS` table
+- A SysEx builder or parser
+- A block-type table
+
+Workflow for a cross-repo change:
+1. Switch to the `fractal-midi` repo checkout and edit the source.
+2. Run `npm test` in the codec repo.
+3. Bump the version in `package.json` per the codec repo's CHANGELOG cadence.
+4. `npm pack` produces a `.tgz`.
+5. Switch back to this repo and `npm install /path/to/the/.tgz`.
+6. Test the integration here, commit both repos, then push.
+
+For drafting (you are iterating quickly), `npm link` between the two
+repos avoids the pack-install cycle. Reset to a published version
+before opening the PR.
+
+## Common contribution recipes
+
+Pick the row that matches your PR; that names the file to edit. If
+your edit lands in the codec repo (`fractal-midi`), see the two-repo
+section above for the workflow.
+
+| Goal | File to edit | Repo |
+|---|---|---|
+| Add an amp model to the AM4 lineage | `src/shared/lineage/amp-lineage.json` | `fractal-midi` |
+| Add an amp model to the Axe-Fx II lineage | `src/shared/lineage/axefx2-amp-lineage.json` | `fractal-midi` |
+| Add a cab attribution | `src/shared/lineage/cab-lineage.json` | `fractal-midi` |
+| Add a drive / wah lineage entry | `src/shared/lineage/{drive,wah}-lineage.json` | `fractal-midi` |
+| Add a recipe (tone preset, auto-wah, scene-leveling) | `packages/core/src/protocol-generic/recipes/` | this repo |
+| Fix a tool description | `packages/<device>/src/tools/*.ts` | this repo |
+| Add a new tool to the unified surface | `packages/core/src/protocol-generic/tools/*.ts` | this repo |
+| Add a new param to a device's catalog | `src/<device>/params.ts` in `fractal-midi`, then `npm pack` + reinstall | `fractal-midi` |
+
+## What to run before opening a PR
+
+| Command | When to run | Requires |
+|---|---|---|
+| `npm run preflight` | Before every PR. Runs typecheck + 12 verifiers + cookbook gate + tool inventory lint. | Nothing. ~1 minute. |
+| `npm run build` | If you touched TypeScript under `packages/*/src/`. Pre-installs the dist Claude Desktop spawns. | Nothing. ~30 s. |
+| `npm run launch-verify` | If you touched anything wire-protocol related (wire builders, parsers, dispatcher, descriptor reader/writer). Runs the actual server against connected hardware. | A supported device on USB. |
+| `npm run live-regression` | Same as launch-verify but covers more scenarios. | A supported device on USB. |
+| `npm run agent-sweep` | **DO NOT** run casually. Spawns the `claude` CLI per case and **incurs billed Anthropic API calls**. Only run when changing agent-routing assumptions, and with maintainer permission. | `claude` CLI + API key. |
+| `npm run release-gate` | Maintainer-only, pre-announce. Runs preflight + launch-verify + agent-sweep + live-regression in sequence. **Billed.** | Hardware + API key. |
+
+## License and contributor grant
+
+By submitting a contribution (pull request, patch, issue with a code
+suggestion, or any other form), you agree to the following:
+
+1. Your contribution is licensed under the project's primary license
+   (**Apache License 2.0**) as described in the [`LICENSE`](./LICENSE)
+   file. Users of the project receive all the freedoms Apache 2.0
+   guarantees.
+2. You also grant the project maintainer a perpetual, worldwide,
+   non-exclusive, royalty-free, irrevocable license to use, modify,
+   sublicense, and **relicense your contribution under any terms the
+   maintainer chooses**, in addition to (and without affecting) the
+   Apache 2.0 grant above. This keeps the option open for the project
+   to ship under a different license alongside Apache 2.0 in the
+   future (for example, a commercial license for proprietary
+   integrations) without having to coordinate with every prior
+   contributor.
+3. You certify that you have the right to submit the contribution
+   under these terms (e.g. it is your original work, or you have
+   permission from the copyright holder).
+
+No separate signature ceremony is required. Opening a pull request
+or submitting a patch counts as agreement.
+
+## Path 1: Test and report (no code)
+
+The simplest contribution. You need:
+
+- A supported device on USB.
+- The release ZIP installed (5 minutes; see project README).
+- Claude Desktop (or another MCP client) connected.
+
+Run any tool call against your device, paste the JSON response into a
+GitHub issue, and note whether the device's front panel did what the
+response says. That's it.
+
+The Axe-Fx III is the most-wanted target for this right now. The wire
+shapes are decoded from public captures but no III owner has confirmed
+end-to-end. See [`docs/AXEFX3-BETA-TESTING.md`](docs/AXEFX3-BETA-TESTING.md)
+for a concrete 5 to 30 minute test menu.
+
+## Recipes need your ears
+
+Recipes are curated starting points (a warm pad, a screaming lead, an
+auto-wah) that a player calls by name. The Hydrasynth library is mostly
+auditioned on hardware, but the guitar recipes are early and the
+iconic-tone coverage is still thin, so this is one of the most useful
+places to help and it needs no protocol knowledge.
+
+- **Tell us what landed.** If you tried a recipe, open an issue with the
+  device, the tone you reached for, what sounded right, and what you
+  tweaked by hand to fix it. That qualitative feedback is what turns a
+  rough recipe into a good one. There is no telemetry and nothing is
+  collected automatically; this is just you telling us what you heard.
+- **Propose a recipe.** Send a named starting point with the parameter
+  moves you make by hand to reach a tone. Recipes live in
+  `packages/core/src/protocol-generic/recipes/`; see
+  [`docs/RECIPE-AUTHORING-GUIDE.md`](docs/RECIPE-AUTHORING-GUIDE.md). We
+  credit recipe authors in the recipe data.
+
+## Path 2: Add a device
+
+The unified tool surface is device-agnostic: adding a new device means
+writing a **`DeviceDescriptor`**, a TypeScript object that describes
+the device's capabilities, blocks, and wire adapters. No new MCP tools
+are needed.
+
+### Step 1: Create a new package
+
+Copy the Axe-Fx III package as a template:
+
+```
+packages/axe-fx-iii/    ← copy this entire directory
+packages/<your-device>/ ← rename and adjust
+```
+
+Key files to update:
+
+| File | What to change |
+|---|---|
+| `package.json` | `name`, `description` |
+| `src/descriptor.ts` | Block roster, capabilities, `port_match` regex, beta-warning banners for unverified ops |
+| `src/midi.ts` | Port-discovery needles, connection helper |
+| `src/device.ts` | No changes needed; it exports `DESCRIPTOR` cleanly |
+
+`packages/axe-fx-iii/src/descriptor.ts` is the **canonical template**:
+it demonstrates how to ship community-beta ops with a warning banner,
+how to populate `DeviceCapabilities`, how to write a `coerceLocation`
+adapter, and how to structure `agent_guidance`.
+
+### Step 2: Register the descriptor
+
+In `packages/server-all/src/server/index.ts`:
+
+1. Import your descriptor:
+   ```ts
+   import { YOUR_DESCRIPTOR } from '@mcp-midi-control/your-device/device.js';
+   ```
+2. Call `registerMcpDevice` **before** any device whose `port_match`
+   regex would also match your device's port name. Registration order
+   decides which descriptor wins on ambiguous port names; more specific
+   regex first.
+   ```ts
+   registerMcpDevice(YOUR_DESCRIPTOR);  // add before the catch-all
+   ```
+
+### Step 3: Wire the build and typecheck
+
+In the root `package.json`, add your package to:
+
+- `workspaces` array
+- `typecheck` script (add `tsc --noEmit -p packages/<your-device>/tsconfig.json`)
+- `build:<your-device>` script and wire it into the `build` chain
+
+### Step 4: Add to smoke-server expected-tools list
+
+If your descriptor registers any device-namespaced tools, add them to
+the expected list in `scripts/smoke-server.ts`.
+
+### Step 5: Run preflight
+
+```
+npm run preflight
+```
+
+This confirms the typecheck, all goldens, and the smoke test pass with
+your new descriptor registered.
+
+### Registration-order note
+
+The `connection_label` on each descriptor must match the string that
+`packages/core/src/server-shared/connections.ts:ensureConnection` uses
+to look up the connector factory. If your device's label doesn't
+substring-match the OS port name, you'll need a special-case branch in
+`ensureConnection` analogous to the `AXEFX2_LABEL` entry.
+
+## Path 3: Decode a protocol
+
+If you're adding a new MCP wire op (or fixing a misbehaving existing
+op), you'll capture USB MIDI traffic and use those bytes to build a
+byte-exact golden in `scripts/verify-msg.ts`.
+
+### Before opening a PR
+
+1. Run the full preflight locally:
+   ```
+   npm run preflight
+   ```
+   This runs `tsc --noEmit` + the golden verifiers (pack, message,
+   transpile, enum-lookup, echo, cache-params) + the MCP smoke test.
+2. If your change touches the wire protocol, add or update a
+   byte-exact golden in `scripts/verify-msg.ts` against a real
+   capture. See the "When adding a new pidHigh" note in
+   [`CLAUDE.md`](./CLAUDE.md) for the rationale.
+3. If your change adds a new MCP tool, add it to the expected-tools
+   list in `scripts/smoke-server.ts`.
+
+### Capturing MIDI traffic
+
+Two approaches, depending on what you need to capture.
+
+**Passive device-side capture** (host can read the device's outbound
+SysEx). Use this for everything the device emits: responses to
+queries, broadcasts, state announcements. This is the byte-exact wire
+format every decoder gets tested against.
+
+```
+# List available MIDI input ports:
+npm run capture-midi
+
+# Capture device → host SysEx to a `.syx` file:
+npm run capture-axefx2 -- samples/captured/my-axefx2-capture.syx
+npm run capture-am4    -- samples/captured/my-am4-capture.syx
+
+# Generic; any MIDI device by name substring:
+npm run capture-midi -- hydra samples/captured/foo.syx
+```
+
+Press Ctrl+C to stop. Bytes are appended to disk as they arrive, so
+partial captures survive crashes.
+
+Single-action captures are gold. Start a fresh capture per specific
+action (drag one block, turn one knob, switch one preset). Single-
+action `.syx` files are far easier to decode than mixed sessions.
+
+**USBPcap + Wireshark for the editor to device direction.** Windows
+MIDI output ports are write-only from the OS side, so the passive-
+capture script above can't see what an editor app (AxeEdit, AM4-Edit,
+Hydrasynth Manager) sends to the device. The full step-by-step lives at
+[`packages/fractal-midi/docs/capture-guides/usbpcap-wireshark.md`](packages/fractal-midi/docs/capture-guides/usbpcap-wireshark.md):
+install pointers, USB device identification, single-action capture
+discipline, SysEx extraction, and the citation expectations for any
+decode that goes into `docs/SYSEX-MAP*.md`. This is the maintainer's
+default workflow for any unknown editor-write op.
+
+### What goes in `samples/`, what goes in `docs/captures/`
+
+`samples/` is gitignored; that's local scratch for analysis. The
+project doesn't ship multi-megabyte `.pcapng` files; capture your own
+to decode something new. Tiny canonical `.syx` snippets (a few hundred
+bytes) that demonstrate a specific wire shape can live under
+`docs/captures/` with a companion `.md` decode note. Those are the
+ones contributors can read alongside the goldens to understand the
+envelope.
+
+### Regenerating committed extractor output
+
+Some committed files are the output of a script: the AM4 factory-data
+JSON, the Fractal lineage tables, the Axe-Fx II catalog dumps, and so
+on. Their generator scripts live under `scripts/extract-*.ts` and
+their outputs are committed alongside the consumers that read them.
+
+If you change an extractor whose output is committed, re-run the
+extractor and commit the regenerated output in the same PR. The
+`preflight` chain does NOT auto-regen; auto-regen would mask drift
+between extractor logic and committed output. Treat regeneration as
+an explicit step.
+
+`npm run regen` runs every hardware-free generator in sequence.
+Hardware-gated generators (e.g. `npm run extract-factory-data`, which
+reads 104 presets from a real AM4) must be run manually with the
+relevant device connected and at factory state.
+
+## Questions / security issues
+
+- General questions → open a GitHub issue.
+- Security issues → see [`SECURITY.md`](./SECURITY.md).

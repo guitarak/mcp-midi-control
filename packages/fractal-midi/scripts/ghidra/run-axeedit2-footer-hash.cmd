@@ -1,0 +1,39 @@
+@echo off
+REM Headless run of DumpAxeEditIIFooterHash.java against Axe-Edit.exe
+REM (II generation, model byte 0x07). BK-070 footer-hash decode.
+REM
+REM Output:
+REM   %PROJECT_ROOT%\packages\fractal-midi\samples\captured\decoded\ghidra-axeedit2-footer-hash.txt
+
+setlocal
+for %%I in ("%~dp0..\..\..\..") do set "PROJECT_ROOT=%%~fI"
+
+if "%GHIDRA_INSTALL_DIR%"=="" set GHIDRA_INSTALL_DIR=C:\tools\ghidra_12.0.4_PUBLIC
+
+set HEADLESS=%GHIDRA_INSTALL_DIR%\support\analyzeHeadless.bat
+if not exist "%HEADLESS%" (
+    echo ERROR: analyzeHeadless.bat not found at "%HEADLESS%".
+    exit /b 1
+)
+
+set PROJECT_DIR=%USERPROFILE%
+set PROJECT_NAME=ghidra-axe-edit
+set SCRIPT_DIR=%PROJECT_ROOT%\packages\fractal-midi\scripts\ghidra
+set OUT_DIR=%PROJECT_ROOT%\packages\fractal-midi\samples\captured\decoded
+
+if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
+
+"%HEADLESS%" "%PROJECT_DIR%" "%PROJECT_NAME%" ^
+    -process "Axe-Edit.exe" ^
+    -noanalysis ^
+    -readOnly ^
+    -scriptPath "%SCRIPT_DIR%" ^
+    -postScript DumpAxeEditIIFooterHash.java
+
+if errorlevel 1 (
+    echo Ghidra headless exited with errors.
+    exit /b 1
+)
+
+echo Done.
+endlocal

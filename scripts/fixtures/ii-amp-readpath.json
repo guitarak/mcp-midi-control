@@ -1,0 +1,2141 @@
+{
+  "device": "axe-fx-ii",
+  "effectId": 106,
+  "note": "Recorded fn=0x02 (wire,device-label) samples for amp deep params whose display varies across the sweep (the calibratable set). Replayed through the shared resolver by verify-axe-fx-ii-read-path.ts. Source: hardware sweep 2026-05-29. Firmware-internal constant params (xformer_grind, bypass) are intentionally excluded.",
+  "params": [
+    {
+      "block": "amp",
+      "name": "tone_freq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 200,
+          "label": "200.0 Hz"
+        },
+        {
+          "wire": 16383,
+          "display": 355.6,
+          "label": "355.6 Hz"
+        },
+        {
+          "wire": 32767,
+          "display": 632.5,
+          "label": "632.5 Hz"
+        },
+        {
+          "wire": 49151,
+          "display": 1124,
+          "label": "1124 Hz"
+        },
+        {
+          "wire": 65534,
+          "display": 2000,
+          "label": "2000 Hz"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "wslpf",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 400,
+          "label": "400 Hz"
+        },
+        {
+          "wire": 16383,
+          "display": 1265,
+          "label": "1265 Hz"
+        },
+        {
+          "wire": 32767,
+          "display": 4000,
+          "label": "4000 Hz"
+        },
+        {
+          "wire": 49151,
+          "display": 12650,
+          "label": "12650 Hz"
+        },
+        {
+          "wire": 65534,
+          "display": 40000,
+          "label": "40000 Hz"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "xformer_low_freq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 10,
+          "label": "10.0 Hz"
+        },
+        {
+          "wire": 16383,
+          "display": 31.6,
+          "label": "31.6 Hz"
+        },
+        {
+          "wire": 32767,
+          "display": 100,
+          "label": "100.0 Hz"
+        },
+        {
+          "wire": 49151,
+          "display": 316.2,
+          "label": "316.2 Hz"
+        },
+        {
+          "wire": 65534,
+          "display": 1000,
+          "label": "1000 Hz"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "xformer_hi_freq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 4000,
+          "label": "4000 Hz"
+        },
+        {
+          "wire": 16383,
+          "display": 7113,
+          "label": "7113 Hz"
+        },
+        {
+          "wire": 32767,
+          "display": 12649,
+          "label": "12649 Hz"
+        },
+        {
+          "wire": 49151,
+          "display": 22494,
+          "label": "22494 Hz"
+        },
+        {
+          "wire": 65534,
+          "display": 40000,
+          "label": "40000 Hz"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "offset1",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -1,
+          "label": "-1.000"
+        },
+        {
+          "wire": 16383,
+          "display": -0.5,
+          "label": "-0.500"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.000"
+        },
+        {
+          "wire": 49151,
+          "display": 0.5,
+          "label": "0.500"
+        },
+        {
+          "wire": 65534,
+          "display": 1,
+          "label": "1.000"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "supply_sag",
+      "samples": [
+        {
+          "wire": 16383,
+          "display": 2.5,
+          "label": "2.50"
+        },
+        {
+          "wire": 32767,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 49151,
+          "display": 7.5,
+          "label": "7.50"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "presence_freq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0.1,
+          "label": "0.100"
+        },
+        {
+          "wire": 16383,
+          "display": 0.316,
+          "label": "0.316"
+        },
+        {
+          "wire": 32767,
+          "display": 1,
+          "label": "1.000"
+        },
+        {
+          "wire": 49151,
+          "display": 3.162,
+          "label": "3.162"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "low_res_freq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 40,
+          "label": "40.0 Hz"
+        },
+        {
+          "wire": 16383,
+          "display": 71.1,
+          "label": "71.1 Hz"
+        },
+        {
+          "wire": 32767,
+          "display": 126.5,
+          "label": "126.5 Hz"
+        },
+        {
+          "wire": 49151,
+          "display": 224.9,
+          "label": "224.9 Hz"
+        },
+        {
+          "wire": 65534,
+          "display": 400,
+          "label": "400.0 Hz"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "low_res",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 16383,
+          "display": 2.5,
+          "label": "2.50"
+        },
+        {
+          "wire": 32767,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 49151,
+          "display": 7.5,
+          "label": "7.50"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "depth_freq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 50,
+          "label": "50.00 Hz"
+        },
+        {
+          "wire": 16383,
+          "display": 88.91,
+          "label": "88.91 Hz"
+        },
+        {
+          "wire": 32767,
+          "display": 158.1,
+          "label": "158.1 Hz"
+        },
+        {
+          "wire": 49151,
+          "display": 281.1,
+          "label": "281.1 Hz"
+        },
+        {
+          "wire": 65534,
+          "display": 500,
+          "label": "500.0 Hz"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "mv_cap",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 1,
+          "label": "1.0 pF"
+        },
+        {
+          "wire": 16383,
+          "display": 5.6,
+          "label": "5.6 pF"
+        },
+        {
+          "wire": 32767,
+          "display": 31.6,
+          "label": "31.6 pF"
+        },
+        {
+          "wire": 49151,
+          "display": 177.8,
+          "label": "177.8 pF"
+        },
+        {
+          "wire": 65534,
+          "display": 1000,
+          "label": "1000 pF"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "wshpf",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 2,
+          "label": "2.00 Hz"
+        },
+        {
+          "wire": 16383,
+          "display": 11.25,
+          "label": "11.25 Hz"
+        },
+        {
+          "wire": 32767,
+          "display": 63.25,
+          "label": "63.25 Hz"
+        },
+        {
+          "wire": 49151,
+          "display": 355.6,
+          "label": "355.6 Hz"
+        },
+        {
+          "wire": 65534,
+          "display": 2000,
+          "label": "2000 Hz"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "harmonics",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.000"
+        },
+        {
+          "wire": 16383,
+          "display": 0.25,
+          "label": "0.250"
+        },
+        {
+          "wire": 32767,
+          "display": 0.5,
+          "label": "0.500"
+        },
+        {
+          "wire": 49151,
+          "display": 0.75,
+          "label": "0.750"
+        },
+        {
+          "wire": 65534,
+          "display": 1,
+          "label": "1.000"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "b_time_const",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 1,
+          "label": "1.00 ms"
+        },
+        {
+          "wire": 16383,
+          "display": 3.16,
+          "label": "3.16 ms"
+        },
+        {
+          "wire": 32767,
+          "display": 10,
+          "label": "10.00 ms"
+        },
+        {
+          "wire": 49151,
+          "display": 31.62,
+          "label": "31.62 ms"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 ms"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "tube_grid_bias",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.000"
+        },
+        {
+          "wire": 16383,
+          "display": 0.25,
+          "label": "0.250"
+        },
+        {
+          "wire": 32767,
+          "display": 0.5,
+          "label": "0.500"
+        },
+        {
+          "wire": 49151,
+          "display": 0.75,
+          "label": "0.750"
+        },
+        {
+          "wire": 65534,
+          "display": 1,
+          "label": "1.000"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "pi_ratio",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.000"
+        },
+        {
+          "wire": 16383,
+          "display": 0.25,
+          "label": "0.250"
+        },
+        {
+          "wire": 32767,
+          "display": 0.5,
+          "label": "0.500"
+        },
+        {
+          "wire": 49151,
+          "display": 0.75,
+          "label": "0.750"
+        },
+        {
+          "wire": 65534,
+          "display": 1,
+          "label": "1.000"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "low_res_q",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0.1,
+          "label": "0.100"
+        },
+        {
+          "wire": 16383,
+          "display": 0.316,
+          "label": "0.316"
+        },
+        {
+          "wire": 32767,
+          "display": 1,
+          "label": "1.000"
+        },
+        {
+          "wire": 49151,
+          "display": 3.162,
+          "label": "3.162"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "preamp_bias",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -1,
+          "label": "-1.000"
+        },
+        {
+          "wire": 16383,
+          "display": -0.5,
+          "label": "-0.500"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.000"
+        },
+        {
+          "wire": 49151,
+          "display": 0.5,
+          "label": "0.500"
+        },
+        {
+          "wire": 65534,
+          "display": 1,
+          "label": "1.000"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "hi_freq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 400,
+          "label": "400.0 Hz"
+        },
+        {
+          "wire": 16383,
+          "display": 711.3,
+          "label": "711.3 Hz"
+        },
+        {
+          "wire": 32767,
+          "display": 1264,
+          "label": "1264 Hz"
+        },
+        {
+          "wire": 49151,
+          "display": 2249,
+          "label": "2249 Hz"
+        },
+        {
+          "wire": 65534,
+          "display": 4000,
+          "label": "4000 Hz"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "hi_resonance",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 16383,
+          "display": 2.5,
+          "label": "2.50"
+        },
+        {
+          "wire": 32767,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 49151,
+          "display": 7.5,
+          "label": "7.50"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "xformer_drive",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0.01,
+          "label": "0.01"
+        },
+        {
+          "wire": 16383,
+          "display": 0.06,
+          "label": "0.06"
+        },
+        {
+          "wire": 32767,
+          "display": 0.32,
+          "label": "0.32"
+        },
+        {
+          "wire": 49151,
+          "display": 1.78,
+          "label": "1.78"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "preamp_hardness",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 16383,
+          "display": 2.5,
+          "label": "2.50"
+        },
+        {
+          "wire": 32767,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 49151,
+          "display": 7.5,
+          "label": "7.50"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "speaker_drive",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 16383,
+          "display": 2.5,
+          "label": "2.50"
+        },
+        {
+          "wire": 32767,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 49151,
+          "display": 7.5,
+          "label": "7.50"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "xformer_match",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0.1,
+          "label": "0.100"
+        },
+        {
+          "wire": 16383,
+          "display": 0.316,
+          "label": "0.316"
+        },
+        {
+          "wire": 32767,
+          "display": 1,
+          "label": "1.000"
+        },
+        {
+          "wire": 49151,
+          "display": 3.162,
+          "label": "3.162"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "screenfreq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 1,
+          "label": "1.00"
+        },
+        {
+          "wire": 16383,
+          "display": 3.16,
+          "label": "3.16"
+        },
+        {
+          "wire": 32767,
+          "display": 10,
+          "label": "10.00"
+        },
+        {
+          "wire": 49151,
+          "display": 31.62,
+          "label": "31.62"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "screenq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0.1,
+          "label": "0.100"
+        },
+        {
+          "wire": 16383,
+          "display": 0.316,
+          "label": "0.316"
+        },
+        {
+          "wire": 32767,
+          "display": 1,
+          "label": "1.000"
+        },
+        {
+          "wire": 49151,
+          "display": 3.162,
+          "label": "3.162"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "geq_band_1",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -12,
+          "label": "-12.00"
+        },
+        {
+          "wire": 16383,
+          "display": -6,
+          "label": "-6.00"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 49151,
+          "display": 6,
+          "label": "6.00"
+        },
+        {
+          "wire": 65534,
+          "display": 12,
+          "label": "12.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "geq_band_2",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -12,
+          "label": "-12.00"
+        },
+        {
+          "wire": 16383,
+          "display": -6,
+          "label": "-6.00"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 49151,
+          "display": 6,
+          "label": "6.00"
+        },
+        {
+          "wire": 65534,
+          "display": 12,
+          "label": "12.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "geq_band_3",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -12,
+          "label": "-12.00"
+        },
+        {
+          "wire": 16383,
+          "display": -6,
+          "label": "-6.00"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 49151,
+          "display": 6,
+          "label": "6.00"
+        },
+        {
+          "wire": 65534,
+          "display": 12,
+          "label": "12.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "geq_band_4",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -12,
+          "label": "-12.00"
+        },
+        {
+          "wire": 16383,
+          "display": -6,
+          "label": "-6.00"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 49151,
+          "display": 6,
+          "label": "6.00"
+        },
+        {
+          "wire": 65534,
+          "display": 12,
+          "label": "12.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "geq_band_5",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -12,
+          "label": "-12.00"
+        },
+        {
+          "wire": 16383,
+          "display": -6,
+          "label": "-6.00"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 49151,
+          "display": 6,
+          "label": "6.00"
+        },
+        {
+          "wire": 65534,
+          "display": 12,
+          "label": "12.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "geq_band_6",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -12,
+          "label": "-12.00"
+        },
+        {
+          "wire": 16383,
+          "display": -6,
+          "label": "-6.00"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 49151,
+          "display": 6,
+          "label": "6.00"
+        },
+        {
+          "wire": 65534,
+          "display": 12,
+          "label": "12.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "geq_band_7",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -12,
+          "label": "-12.00"
+        },
+        {
+          "wire": 16383,
+          "display": -6,
+          "label": "-6.00"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 49151,
+          "display": 6,
+          "label": "6.00"
+        },
+        {
+          "wire": 65534,
+          "display": 12,
+          "label": "12.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "geq_band_8",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -12,
+          "label": "-12.00"
+        },
+        {
+          "wire": 16383,
+          "display": -6,
+          "label": "-6.00"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 49151,
+          "display": 6,
+          "label": "6.00"
+        },
+        {
+          "wire": 65534,
+          "display": 12,
+          "label": "12.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "bias_excursion",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.0 %"
+        },
+        {
+          "wire": 16383,
+          "display": 25,
+          "label": "25.0 %"
+        },
+        {
+          "wire": 32767,
+          "display": 50,
+          "label": "50.0 %"
+        },
+        {
+          "wire": 49151,
+          "display": 75,
+          "label": "75.0 %"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 %"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "excursiontime",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 1,
+          "label": "1.00 ms"
+        },
+        {
+          "wire": 16383,
+          "display": 3.16,
+          "label": "3.16 ms"
+        },
+        {
+          "wire": 32767,
+          "display": 10,
+          "label": "10.00 ms"
+        },
+        {
+          "wire": 49151,
+          "display": 31.62,
+          "label": "31.62 ms"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 ms"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "recoverytime",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 1,
+          "label": "1.00 ms"
+        },
+        {
+          "wire": 16383,
+          "display": 3.16,
+          "label": "3.16 ms"
+        },
+        {
+          "wire": 32767,
+          "display": 10,
+          "label": "10.00 ms"
+        },
+        {
+          "wire": 49151,
+          "display": 31.62,
+          "label": "31.62 ms"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 ms"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "triode_2_plate_freq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 400,
+          "label": "400.0 Hz"
+        },
+        {
+          "wire": 16383,
+          "display": 1264,
+          "label": "1264 Hz"
+        },
+        {
+          "wire": 32767,
+          "display": 4000,
+          "label": "4000 Hz"
+        },
+        {
+          "wire": 49151,
+          "display": 12649,
+          "label": "12649 Hz"
+        },
+        {
+          "wire": 65534,
+          "display": 40000,
+          "label": "40000 Hz"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "triode_1_plate_freq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 400,
+          "label": "400.0 Hz"
+        },
+        {
+          "wire": 16383,
+          "display": 1264,
+          "label": "1264 Hz"
+        },
+        {
+          "wire": 32767,
+          "display": 4000,
+          "label": "4000 Hz"
+        },
+        {
+          "wire": 49151,
+          "display": 12649,
+          "label": "12649 Hz"
+        },
+        {
+          "wire": 65534,
+          "display": 40000,
+          "label": "40000 Hz"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "out_comp_clarity",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 16383,
+          "display": 2.5,
+          "label": "2.50"
+        },
+        {
+          "wire": 32767,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 49151,
+          "display": 7.5,
+          "label": "7.50"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "character_q",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0.1,
+          "label": "0.100"
+        },
+        {
+          "wire": 16383,
+          "display": 0.316,
+          "label": "0.316"
+        },
+        {
+          "wire": 32767,
+          "display": 1,
+          "label": "1.000"
+        },
+        {
+          "wire": 49151,
+          "display": 3.162,
+          "label": "3.162"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "character_freq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 100,
+          "label": "100.0 Hz"
+        },
+        {
+          "wire": 16383,
+          "display": 316.2,
+          "label": "316.2 Hz"
+        },
+        {
+          "wire": 32767,
+          "display": 1000,
+          "label": "1000 Hz"
+        },
+        {
+          "wire": 49151,
+          "display": 3162,
+          "label": "3162 Hz"
+        },
+        {
+          "wire": 65534,
+          "display": 10000,
+          "label": "10000 Hz"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "character_amt",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -10,
+          "label": "-10.00"
+        },
+        {
+          "wire": 16383,
+          "display": -5,
+          "label": "-5.00"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 49151,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "out_comp_amount",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 16383,
+          "display": 2.5,
+          "label": "2.50"
+        },
+        {
+          "wire": 32767,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 49151,
+          "display": 7.5,
+          "label": "7.50"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "out_comp_threshold",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -60,
+          "label": "-60.0 dB"
+        },
+        {
+          "wire": 16383,
+          "display": -45,
+          "label": "-45.0 dB"
+        },
+        {
+          "wire": 32767,
+          "display": -30,
+          "label": "-30.0 dB"
+        },
+        {
+          "wire": 49151,
+          "display": -15,
+          "label": "-15.0 dB"
+        },
+        {
+          "wire": 65534,
+          "display": 0,
+          "label": "0.0 dB"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "preamp_cf_compress",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.0 %"
+        },
+        {
+          "wire": 16383,
+          "display": 25,
+          "label": "25.0 %"
+        },
+        {
+          "wire": 32767,
+          "display": 50,
+          "label": "50.0 %"
+        },
+        {
+          "wire": 49151,
+          "display": 75,
+          "label": "75.0 %"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 %"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "preamp_cf_time",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.0 %"
+        },
+        {
+          "wire": 16383,
+          "display": 25,
+          "label": "25.0 %"
+        },
+        {
+          "wire": 32767,
+          "display": 50,
+          "label": "50.0 %"
+        },
+        {
+          "wire": 49151,
+          "display": 75,
+          "label": "75.0 %"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 %"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "pickattack",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -100,
+          "label": "-100.0 %"
+        },
+        {
+          "wire": 16383,
+          "display": -50,
+          "label": "-50.0 %"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.0 %"
+        },
+        {
+          "wire": 49151,
+          "display": 50,
+          "label": "50.0 %"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 %"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "dynamic_presence",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -10,
+          "label": "-10.00"
+        },
+        {
+          "wire": 16383,
+          "display": -5,
+          "label": "-5.00"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 49151,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "ac_line_freq",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 30,
+          "label": "30 Hz"
+        },
+        {
+          "wire": 16383,
+          "display": 47,
+          "label": "47 Hz"
+        },
+        {
+          "wire": 32767,
+          "display": 65,
+          "label": "65 Hz"
+        },
+        {
+          "wire": 49151,
+          "display": 83,
+          "label": "83 Hz"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100 Hz"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "pwr_amp_hardness",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 16383,
+          "display": 2.5,
+          "label": "2.50"
+        },
+        {
+          "wire": 32767,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 49151,
+          "display": 7.5,
+          "label": "7.50"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "preamp_cf_ratio",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0.02,
+          "label": "0.020"
+        },
+        {
+          "wire": 16383,
+          "display": 0.063,
+          "label": "0.063"
+        },
+        {
+          "wire": 32767,
+          "display": 0.2,
+          "label": "0.200"
+        },
+        {
+          "wire": 49151,
+          "display": 0.632,
+          "label": "0.632"
+        },
+        {
+          "wire": 65534,
+          "display": 2,
+          "label": "2.000"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "cathode_resist",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.0 %"
+        },
+        {
+          "wire": 16383,
+          "display": 25,
+          "label": "25.0 %"
+        },
+        {
+          "wire": 32767,
+          "display": 50,
+          "label": "50.0 %"
+        },
+        {
+          "wire": 49151,
+          "display": 75,
+          "label": "75.0 %"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 %"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "cbtime",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 1,
+          "label": "1.00 ms"
+        },
+        {
+          "wire": 16383,
+          "display": 3.16,
+          "label": "3.16 ms"
+        },
+        {
+          "wire": 32767,
+          "display": 10,
+          "label": "10.00 ms"
+        },
+        {
+          "wire": 49151,
+          "display": 31.62,
+          "label": "31.62 ms"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 ms"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "bright",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -12,
+          "label": "-12.00 dB"
+        },
+        {
+          "wire": 16383,
+          "display": -6,
+          "label": "-6.00 dB"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.00 dB"
+        },
+        {
+          "wire": 49151,
+          "display": 6,
+          "label": "6.00 dB"
+        },
+        {
+          "wire": 65534,
+          "display": 12,
+          "label": "12.00 dB"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "pwr_amp_bias",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -1,
+          "label": "-1.000"
+        },
+        {
+          "wire": 16383,
+          "display": -0.5,
+          "label": "-0.500"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.000"
+        },
+        {
+          "wire": 49151,
+          "display": 0.5,
+          "label": "0.500"
+        },
+        {
+          "wire": 65534,
+          "display": 1,
+          "label": "1.000"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "preamp_dynamics",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -10,
+          "label": "-10.00"
+        },
+        {
+          "wire": 16383,
+          "display": -5,
+          "label": "-5.00"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 49151,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "hi_freq_slope",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 1,
+          "label": "1.000"
+        },
+        {
+          "wire": 16383,
+          "display": 1.778,
+          "label": "1.778"
+        },
+        {
+          "wire": 32767,
+          "display": 3.162,
+          "label": "3.162"
+        },
+        {
+          "wire": 49151,
+          "display": 5.624,
+          "label": "5.624"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "variac",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 50,
+          "label": "50.0 %"
+        },
+        {
+          "wire": 16383,
+          "display": 75,
+          "label": "75.0 %"
+        },
+        {
+          "wire": 32767,
+          "display": 100,
+          "label": "100.0 %"
+        },
+        {
+          "wire": 49151,
+          "display": 125,
+          "label": "125.0 %"
+        },
+        {
+          "wire": 65534,
+          "display": 150,
+          "label": "150.0 %"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "gridhardness",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 10,
+          "label": "10.0 %"
+        },
+        {
+          "wire": 16383,
+          "display": 32.5,
+          "label": "32.5 %"
+        },
+        {
+          "wire": 32767,
+          "display": 55,
+          "label": "55.0 %"
+        },
+        {
+          "wire": 49151,
+          "display": 77.5,
+          "label": "77.5 %"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 %"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "saturation_drive",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 1,
+          "label": "1.000"
+        },
+        {
+          "wire": 16383,
+          "display": 3.25,
+          "label": "3.250"
+        },
+        {
+          "wire": 32767,
+          "display": 5.5,
+          "label": "5.500"
+        },
+        {
+          "wire": 49151,
+          "display": 7.75,
+          "label": "7.750"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "crunch",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.0 %"
+        },
+        {
+          "wire": 16383,
+          "display": 25,
+          "label": "25.0 %"
+        },
+        {
+          "wire": 32767,
+          "display": 50,
+          "label": "50.0 %"
+        },
+        {
+          "wire": 49151,
+          "display": 75,
+          "label": "75.0 %"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 %"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "triode2extime",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0.1,
+          "label": "0.10 ms"
+        },
+        {
+          "wire": 16383,
+          "display": 0.56,
+          "label": "0.56 ms"
+        },
+        {
+          "wire": 32767,
+          "display": 3.16,
+          "label": "3.16 ms"
+        },
+        {
+          "wire": 49151,
+          "display": 17.78,
+          "label": "17.78 ms"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 ms"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "triode2rectime",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0.1,
+          "label": "0.10 ms"
+        },
+        {
+          "wire": 16383,
+          "display": 0.56,
+          "label": "0.56 ms"
+        },
+        {
+          "wire": 32767,
+          "display": 3.16,
+          "label": "3.16 ms"
+        },
+        {
+          "wire": 49151,
+          "display": 17.78,
+          "label": "17.78 ms"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 ms"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "triode1ratio",
+      "samples": [
+        {
+          "wire": 0,
+          "display": -100,
+          "label": "-100.0 %"
+        },
+        {
+          "wire": 16383,
+          "display": -50,
+          "label": "-50.0 %"
+        },
+        {
+          "wire": 32767,
+          "display": 0,
+          "label": "0.0 %"
+        },
+        {
+          "wire": 49151,
+          "display": 50,
+          "label": "50.0 %"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 %"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "preamp_cf_hardness",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 16383,
+          "display": 2.5,
+          "label": "2.50"
+        },
+        {
+          "wire": 32767,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 49151,
+          "display": 7.5,
+          "label": "7.50"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "pi_bias_shift",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.0 %"
+        },
+        {
+          "wire": 16383,
+          "display": 25,
+          "label": "25.0 %"
+        },
+        {
+          "wire": 32767,
+          "display": 50,
+          "label": "50.0 %"
+        },
+        {
+          "wire": 49151,
+          "display": 75,
+          "label": "75.0 %"
+        },
+        {
+          "wire": 65534,
+          "display": 100,
+          "label": "100.0 %"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "motor_drive",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 0,
+          "label": "0.00"
+        },
+        {
+          "wire": 16383,
+          "display": 2.5,
+          "label": "2.50"
+        },
+        {
+          "wire": 32767,
+          "display": 5,
+          "label": "5.00"
+        },
+        {
+          "wire": 49151,
+          "display": 7.5,
+          "label": "7.50"
+        },
+        {
+          "wire": 65534,
+          "display": 10,
+          "label": "10.00"
+        }
+      ]
+    },
+    {
+      "block": "amp",
+      "name": "motor_time_const",
+      "samples": [
+        {
+          "wire": 0,
+          "display": 20,
+          "label": "20.00 ms"
+        },
+        {
+          "wire": 16383,
+          "display": 63.24,
+          "label": "63.24 ms"
+        },
+        {
+          "wire": 32767,
+          "display": 200,
+          "label": "200.0 ms"
+        },
+        {
+          "wire": 49151,
+          "display": 632.4,
+          "label": "632.4 ms"
+        },
+        {
+          "wire": 65534,
+          "display": 2000,
+          "label": "2000 ms"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,131 @@
+{
+  "_source": "Live 5-point fn=0x02 sweep on Axe-Fx II XL+ (Ares 2.00), CAB effectId 108, 2026-05-30. Self-restoring; raw under samples/captured/decoded/ii-opaque-cab-sweep.json (gitignored). Display = numeric part of the device-rendered label; committed so it gates.",
+  "params": [
+    { "block": "cab", "name": "level_l", "samples": [
+      { "wire": 0, "display": -80, "label": "-80.0 dB" },
+      { "wire": 16383, "display": -60, "label": "-60.0 dB" },
+      { "wire": 32767, "display": -40, "label": "-40.0 dB" },
+      { "wire": 49151, "display": -20, "label": "-20.0 dB" },
+      { "wire": 65534, "display": 0, "label": "0.0 dB" }
+    ] },
+    { "block": "cab", "name": "level_r", "samples": [
+      { "wire": 0, "display": -80, "label": "-80.0 dB" },
+      { "wire": 16383, "display": -60, "label": "-60.0 dB" },
+      { "wire": 32767, "display": -40, "label": "-40.0 dB" },
+      { "wire": 49151, "display": -20, "label": "-20.0 dB" },
+      { "wire": 65534, "display": 0, "label": "0.0 dB" }
+    ] },
+    { "block": "cab", "name": "drive", "samples": [
+      { "wire": 0, "display": 0, "label": "0.00" },
+      { "wire": 16383, "display": 2.5, "label": "2.50" },
+      { "wire": 32767, "display": 5, "label": "5.00" },
+      { "wire": 49151, "display": 7.5, "label": "7.50" },
+      { "wire": 65534, "display": 10, "label": "10.00" }
+    ] },
+    { "block": "cab", "name": "saturation", "samples": [
+      { "wire": 0, "display": 0, "label": "0.00" },
+      { "wire": 16383, "display": 2.5, "label": "2.50" },
+      { "wire": 32767, "display": 5, "label": "5.00" },
+      { "wire": 49151, "display": 7.5, "label": "7.50" },
+      { "wire": 65534, "display": 10, "label": "10.00" }
+    ] },
+    { "block": "cab", "name": "room_level", "samples": [
+      { "wire": 0, "display": 0, "label": "0.0 %" },
+      { "wire": 16383, "display": 25, "label": "25.0 %" },
+      { "wire": 32767, "display": 50, "label": "50.0 %" },
+      { "wire": 49151, "display": 75, "label": "75.0 %" },
+      { "wire": 65534, "display": 100, "label": "100.0 %" }
+    ] },
+    { "block": "cab", "name": "room_size", "samples": [
+      { "wire": 0, "display": 1, "label": "1.00" },
+      { "wire": 16383, "display": 3.25, "label": "3.25" },
+      { "wire": 32767, "display": 5.5, "label": "5.50" },
+      { "wire": 49151, "display": 7.75, "label": "7.75" },
+      { "wire": 65534, "display": 10, "label": "10.00" }
+    ] },
+    { "block": "cab", "name": "mic_spacing", "samples": [
+      { "wire": 0, "display": 0, "label": "0.0 %" },
+      { "wire": 16383, "display": 25, "label": "25.0 %" },
+      { "wire": 32767, "display": 50, "label": "50.0 %" },
+      { "wire": 49151, "display": 75, "label": "75.0 %" },
+      { "wire": 65534, "display": 100, "label": "100.0 %" }
+    ] },
+    { "block": "cab", "name": "speaker_size", "samples": [
+      { "wire": 0, "display": 0.25, "label": "0.250" },
+      { "wire": 16383, "display": 0.5, "label": "0.500" },
+      { "wire": 32767, "display": 1.0, "label": "1.000" },
+      { "wire": 49151, "display": 2.0, "label": "2.000" },
+      { "wire": 65534, "display": 4.0, "label": "4.000" }
+    ] },
+    { "block": "cab", "name": "proximity", "samples": [
+      { "wire": 0, "display": 0, "label": "0.00" },
+      { "wire": 16383, "display": 2.5, "label": "2.50" },
+      { "wire": 32767, "display": 5, "label": "5.00" },
+      { "wire": 49151, "display": 7.5, "label": "7.50" },
+      { "wire": 65534, "display": 10, "label": "10.00" }
+    ] },
+    { "block": "cab", "name": "air", "samples": [
+      { "wire": 0, "display": 0, "label": "0.0 %" },
+      { "wire": 16383, "display": 25, "label": "25.0 %" },
+      { "wire": 32767, "display": 50, "label": "50.0 %" },
+      { "wire": 49151, "display": 75, "label": "75.0 %" },
+      { "wire": 65534, "display": 100, "label": "100.0 %" }
+    ] },
+    { "block": "cab", "name": "motor_drive", "samples": [
+      { "wire": 0, "display": 0, "label": "0.00" },
+      { "wire": 16383, "display": 2.5, "label": "2.50" },
+      { "wire": 32767, "display": 5, "label": "5.00" },
+      { "wire": 49151, "display": 7.5, "label": "7.50" },
+      { "wire": 65534, "display": 10, "label": "10.00" }
+    ] },
+    { "block": "cab", "name": "air_freq", "samples": [
+      { "wire": 0, "display": 2000, "label": "2000 Hz" },
+      { "wire": 16383, "display": 3556, "label": "3556 Hz" },
+      { "wire": 32767, "display": 6325, "label": "6325 Hz" },
+      { "wire": 49151, "display": 11247, "label": "11247 Hz" },
+      { "wire": 65534, "display": 20000, "label": "20000 Hz" }
+    ] },
+    { "block": "cab", "name": "delay_l", "samples": [
+      { "wire": 0, "display": 0, "label": "0.000 ms" },
+      { "wire": 16383, "display": 0.25, "label": "0.250 ms" },
+      { "wire": 32767, "display": 0.5, "label": "0.500 ms" },
+      { "wire": 49151, "display": 0.75, "label": "0.750 ms" },
+      { "wire": 65534, "display": 1.0, "label": "1.000 ms" }
+    ] },
+    { "block": "cab", "name": "delay_r", "samples": [
+      { "wire": 0, "display": 0, "label": "0.000 ms" },
+      { "wire": 16383, "display": 0.25, "label": "0.250 ms" },
+      { "wire": 32767, "display": 0.5, "label": "0.500 ms" },
+      { "wire": 49151, "display": 0.75, "label": "0.750 ms" },
+      { "wire": 65534, "display": 1.0, "label": "1.000 ms" }
+    ] },
+    { "block": "cab", "name": "proximity_r", "samples": [
+      { "wire": 0, "display": 0, "label": "0.00" },
+      { "wire": 16383, "display": 2.5, "label": "2.50" },
+      { "wire": 32767, "display": 5, "label": "5.00" },
+      { "wire": 49151, "display": 7.5, "label": "7.50" },
+      { "wire": 65534, "display": 10, "label": "10.00" }
+    ] },
+    { "block": "cab", "name": "prox_freq", "samples": [
+      { "wire": 0, "display": 20, "label": "20.0 Hz" },
+      { "wire": 16383, "display": 35.6, "label": "35.6 Hz" },
+      { "wire": 32767, "display": 63.2, "label": "63.2 Hz" },
+      { "wire": 49151, "display": 112.5, "label": "112.5 Hz" },
+      { "wire": 65534, "display": 200, "label": "200.0 Hz" }
+    ] },
+    { "block": "cab", "name": "dephase", "samples": [
+      { "wire": 0, "display": 0, "label": "0.00" },
+      { "wire": 16383, "display": 2.5, "label": "2.50" },
+      { "wire": 32767, "display": 5, "label": "5.00" },
+      { "wire": 49151, "display": 7.5, "label": "7.50" },
+      { "wire": 65534, "display": 10, "label": "10.00" }
+    ] },
+    { "block": "cab", "name": "motor_time_constant", "samples": [
+      { "wire": 0, "display": 20, "label": "20.00 ms" },
+      { "wire": 16383, "display": 63.24, "label": "63.24 ms" },
+      { "wire": 32767, "display": 200, "label": "200.0 ms" },
+      { "wire": 49151, "display": 632.4, "label": "632.4 ms" },
+      { "wire": 65534, "display": 2000, "label": "2000 ms" }
+    ] }
+  ]
+}

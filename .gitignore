@@ -1,0 +1,83 @@
+node_modules/
+dist/
+build/
+*.log
+.env
+.env.local
+
+# IDE / per-developer config
+.idea/
+.claude/settings.local.json
+
+# Stale path — wiki cache lives at `docs/_private/wiki/` now (covered by
+# the `docs/_private/` rule below). Kept here as a guard against a
+# regression that puts it back at the old location.
+docs/wiki/
+
+# Third-party copyrighted vendor documentation (Fractal Audio, ASM, etc.)
+# Source PDFs are the publisher's copyrighted product and don't ship
+# in the repo; download from each publisher's site to your local clone.
+# See docs/manuals/README.md for the expected file list.
+#
+# The .txt extractions of these PDFs ARE committed (derivative
+# reference material under fair-use interoperability research) so
+# contributors and Claude Code agents can grep them without
+# re-supplying the source PDFs.
+docs/manuals/*.pdf
+docs/devices/*/manuals/*.pdf
+
+# samples/ is entirely local-only — captures, factory preset exports
+# (Fractal IP, don't redistribute), debug logs, and decoded outputs
+# from analysis scripts. Nothing in here is committed. Generated
+# artifacts that DO ship with the binary (e.g. data/factory-data.json,
+# data/axefx2-factory-data.json) live in `data/` so this gitignore
+# stays simple.
+samples/
+
+# Local user backups of preset dumps. Created automatically by the
+# backup_location MCP tool (and by the auto-backup path in
+# save_to_location when overwriting non-factory content with force=true).
+# Each file is ~12 KB; never committed.
+backups/
+
+# Agent-regression sweep artifacts — local-only analytics corpus.
+# Per-case stream-json traces (~100 KB each, 30+ per full sweep) and
+# the append-only summary log accumulate quickly. Useful for cross-
+# session analytics ("did recipe-pickup wall-time drop after the
+# migration?") but noisy in git.
+scripts/agent-regression/traces/
+scripts/agent-regression/results.jsonl
+
+# SPD-SX reverse-engineering scratch work (BK-019 feasibility probe).
+# Local-only until the format decode stabilizes and we decide what belongs
+# in the repo.
+scripts/spdsx-td0/
+
+# Ghidra script isolation subdir. Several Ghidra scripts in scripts/ghidra/
+# have UTF-8/em-dash decoding issues that break the headless compile when
+# loaded together. The .cmd runners work around this by copying the single
+# canonical script into find-preset-parser/ on every run and pointing
+# Ghidra's scriptPath at that subdir. Contents are auto-generated copies
+# of files already committed at the parent path; tracking them would
+# double-commit identical bytes.
+packages/fractal-midi/scripts/ghidra/find-preset-parser/
+packages/fractal-midi/scripts/ghidra/find-firmware-emitter/
+
+# Private operational docs — founder TODO lists, session logs, marketing
+# drafts, internal data dumps. Decided 2026-05-09 (Session 52): keep
+# protocol RE / architecture / decisions / capture-guides / research
+# artefacts committed (the OSS public good); the rest live here, local
+# only. See `docs/_private/STATE.md` for session orientation when
+# working in this repo locally.
+docs/_private/
+docs/spdsx-kits/
+docs/PARALLEL-WORK.md
+docs/TOOL-ARCHIVE.md
+/.claude/worktrees/
+
+# one-off trace-analysis scratch (root .js/.cjs violate TS-in-src convention)
+/analyze-traces.*
+
+# Workflow-tool scratch. The orchestration runtime persists each generated
+# workflow script here; they are local run artifacts, not source.
+scripts/_workflows/

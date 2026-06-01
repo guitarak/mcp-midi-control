@@ -1,0 +1,140 @@
+# fractal-midi
+
+Pure-TypeScript codec and parameter dictionaries for Fractal Audio
+guitar processors. Build and parse the SysEx wire bytes a Fractal
+device speaks, without pulling in a MIDI transport library.
+
+> **First public release.** Covers AM4 and Axe-Fx II at hardware-verified
+> parity, plus the Axe-Fx III at codec and calibration via public-capture
+> verification and JUCE-BinaryData mining (III hardware-verification stays
+> community-driven; see the III notes in the coverage table).
+
+> **Unaffiliated community library.** "Fractal Audio", "AM4",
+> "Axe-Fx", "Axe-Fx II", "Axe-Fx III", "FM3", and "FM9" are
+> trademarks of Fractal Audio Systems, Inc. This project neither
+> claims endorsement from, nor affiliation with, Fractal Audio
+> Systems. The package name uses the "Fractal" trademark
+> descriptively (nominative fair use) to identify the hardware
+> family this library targets. See [`NOTICE`](./NOTICE) for the
+> full trademark statement.
+
+## What this is
+
+- **JSON-shaped parameter dictionaries.** Every block-and-param the
+  device understands, with display unit, value range, and the
+  paramId that goes on the wire. Reverse-engineered against real
+  hardware and Fractal's own published 3rd-party MIDI specs.
+- **Pure-TypeScript codec.** Display value in (`gain: 7.5`,
+  `'Plexi 100W High'`), SysEx bytes out (`Uint8Array`). No MIDI
+  library required.
+- **Parsers and validators.** Given captured bytes, parse back to
+  display values for round-trip equality testing.
+- **Reference data.** Fractal's amp / cab / drive lineage tables
+  (the "the JC-120 model is based on this real-world amp" data),
+  factory bank metadata, applicability tables.
+
+## What this is not
+
+- **Not a MIDI library.** Routing bytes to and from your hardware
+  is your responsibility. Use `node-midi`, `webmidi`,
+  `easymidi`, JUCE, RtMidi, CoreMIDI, ALSA, whatever fits.
+- **Not a preset editor.** This package gives you the wire-level
+  primitives a preset editor would be built on top of.
+- **Not affiliated with Fractal Audio Systems.** See the trademark
+  notice above and [`NOTICE`](./NOTICE).
+
+## Install
+
+```bash
+npm install fractal-midi
+```
+
+Node >= 18. ESM-only.
+
+## Usage
+
+```ts
+import { buildSetParam, parseSetParam } from 'fractal-midi/am4/codec';
+import { params, blocks } from 'fractal-midi/am4';
+
+// Build the SysEx bytes for "set amp gain to 7.5"
+const bytes = buildSetParam({ block: 'amp', param: 'gain', value: 7.5 });
+// → Uint8Array starting with 0xF0 ... 0xF7
+
+// Round-trip: parse captured bytes back to display values
+const display = parseSetParam(bytes);
+// → { block: 'amp', param: 'gain', value: 7.5 }
+
+// Inspect the dictionary directly
+console.log(params.amp.gain);
+// → { unit: 'knob-0-10', range: [0, 10], pidHigh: ..., pidLow: ..., ... }
+```
+
+The Axe-Fx II and Axe-Fx III sub-paths follow the same shape:
+
+```ts
+import { buildSetParam } from 'fractal-midi/axe-fx-ii/codec';
+import { params } from 'fractal-midi/axe-fx-iii';
+```
+
+## Per-device coverage
+
+| Device | Catalog | Codec | Calibration | Hardware-verified |
+|---|---|---|---|---|
+| AM4 | ✅ | ✅ | ✅ | ✅ |
+| Axe-Fx II | ✅ | ✅ | ✅ | ✅ |
+| Axe-Fx III | ✅ (full catalog) | ✅ ([see note](#axe-fx-iii-codec-note)) | ✅ ([see note](#axe-fx-iii-calibration-note)) | 🟡 community beta ([see note](#axe-fx-iii-hardware-note)) |
+| FM3 | ❌ | ❌ | ❌ | ❌ |
+| FM9 | ❌ | ❌ | ❌ | ❌ |
+
+### Coverage notes
+
+#### Axe-Fx III codec note
+
+The III's SET_PARAMETER wire envelope (fn=0x01, sub-action `09 00`,
+23-byte frame) is byte-verified against 10 public community captures
+spanning two effect blocks and two sub-action codes. See the
+`axe-fx-iii/setparam` test goldens (302 cases: 36 envelope vectors,
+264 round-trip `build` to `parse` to equality cases, and 2
+`parseStateBroadcast` assertions). The GET-response shape is
+hypothesis-only (no public capture exists); the parser handles both
+the `09 00` / `52 00` set-echo shape and the async `04 01`
+STATE_BROADCAST shape via `parseSetGetParameterResponse` /
+`parseStateBroadcast`.
+
+#### Axe-Fx III calibration note
+
+III calibration = 100% of catalog entries carry a non-`'unverified'`
+unit tag (16 string-typed `_NAME` / `_LABEL` / `_MSG` entries are
+exempted by the calibration gate, since they have no `'string'` unit in
+the `Param` type). Enum vocabularies are resolved at runtime via
+`resolveEnumValues(name)` from `enumOverlay.ts`, which carries a
+`provenance` field on every entry: `'am4-shared'` (AM4-verified,
+shared with III), `'fractal-convention'` (universal Fractal-family
+convention like OFF/ON / channel pickers), or `'iii-spec'` (hand-
+curated for III-only params). Coverage of enum vocabularies and
+numeric display ranges is partial: `resolveEnumValues` returns
+`undefined` for params not yet mapped, and many XML-derived numeric
+entries carry a unit tag but no `displayMin` / `displayMax`. Treat
+the catalog as the wire-level truth; treat the calibration overlay
+as display guidance the user can correct via GitHub issue.
+
+#### Axe-Fx III hardware note
+
+The 🟡 hardware-verified status means the maintainer does not own an
+Axe-Fx III for round-trip confirmation. Community users running the
+device are invited to file GitHub issues against any wire or label
+that disagrees with their hardware.
+
+#### FM3 / FM9
+
+FM3 and FM9 share the III protocol family (model bytes `0x11` /
+`0x12` vs III's `0x10`, identical envelope per Fractal's v1.4 MIDI
+spec). Catalog + codec + calibration for those devices are planned as
+mechanical ports of the III pipeline once the FM3-Edit / FM9-Edit
+JUCE binaries are mined for parameterName + dispatcher tables.
+
+## License
+
+[Apache License 2.0](./LICENSE). See [`NOTICE`](./NOTICE) for the
+trademark statement.

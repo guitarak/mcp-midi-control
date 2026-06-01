@@ -1,0 +1,581 @@
+/**
+ * BK-065 + BK-066 Phase 1 goldens.
+ *
+ * Two helpers, two test groups:
+ *
+ *   1. `resolveParamAlias(port, blockType, paramName)` from
+ *      `packages/core/src/protocol-generic/cross-device-aliases.ts`.
+ *      Asserts that the alias table maps cross-device foreign words
+ *      to each device's canonical name, that canonical names pass
+ *      through unchanged, and that unknown names pass through.
+ *
+ *   2. `findEnumMatch(input, validValues)` from
+ *      `packages/core/src/protocol-generic/cross-device-enums.ts`.
+ *      Asserts the four-tier match cascade: `exact`, `case_or_space`,
+ *      `fuzzy`, and `none`, plus the top-3 candidates returned for
+ *      the disambiguation path.
+ *
+ * Run:  npx tsx scripts/verify-cross-device-aliases.ts
+ *
+ * Wired into root `package.json` `test` script so it runs as part
+ * of `npm test` / `npm run preflight`. Dispatcher integration of
+ * both helpers is deferred until Stream A finishes rebuilding the
+ * validation codepath (BK-059 territory).
+ */
+
+import {
+  resolveParamAlias,
+  type ResolvedParamAlias,
+} from '@mcp-midi-control/core/protocol-generic/cross-device-aliases.js';
+import {
+  findEnumMatch,
+  type EnumMatchCertainty,
+} from '@mcp-midi-control/core/protocol-generic/cross-device-enums.js';
+
+// ── BK-065 alias cases ──────────────────────────────────────────────
+
+interface AliasCase {
+  port: string;
+  block: string;
+  input: string;
+  expected: ResolvedParamAlias;
+  desc: string;
+}
+
+const aliasCases: AliasCase[] = [
+  // ── AM4: II-vocabulary inputs resolve to AM4 canonicals ──────────
+  {
+    port: 'am4',
+    block: 'drive',
+    input: 'volume',
+    expected: { canonical: 'level', aliasUsed: 'volume' },
+    desc: 'AM4 drive.volume -> level (II vocabulary)',
+  },
+  {
+    port: 'am4',
+    block: 'drive',
+    input: 'output',
+    expected: { canonical: 'level', aliasUsed: 'output' },
+    desc: 'AM4 drive.output -> level',
+  },
+  {
+    port: 'am4',
+    block: 'drive',
+    input: 'output_level',
+    expected: { canonical: 'level', aliasUsed: 'output_level' },
+    desc: 'AM4 drive.output_level -> level',
+  },
+  {
+    port: 'am4',
+    block: 'drive',
+    input: 'gain',
+    expected: { canonical: 'drive', aliasUsed: 'gain' },
+    desc: 'AM4 drive.gain -> drive (II canonical)',
+  },
+  {
+    port: 'am4',
+    block: 'amp',
+    input: 'master_volume',
+    expected: { canonical: 'master', aliasUsed: 'master_volume' },
+    desc: 'AM4 amp.master_volume -> master (II canonical)',
+  },
+  {
+    port: 'am4',
+    block: 'wah',
+    input: 'effect_type',
+    expected: { canonical: 'type', aliasUsed: 'effect_type' },
+    desc: 'AM4 wah.effect_type -> type (II canonical)',
+  },
+  {
+    port: 'am4',
+    block: 'reverb',
+    input: 'effect_type',
+    expected: { canonical: 'type', aliasUsed: 'effect_type' },
+    desc: 'AM4 reverb.effect_type -> type',
+  },
+
+  // ── II: AM4-vocabulary inputs resolve to II canonicals ───────────
+  {
+    port: 'axe-fx-ii',
+    block: 'drive',
+    input: 'level',
+    expected: { canonical: 'volume', aliasUsed: 'level' },
+    desc: 'II drive.level -> volume (AM4 vocabulary)',
+  },
+  {
+    port: 'axe-fx-ii',
+    block: 'drive',
+    input: 'drive',
+    expected: { canonical: 'gain', aliasUsed: 'drive' },
+    desc: 'II drive.drive -> gain (AM4 vocabulary)',
+  },
+  {
+    port: 'axe-fx-ii',
+    block: 'amp',
+    input: 'master',
+    expected: { canonical: 'master_volume', aliasUsed: 'master' },
+    desc: 'II amp.master -> master_volume (AM4 vocabulary)',
+  },
+  {
+    port: 'axe-fx-ii',
+    block: 'wah',
+    input: 'type',
+    expected: { canonical: 'effect_type', aliasUsed: 'type' },
+    desc: 'II wah.type -> effect_type (AM4 vocabulary)',
+  },
+
+  // ── III: cross-device aliases ────────────────────────────────────
+  {
+    port: 'axe-fx-iii',
+    block: 'drive',
+    input: 'volume',
+    expected: { canonical: 'level', aliasUsed: 'volume' },
+    desc: 'III drive.volume -> level (II vocabulary)',
+  },
+  {
+    port: 'axe-fx-iii',
+    block: 'wah',
+    input: 'effect_type',
+    expected: { canonical: 'type', aliasUsed: 'effect_type' },
+    desc: 'III wah.effect_type -> type (II vocabulary)',
+  },
+
+  // ── Senior MCP review 2026-05-20: musician-vocabulary additions ──
+  // For AM4 + II, `regen` / `regeneration` aliases live in fractal-midi
+  // per-device PARAM_ALIASES (codec, not this table) — they are
+  // within-device musician-vocabulary aliases, not cross-device
+  // divergences. The dispatcher's resolveParamKey catches them at step
+  // 1b via the descriptor's block.aliases. Coverage for that path
+  // lives in fractal-midi's own test suite.
+  //
+  // This table now expects pass-through for AM4 + II so we don't
+  // duplicate the alias entry in two layers (which would silently
+  // mask a regression if the codec dropped its entry).
+  {
+    port: 'am4',
+    block: 'delay',
+    input: 'regen',
+    expected: { canonical: 'regen' },
+    desc: 'AM4 delay.regen pass-through (alias lives in fractal-midi codec)',
+  },
+  {
+    port: 'axe-fx-ii',
+    block: 'delay',
+    input: 'regen',
+    expected: { canonical: 'regen' },
+    desc: 'II delay.regen pass-through (alias lives in fractal-midi codec)',
+  },
+  // III still holds these aliases here because fractal-midi has no
+  // III PARAM_ALIASES table (III SET_PARAM undecoded as of Session 97).
+  // Audit and migrate to the codec when III SET_PARAM lands.
+  {
+    port: 'axe-fx-iii',
+    block: 'delay',
+    input: 'regen',
+    expected: { canonical: 'feedback', aliasUsed: 'regen' },
+    desc: 'III delay.regen -> feedback (kept in this table; III codec lacks alias support)',
+  },
+  {
+    port: 'am4',
+    block: 'amp',
+    input: 'output',
+    expected: { canonical: 'master', aliasUsed: 'output' },
+    desc: 'AM4 amp.output -> master (additional to output_level)',
+  },
+  {
+    port: 'am4',
+    block: 'amp',
+    input: 'mid_freq',
+    expected: { canonical: 'mid', aliasUsed: 'mid_freq' },
+    desc: 'AM4 amp.mid_freq -> mid (amp has only `mid`, not `mid_freq`)',
+  },
+  {
+    port: 'am4',
+    block: 'amp',
+    input: 'mid_frequency',
+    expected: { canonical: 'mid', aliasUsed: 'mid_frequency' },
+    desc: 'AM4 amp.mid_frequency -> mid',
+  },
+
+  // ── Canonical names pass through unchanged (no aliasUsed) ────────
+  {
+    port: 'am4',
+    block: 'drive',
+    input: 'level',
+    expected: { canonical: 'level' },
+    desc: 'AM4 drive.level (canonical) passes through',
+  },
+  {
+    port: 'axe-fx-ii',
+    block: 'drive',
+    input: 'volume',
+    expected: { canonical: 'volume' },
+    desc: 'II drive.volume (canonical) passes through',
+  },
+  {
+    port: 'axe-fx-ii',
+    block: 'amp',
+    input: 'master_volume',
+    expected: { canonical: 'master_volume' },
+    desc: 'II amp.master_volume (canonical) passes through',
+  },
+
+  // ── Unknown names pass through unchanged ─────────────────────────
+  {
+    port: 'am4',
+    block: 'drive',
+    input: 'mystery_knob',
+    expected: { canonical: 'mystery_knob' },
+    desc: 'unknown name passes through unchanged',
+  },
+  {
+    port: 'am4',
+    block: 'unknown_block',
+    input: 'anything',
+    expected: { canonical: 'anything' },
+    desc: 'unknown block passes through',
+  },
+  {
+    port: 'unregistered_port',
+    block: 'drive',
+    input: 'volume',
+    expected: { canonical: 'volume' },
+    desc: 'unknown port passes through',
+  },
+
+  // ── Case + whitespace tolerance on input ─────────────────────────
+  {
+    port: 'AM4',
+    block: 'Drive',
+    input: 'VOLUME',
+    expected: { canonical: 'level', aliasUsed: 'VOLUME' },
+    desc: 'case-insensitive port + block + name lookup',
+  },
+  {
+    port: 'am4',
+    block: 'drive',
+    input: '  volume  ',
+    expected: { canonical: 'level', aliasUsed: '  volume  ' },
+    desc: 'whitespace-tolerant name lookup',
+  },
+];
+
+// ── BK-066 enum matcher cases ───────────────────────────────────────
+
+interface EnumCase {
+  input: string;
+  valid: string[];
+  expectedMatch: string | undefined;
+  expectedCertainty: EnumMatchCertainty;
+  expectedTopCandidate?: string;
+  desc: string;
+}
+
+// Realistic-ish vocabulary slices drawn from fractal-midi packed
+// catalogs (II all-caps, AM4 mixed-case). Each test below picks the
+// minimum slice that disambiguates the case.
+const AM4_AMPS: string[] = [
+  'USA Pre Clean',
+  'USA MK IIC+',
+  'USA MK IV Rhythm 1',
+  'USA Lead',
+  'Brit 800',
+];
+
+const II_AMPS: string[] = [
+  'USA CLEAN',
+  'USA PRE CLEAN',
+  'USA IIC+',
+  'USA IIC+ BRight',
+  'BRIT 800',
+];
+
+const enumCases: EnumCase[] = [
+  // ── Tier 1: exact ─────────────────────────────────────────────────
+  {
+    input: 'USA Pre Clean',
+    valid: AM4_AMPS,
+    expectedMatch: 'USA Pre Clean',
+    expectedCertainty: 'exact',
+    expectedTopCandidate: 'USA Pre Clean',
+    desc: 'AM4 USA Pre Clean exact match',
+  },
+  {
+    input: 'BRIT 800',
+    valid: II_AMPS,
+    expectedMatch: 'BRIT 800',
+    expectedCertainty: 'exact',
+    desc: 'II BRIT 800 exact match',
+  },
+
+  // ── Tier 2: case + whitespace collapse ───────────────────────────
+  {
+    input: 'usa pre clean',
+    valid: AM4_AMPS,
+    expectedMatch: 'USA Pre Clean',
+    expectedCertainty: 'case_or_space',
+    desc: 'AM4 lowercase USA Pre Clean',
+  },
+  {
+    input: '  USA  PRE  CLEAN  ',
+    valid: II_AMPS,
+    expectedMatch: 'USA PRE CLEAN',
+    expectedCertainty: 'case_or_space',
+    desc: 'II whitespace-collapsed USA PRE CLEAN',
+  },
+  {
+    input: 'usa iic+',
+    valid: II_AMPS,
+    expectedMatch: 'USA IIC+',
+    expectedCertainty: 'case_or_space',
+    desc: 'II lowercase USA IIC+ preserves punctuation',
+  },
+  {
+    input: 'USA MK IIC+',
+    valid: AM4_AMPS,
+    expectedMatch: 'USA MK IIC+',
+    expectedCertainty: 'exact',
+    desc: 'AM4 USA MK IIC+ exact (control for tier 2 punctuation)',
+  },
+
+  // ── Tier 3: fuzzy distance <= 2 ──────────────────────────────────
+  // "Brit 80" -> "Brit 800" is distance 1 (insert '0'). Within tier.
+  {
+    input: 'Brit 80',
+    valid: AM4_AMPS,
+    expectedMatch: 'Brit 800',
+    expectedCertainty: 'fuzzy',
+    expectedTopCandidate: 'Brit 800',
+    desc: 'AM4 Brit 80 -> Brit 800 (distance 1)',
+  },
+  // "USA IIC" -> "USA IIC+" is distance 1 (insert '+'). Tier 3.
+  {
+    input: 'USA IIC',
+    valid: II_AMPS,
+    expectedMatch: 'USA IIC+',
+    expectedCertainty: 'fuzzy',
+    desc: 'II USA IIC -> USA IIC+ (distance 1)',
+  },
+
+  // ── Tier 4: none (top-3 candidates returned) ─────────────────────
+  // "Vox AC30" not in vocab and too far from anything. Tier 4.
+  {
+    input: 'Vox AC30',
+    valid: AM4_AMPS,
+    expectedMatch: undefined,
+    expectedCertainty: 'none',
+    desc: 'AM4 Vox AC30 -> none (out of distance)',
+  },
+  // "USA CLEAN" on AM4 vocab: normalized "usa clean" vs "usa lead"
+  // is distance 2 (sub + sub + delete; algorithm aligns "_lean" with
+  // "lead"), inside the fuzzy tier, so we get a fuzzy match. The
+  // closest match is `USA Lead` and the candidates list surfaces
+  // `USA Pre Clean` and `USA MK IIC+` as the next-nearest options.
+  // BK-066 Phase 2 is the cross-device concept-key table that would
+  // promote "USA CLEAN" -> "USA Pre Clean" via a semantic mapping
+  // instead of edit distance; until then, the disambiguation hint
+  // is exactly what the helper should surface.
+  {
+    input: 'USA CLEAN',
+    valid: AM4_AMPS,
+    expectedMatch: 'USA Lead',
+    expectedCertainty: 'fuzzy',
+    expectedTopCandidate: 'USA Lead',
+    desc: 'AM4 USA CLEAN fuzzy -> USA Lead (BK-066 Phase 2 concept map will refine)',
+  },
+  // True tier-4 case where nothing is within fuzzy range. "Random
+  // synth thing" is far from every AM4 amp; the helper should
+  // return `match: undefined` with the three closest values as
+  // candidates so the caller can render a "did you mean ..." list.
+  {
+    input: 'Random Synth Thing',
+    valid: AM4_AMPS,
+    expectedMatch: undefined,
+    expectedCertainty: 'none',
+    desc: 'AM4 Random Synth Thing -> none with 3 candidates',
+  },
+
+  // ── Tier 3/4 boundary precision (post-Session 121 review) ─────────
+  // These cases lock in `FUZZY_MAX_DISTANCE = 2`. A prior review
+  // hypothesised a fuzzy match could silently substitute "Tweedy" ->
+  // "Tweed"-something; the audit confirmed Tier 3 rejects with a
+  // `suggested_substitution` rather than auto-substituting, and
+  // distance >= 3 falls cleanly to Tier 4. If a future change loosens
+  // the threshold or alters tie-break behavior, these assertions
+  // catch it before silent cross-collision substitution can ship.
+  //
+  // Synthetic 3-char vocab keeps the arithmetic easy to verify by
+  // inspection (no risk of a near-collision in the realistic vocab
+  // changing the expected match as the catalog grows).
+  {
+    input: 'Fox',
+    valid: ['Foo', 'Bar', 'Baz'],
+    expectedMatch: 'Foo',
+    expectedCertainty: 'fuzzy',
+    expectedTopCandidate: 'Foo',
+    desc: 'distance 1 (synthetic): Fox -> Foo (sub o->x)',
+  },
+  {
+    input: 'Foxy',
+    valid: ['Foo', 'Bar', 'Baz'],
+    expectedMatch: 'Foo',
+    expectedCertainty: 'fuzzy',
+    expectedTopCandidate: 'Foo',
+    desc: 'distance 2 (synthetic, at the fuzzy ceiling): Foxy -> Foo',
+  },
+  {
+    input: 'Foxyz',
+    valid: ['Foo', 'Bar', 'Baz'],
+    expectedMatch: undefined,
+    expectedCertainty: 'none',
+    desc:
+      'distance 3 (synthetic, MUST be Tier 4): Foxyz -> none. Locks ' +
+      'in FUZZY_MAX_DISTANCE=2; if this flips to fuzzy a future ' +
+      'threshold relaxation has shipped without a regression test.',
+  },
+
+  // The Session 121 "Tweedy -> Tweed" hypothesis. The audit found
+  // there is no bare "Tweed" entry in the AM4 amp catalog; only
+  // "5F1 Tweed EC Champlifier" (length 24). "Tweedy" (length 6) is
+  // ~19 edits away — far past the fuzzy ceiling — so the resolver
+  // must return `none`, NOT silently route the user to a Tweed
+  // variant. This case exists to keep that finding pinned even if
+  // the AMP_TYPES list grows to add new Tweed variants in the
+  // future (a new "Tweed" bare entry would silently fail this test).
+  {
+    input: 'Tweedy',
+    valid: ['5F1 Tweed EC Champlifier', 'Plexi 100W Normal', 'USA Lead'],
+    expectedMatch: undefined,
+    expectedCertainty: 'none',
+    desc:
+      'Session 121 hypothesis: "Tweedy" must NOT auto-substitute to ' +
+      'a Tweed-family entry (distance to "5F1 Tweed EC Champlifier" is 19)',
+  },
+  // Substring-of-valid is not a match. Levenshtein measures full-
+  // string edit cost, so the length-difference dominates whenever
+  // the input is materially shorter than the candidate. "Tweed" as
+  // a bare token is NOT a fuzzy match for "5F1 Tweed EC Champlifier"
+  // even though the literal substring appears.
+  {
+    input: 'Tweed',
+    valid: ['5F1 Tweed EC Champlifier', 'Plexi 100W Normal'],
+    expectedMatch: undefined,
+    expectedCertainty: 'none',
+    desc:
+      'substring-of-valid is not enough: bare "Tweed" (distance 19) ' +
+      'must NOT match a long entry that contains it',
+  },
+
+  // Tie-break determinism. When two valid values are equidistant,
+  // the resolver must pick the one earlier in `validValues` (stable
+  // by insertion order). Without this guarantee a vocab reordering
+  // could silently change which canonical the agent sees.
+  {
+    input: 'cat',
+    valid: ['bat', 'cap'],
+    expectedMatch: 'bat',
+    expectedCertainty: 'fuzzy',
+    expectedTopCandidate: 'bat',
+    desc:
+      'tie-break: input equidistant from two valid values (cat <-> ' +
+      'bat both at distance 1; cat <-> cap also at distance 1) picks ' +
+      'the earlier-inserted value',
+  },
+
+  // Near-collision pair WITHIN the vocabulary. The two valid values
+  // are themselves distance 1 apart, and the input is distance 1
+  // from both. The dangerous condition the audit warned about:
+  // adding a new enum entry within Levenshtein-2 of an existing one
+  // creates ambiguity. The resolver must still pick deterministically
+  // and surface both as candidates so callers can warn.
+  {
+    input: 'For',
+    valid: ['Foo', 'Foe'],
+    expectedMatch: 'Foo',
+    expectedCertainty: 'fuzzy',
+    expectedTopCandidate: 'Foo',
+    desc:
+      'near-collision within vocab (Foo/Foe at distance 1): input ' +
+      'equidistant from both picks earliest (Foo) and surfaces ties',
+  },
+
+  // Defensive degeneracy: empty `validValues`. Should not crash,
+  // should not match anything, and the runner accepts an empty
+  // candidates list (no values exist to suggest).
+  {
+    input: 'anything',
+    valid: [],
+    expectedMatch: undefined,
+    expectedCertainty: 'none',
+    desc: 'empty validValues list: returns none, no crash, empty candidates',
+  },
+
+  // Tier 2 with collapsed whitespace + case + preserved punctuation.
+  // Ensures the case/whitespace tier handles trailing/leading runs
+  // without sliding into fuzzy (where punctuation could be edited
+  // away). The `+` must survive.
+  {
+    input: '  usa  iic+  ',
+    valid: ['USA IIC+', 'USA IIC++'],
+    expectedMatch: 'USA IIC+',
+    expectedCertainty: 'case_or_space',
+    desc:
+      'case + whitespace-collapse at boundary; punctuation `+` ' +
+      'preserved (no fuzzy fall-through to USA IIC++)',
+  },
+];
+
+// ── Run ─────────────────────────────────────────────────────────────
+
+function deepEqualAlias(a: ResolvedParamAlias, b: ResolvedParamAlias): boolean {
+  return a.canonical === b.canonical && a.aliasUsed === b.aliasUsed;
+}
+
+let passed = 0;
+let failed = 0;
+
+console.log('── BK-065 resolveParamAlias goldens ──');
+for (const c of aliasCases) {
+  const got = resolveParamAlias(c.port, c.block, c.input);
+  const ok = deepEqualAlias(got, c.expected);
+  const mark = ok ? '✓' : '✗';
+  console.log(`${mark} ${c.desc}`);
+  if (!ok) {
+    console.log(`    port=${c.port} block=${c.block} input=${JSON.stringify(c.input)}`);
+    console.log(`    expected: ${JSON.stringify(c.expected)}`);
+    console.log(`    got:      ${JSON.stringify(got)}`);
+    failed++;
+  } else {
+    passed++;
+  }
+}
+
+console.log('\n── BK-066 findEnumMatch goldens ──');
+for (const c of enumCases) {
+  const got = findEnumMatch(c.input, c.valid);
+  let ok = got.match === c.expectedMatch && got.certainty === c.expectedCertainty;
+  if (ok && c.expectedTopCandidate !== undefined) {
+    ok = got.candidates[0] === c.expectedTopCandidate;
+  }
+  // Tier 4 must always return up to 3 candidates so callers can
+  // render a "did you mean ..." message; assert that property
+  // (skipped only for the empty-valid-list degeneracy where there
+  // is nothing to suggest).
+  if (ok && c.expectedCertainty === 'none' && c.valid.length > 0) {
+    ok = got.candidates.length > 0 && got.candidates.length <= 3;
+  }
+  const mark = ok ? '✓' : '✗';
+  console.log(`${mark} ${c.desc}`);
+  if (!ok) {
+    console.log(`    input=${JSON.stringify(c.input)}`);
+    console.log(`    expected: match=${JSON.stringify(c.expectedMatch)} certainty=${c.expectedCertainty} top=${JSON.stringify(c.expectedTopCandidate)}`);
+    console.log(`    got:      ${JSON.stringify(got)}`);
+    failed++;
+  } else {
+    passed++;
+  }
+}
+
+const total = aliasCases.length + enumCases.length;
+console.log(`\n${passed}/${total} cases pass.`);
+if (failed > 0) process.exit(1);

@@ -1,0 +1,57 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Node
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+.parcel-cache/
+
+# TypeScript incremental build
+*.tsbuildinfo
+
+# npm pack artifacts
+*.tgz
+
+# Per-device manuals - vendor PDFs are gitignored to avoid
+# re-supplying copyrighted material. The .txt extractions ARE
+# committed (derivative work, grep-able). See docs/manuals/README.md.
+docs/manuals/*.pdf
+docs/devices/*/manuals/*.pdf
+
+# Excel patch listings (vendor data, regenerable)
+docs/devices/*/manuals/*.xlsx
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Misc
+*.tmp
+*.swp

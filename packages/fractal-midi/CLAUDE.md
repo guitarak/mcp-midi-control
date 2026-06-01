@@ -1,0 +1,109 @@
+# fractal-midi, Claude Code Context
+
+Read by Claude Code when working inside `packages/fractal-midi/`.
+
+---
+
+## What this package is
+
+Pure-TypeScript codec and parameter dictionaries for Fractal Audio devices.
+Builds and parses SysEx wire bytes. No MIDI transport dependency, no MCP
+server logic. Consumers bring their own MIDI library (`node-midi`, `webmidi`,
+etc.) and use this package for the encoding layer.
+
+Published independently to npm as `fractal-midi`. The MCP server packages
+in this monorepo import from `fractal-midi/*`; the codec never imports from
+the server.
+
+## Supported devices
+
+- **AM4** (model byte `0x15`): full catalog, codec, calibration, hardware-verified
+- **Axe-Fx II** (model byte `0x07`, XL+): full catalog, codec, calibration, hardware-verified. The Axe-Fx II family spans several model bytes (`0x03` for the Mark I/II up to `0x07` for the XL+); this codec targets the XL+ hardware on hand.
+- **Axe-Fx III** (model byte `0x10`): full catalog, codec, calibration, community-beta hardware verification
+
+## Stack
+
+- TypeScript, ES modules (`"type": "module"`, `"module": "NodeNext"`)
+- Zero runtime dependencies
+- `tsx` as the TypeScript runner for scripts and tests
+- Node >= 18
+
+## Directory layout
+
+```
+packages/fractal-midi/
+├── src/
+│   ├── index.ts              # Root entry: exports VERSION only
+│   ├── shared/               # Cross-device: checksum, packValue, lineage lookup
+│   │   ├── lineage/          # JSON lineage tables (amp, cab, drive, etc.)
+│   │   └── index.ts
+│   ├── am4/                  # AM4 builders, parsers, params, blocks, calibration
+│   │   └── index.ts
+│   ├── axe-fx-ii/            # Axe-Fx II builders, parsers, params, blocks
+│   │   └── index.ts
+│   └── axe-fx-iii/           # Axe-Fx III builders, parsers, params, enum overlay
+│       └── index.ts
+├── test/                     # Golden-based test suites
+│   └── run-all.ts            # Test runner entry point
+├── scripts/
+│   └── copy-build-assets.ts  # Copies lineage JSON into dist/ after tsc
+├── docs/                     # Protocol RE docs (SYSEX-MAP, capture guides, cookbook)
+│   └── devices/              # Per-device protocol references
+└── dist/                     # Build output (gitignored)
+```
+
+## Exports map
+
+Consumers import from subpaths matching the device or shared layer:
+
+```ts
+import { packValue, fractalChecksum } from 'fractal-midi/shared';
+import { buildSetParam, params, blocks }  from 'fractal-midi/am4';
+import { buildSetParam, params }          from 'fractal-midi/axe-fx-ii';
+import { buildSetParam, params }          from 'fractal-midi/axe-fx-iii';
+```
+
+The root export (`fractal-midi`) exposes only a `VERSION` constant.
+
+## Build and test
+
+| Command | What it does |
+|---|---|
+| `npm run build` | `tsc` + `copy-build-assets` (copies lineage JSON to `dist/`) |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | `tsx test/run-all.ts` (golden-based byte-exact SysEx verification) |
+| `npm run preflight` | typecheck + test + build, in order |
+
+Run `npm run preflight` before committing changes to this package.
+
+## Publishing
+
+Bump the version in `package.json`, then publish from this directory
+(`cd packages/fractal-midi && npm publish`). The npm package is independent
+of the MCP server packages, which are private and not published.
+
+## Key conventions
+
+**Display-first API.** Public functions accept and return display units (knob
+values like `7.5`, enum strings like `'Plexi 100W High'`, dB, ms, ratios).
+Wire encoding (septet-packed 14-bit ints, packed floats, fixed-point scaling)
+is internal and never leaks through the public surface.
+
+**Param registration.** Every parameter lives in `params.ts` within its device
+directory. Each entry carries `paramId`, `controlType`, value range, display
+unit, and optional calibration. When adding a new param, add a matching golden
+case in the device's test suite.
+
+**Lineage JSON.** Lineage tables (amp/cab/drive model heritage data) live as
+JSON in `src/shared/lineage/` and are copied to `dist/` at build time by
+`scripts/copy-build-assets.ts`. The `lineageLookup` module reads them at
+runtime via `fs.readFileSync`.
+
+**Golden-based tests.** Tests assert byte-exact round-trip equality: build
+SysEx from display values, parse back, confirm equality. No mocking. When
+adding a new wire builder or parser, add a golden case.
+
+**Protocol docs live here.** Per-device `SYSEX-MAP.md`, opcode tables, capture
+guides, Ghidra scripts, and the encoding cookbook all live under `docs/` in
+this package. Consult the relevant `SYSEX-MAP.md` before speculating about
+wire shapes.

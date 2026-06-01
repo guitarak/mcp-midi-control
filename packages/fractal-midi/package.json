@@ -1,0 +1,73 @@
+{
+  "name": "fractal-midi",
+  "version": "0.1.0-alpha.11",
+  "description": "Pure-TypeScript codec and parameter dictionaries for Fractal Audio devices (AM4, Axe-Fx II, Axe-Fx III). No MIDI transport dependency, bring your own.",
+  "license": "Apache-2.0",
+  "author": "Stephen Staker <stephenstaker@gmail.com>",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "default": "./dist/shared/index.js"
+    },
+    "./am4": {
+      "types": "./dist/am4/index.d.ts",
+      "default": "./dist/am4/index.js"
+    },
+    "./axe-fx-ii": {
+      "types": "./dist/axe-fx-ii/index.d.ts",
+      "default": "./dist/axe-fx-ii/index.js"
+    },
+    "./axe-fx-iii": {
+      "types": "./dist/axe-fx-iii/index.d.ts",
+      "default": "./dist/axe-fx-iii/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TheAndrewStaker/fractal-midi.git"
+  },
+  "homepage": "https://github.com/TheAndrewStaker/fractal-midi#readme",
+  "bugs": {
+    "url": "https://github.com/TheAndrewStaker/fractal-midi/issues"
+  },
+  "keywords": [
+    "fractal",
+    "fractal-audio",
+    "axe-fx",
+    "axe-fx-ii",
+    "axe-fx-iii",
+    "am4",
+    "midi",
+    "sysex",
+    "codec",
+    "guitar",
+    "amp-modeling"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsx scripts/copy-build-assets.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx test/run-all.ts",
+    "preflight": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

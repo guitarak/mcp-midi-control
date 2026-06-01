@@ -1,0 +1,181 @@
+MCP MIDI Control v0.1.0
+=====================
+
+A local MCP server that lets Claude Desktop talk to your USB MIDI
+gear over plain English. First-class support for the Fractal AM4,
+Fractal Axe-Fx II XL+, Fractal Axe-Fx III, and ASM Hydrasynth
+Explorer. Generic MIDI primitives work against any USB MIDI device
+the OS exposes.
+
+BEFORE FIRST USE: INSTALL THE USB DRIVER FOR YOUR DEVICE
+--------------------------------------------------------
+
+Windows will not enumerate your Fractal device as a MIDI port (and
+the MCP server will not see it) until the right driver is installed.
+Do this first.
+
+  Fractal AM4:        https://www.fractalaudio.com/am4-downloads/
+  Fractal Axe-Fx II:  https://www.fractalaudio.com/axe-fx-ii-downloads/
+  Fractal Axe-Fx III: class-compliant USB MIDI, no driver needed
+  ASM Hydrasynth:     class-compliant USB MIDI, no driver needed
+
+Class-compliant devices use the Windows built-in USB-MIDI driver and
+work as soon as you plug them in. Fractal AM4 and Axe-Fx II require
+the manufacturer's driver, downloaded from the links above. Install
+as administrator, follow the installer's prompts, then plug in the
+device with the unit powered on.
+
+Without the device's driver, you can still use the generic-MIDI
+tools (send_cc, send_sysex, etc.) against any other class-compliant
+MIDI gear, but the Fractal-specific tool calls will report the
+device as not detected.
+
+INSTALL (3 steps)
+-----------------
+
+1. Make sure Claude Desktop is closed (system tray right-click then
+   Quit, not just the window's X).
+
+2. Double-click setup.cmd. A console window opens, registers this
+   folder with Claude Desktop, and waits for you to press a key.
+
+3. Open Claude Desktop. Start a new chat. The mcp-midi-control server
+   appears in the connector panel (the + button near the chat input).
+
+That's it. Ask Claude something like "Using mcp-midi-control, list the
+MIDI ports you can see" to confirm your gear is reachable.
+
+If your gear's tools don't appear, or Claude says it can't find the
+device, double-click verify-midi.cmd. It asks the OS directly which
+MIDI devices it sees and tells you whether your AM4 / Axe-Fx II /
+Hydrasynth is reachable -useful for ruling out a driver / cable /
+power issue before troubleshooting Claude Desktop.
+
+WILL THIS WRECK MY PRESETS?
+---------------------------
+
+No, and the safety is enforced by the server, not by trust in the AI:
+
+- The AI cannot save to a slot unless you used save-language ("save
+  this", "store as M03", "keep it"). Bare "build a tone at G01"
+  reads as audition, NOT save. The server refuses silent saves with a
+  visible refusal message in your chat.
+
+- If you've been editing a preset and the AI tries to load a different
+  one, the server refuses with a warning naming what would be lost.
+  You see the warning, you tell the AI save-or-discard.
+
+- Z04 is the conventional scratch slot. Tell the AI to use any other
+  letter if you've claimed Z04 for something personal.
+
+- Factory restore is one tool call away ("restore A01 to factory")
+  if you do somehow clobber something.
+
+For the full safety model + what to say to the AI to get the result
+you want, read SAFETY-FOR-MUSICIANS.md in the docs folder of the
+GitHub repo:
+https://github.com/TheAndrewStaker/mcp-midi-control/blob/main/docs/SAFETY-FOR-MUSICIANS.md
+
+REQUIREMENTS
+------------
+
+- Windows 10 or 11.
+- At least one supported device connected by USB. Driver URLs are
+  listed under "BEFORE FIRST USE" at the top of this file. Quick
+  recap:
+    * Fractal AM4:        needs Fractal's USB driver
+    * Fractal Axe-Fx II:  needs Fractal's USB driver
+    * Fractal Axe-Fx III: class-compliant, no driver
+    * ASM Hydrasynth:     class-compliant, no driver
+  (Unsupported devices are still reachable via generic-MIDI tools.)
+- Claude Desktop installed: https://claude.ai/download
+
+UPDATE
+------
+
+Double-click update.cmd to check GitHub Releases for a newer version
+and install it. The new bundle is extracted into a sibling folder
+next to this one; the old install stays on disk so you can roll back
+if anything goes wrong. Fully quit Claude Desktop before running, and
+relaunch it when update.cmd finishes.
+
+The update channel is auto-detected from your installed version:
+
+  - If your version has a pre-release suffix (e.g. 0.1.0-alpha.7),
+    update.cmd considers pre-releases AND stable releases.
+  - If your version is plain stable (e.g. 0.1.0), only stable
+    releases are considered.
+
+Flags:
+
+  update.cmd --check        Report what's available, don't install.
+  update.cmd --force        Reinstall even if you're already up to date.
+  update.cmd --prerelease   Force the pre-release channel.
+  update.cmd --stable       Force stable-only.
+  update.cmd --any          Consider both channels regardless.
+
+UNINSTALL
+---------
+
+1. Double-click uninstall.cmd to remove the entry from Claude
+   Desktop's config (any other MCP servers you have stay intact).
+2. Delete this folder.
+
+FAQ
+---
+
+Q: Windows says "this file came from another computer." Is it safe?
+A: Yes. v0.1.0 ships unsigned to keep the project free; the source is
+   open at https://github.com/TheAndrewStaker/mcp-midi-control and you
+   can read every line including the install scripts. To dismiss the
+   warning, right-click the downloaded ZIP, choose Properties, tick
+   Unblock, then extract.
+
+Q: setup.cmd ran but Claude Desktop doesn't see the tools.
+A: Make sure you fully quit Claude Desktop (system tray right-click
+   then Quit) before reopening. Closing the window with X leaves it
+   running in the background, and it only reads the config at
+   startup.
+
+Q: I see fewer tools than I expected.
+A: The default tool profile is "core" (26 tools): the unified
+   surface essentials + conversational MIDI primitives. Device-
+   specific tools (like axefx2_get_grid_layout, hydra_apply_patch,
+   raw send_sysex / send_nrpn) are hidden by default to keep the
+   agent's tool list focused. To expose everything, edit your
+   claude_desktop_config.json and add:
+       "env": { "MCP_TOOLS_PROFILE": "full" }
+   inside the mcp-midi-control entry, then fully quit + relaunch
+   Claude Desktop. The full surface has 81 tools. See README's
+   "Configuring tool profiles" section for the intermediate
+   "experimental" profile.
+
+Q: Will the AI delete my custom presets?
+A: It can't, by default. Saves require explicit save-language from
+   you, and the server refuses silent saves. See "WILL THIS WRECK MY
+   PRESETS?" above and SAFETY-FOR-MUSICIANS.md on GitHub.
+
+Q: What if the AI saves something I didn't want?
+A: Fractal's factory presets are recoverable without a backup -call
+   the tool "restore A01 to factory" (or any range) and the slot
+   returns to factory bytes. AM4-Edit also exports full-flash .syx
+   backups if you want extra insurance.
+
+Q: Can I move this folder after install?
+A: Yes, but you'll need to re-run setup.cmd from the new location so
+   the config points at the right paths.
+
+LICENSE
+-------
+
+Apache License 2.0. See LICENSE for full text. Unaffiliated community
+tool. "Fractal Audio", "AM4", "Axe-Fx II", "ASM", "Hydrasynth", and
+related product names are trademarks of their respective owners
+(Fractal Audio Systems, Inc. and Ashun Sound Machines). See NOTICE
+for the full trademark statement.
+
+LINKS
+-----
+
+- Source + issues: https://github.com/TheAndrewStaker/mcp-midi-control
+- Safety guide:    https://github.com/TheAndrewStaker/mcp-midi-control/blob/main/docs/SAFETY-FOR-MUSICIANS.md
