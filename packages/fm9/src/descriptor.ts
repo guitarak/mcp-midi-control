@@ -64,9 +64,10 @@ const GET_RESPONSE_TIMEOUT_MS = 800;
  * ear / front panel.
  */
 const FOUNDATION_WARNING = [
-  'fm9 foundation-verification scaffold. Wire shape is cloned from the',
-  'Axe-Fx III (same modern Fractal SysEx family) and the FM9 model byte',
-  'is an unverified hypothesis. Please confirm the audible/visible',
+  'fm9 foundation scaffold. Model byte (0x12), preset switch, scene',
+  'switch, and QUERY PATCH NAME / STATUS DUMP framing are',
+  'hardware-verified (2026-06-06 foundation probe); everything beyond',
+  'that surface is not wired yet. Please confirm the audible/visible',
   'response on the device front panel.',
 ].join(' ');
 
@@ -181,7 +182,14 @@ const writer: DeviceWriter = {
   ): Promise<WriteResult> {
     const n = parseLocation(location);
     const bytes = buildSwitchPresetPC(n);
-    ctx.conn.send(bytes);
+    // HARDWARE-VERIFIED (FM9 foundation probe, 2026-06-06): Windows'
+    // WinMM backend (node-midi/RtMidi) rejects the concatenated
+    // CC0+CC32+PC blob with "message size is greater than 3 bytes
+    // (and not sysex)" and the switch silently never leaves the host.
+    // Send the three channel messages separately.
+    ctx.conn.send(bytes.slice(0, 3)); // CC 0  (Bank MSB)
+    ctx.conn.send(bytes.slice(3, 6)); // CC 32 (Bank LSB)
+    ctx.conn.send(bytes.slice(6, 8)); // Program Change
     // Optional read-back: the family answers QUERY PATCH NAME with the
     // now-active preset number + name, which both verifies the switch
     // landed AND exercises the model-byte hypothesis. Best-effort — a
@@ -251,10 +259,11 @@ const writer: DeviceWriter = {
       op: 'switch_scene',
       target: String(scene),
       acked: true,
-      warning:
-        '🟡 fm9 switch_scene: III-family function 0x0C sent with the hypothesized ' +
-        'FM9 model byte; no rejection frame came back. Confirm the scene change on ' +
-        'the front panel. ' + FOUNDATION_WARNING,
+      info:
+        'fm9 switch_scene: function 0x0C sent; no rejection frame came back. ' +
+        'Hardware-verified op (2026-06-06): the FM9 echoes the new scene and the ' +
+        'front panel follows.',
+      warning: FOUNDATION_WARNING,
     };
   },
 };
@@ -305,9 +314,11 @@ export const FM9_DESCRIPTOR: DeviceDescriptor = {
       'The FM9 descriptor is a foundation-verification scaffold. Only',
       'device identification, switch_preset (0..511), and switch_scene',
       '(1..8) are wired; the block/param catalog has not been mined.',
-      'Wire shapes are cloned from the Axe-Fx III and the FM9 model',
-      'byte is an unverified hypothesis. Surface every result to the',
-      'user for front-panel confirmation, and report mismatches.',
+      'Wire shapes are cloned from the Axe-Fx III; the model byte',
+      '(0x12), preset switch (bank in CC0), scene switch, and QUERY',
+      'PATCH NAME / STATUS DUMP framing are hardware-verified against',
+      'a real FM9 (2026-06-06). Surface every result to the user for',
+      'front-panel confirmation, and report mismatches.',
     ].join(' '),
   },
 };

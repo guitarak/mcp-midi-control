@@ -21,19 +21,19 @@
 import { fractalChecksum } from '../shared/checksum.js';
 
 /**
- * FM9 model byte — ⚠️ HYPOTHESIS, NOT HARDWARE-VERIFIED.
+ * FM9 model byte — 🟢 HARDWARE-VERIFIED (2026-06-06, foundation probe
+ * against a real FM9, FW with 512 preset slots).
  *
- * Source: `docs/research/fractal-midi-extraction-plan.md` §"Adding FM9"
- * assigns 0x12 by analogy (III = 0x10, FM3 = 0x11, FM9 = "next"). The
- * III codec header also lists FM9 as 0x12, but neither claim traces to
- * a Fractal-published table or a captured FM9 frame. The plan doc and
- * the III header could both descend from the same guess.
+ * The unit answered a QUERY PATCH NAME request built with 0x12 and
+ * echoed 0x12 at pos 4 of the response, checksum valid:
  *
- * VERIFY on hardware before trusting: the FM9's response to a Universal
- * Device Inquiry (`buildDeviceInquiry`) and the model byte at pos 4 of
- * any frame the unit emits (e.g. its QUERY PATCH NAME response) are
- * ground truth. If the unit reports something else, change THIS ONE
- * CONSTANT — every builder and predicate in this file derives from it.
+ *   >> f0 00 01 74 12 0d 7f 7f 1a f7
+ *   << f0 00 01 74 12 0d 1d 03 ... (name + number of the active preset, 413)
+ *
+ * Originally hypothesized from `docs/research/fractal-midi-extraction-plan.md`
+ * §"Adding FM9" (III = 0x10, FM3 = 0x11, FM9 = 0x12) — hypothesis
+ * confirmed on first contact. Every builder and predicate in this file
+ * derives from this one constant.
  */
 export const FM9_MODEL_ID = 0x12;
 
@@ -210,6 +210,19 @@ export function parseFractalFrame(bytes: readonly number[]): {
  * Range 0..511: the FM9 ships 512 preset slots per the FM9 Owner's
  * Manual (vs. 1024 on the III Mark II). presetNumber 0..127 = bank 0
  * PC 0..127, 128..255 = bank 1, etc.
+ *
+ * BANK GOES IN CC0 (MSB) — HARDWARE-VERIFIED on a real FM9
+ * (foundation probe, 2026-06-06): the unit reads the bank number from
+ * CC0 directly and IGNORES CC32. The III codec's convention
+ * (bank = (CC0 << 7) | CC32, so banks 0..127 ride in CC32) left the
+ * FM9 on bank 0 — requesting preset 412 sent CC0=0 / CC32=3 / PC=28
+ * and the unit landed on preset 28. With CC0=3 the same PC lands on
+ * 412. CC32 is still sent (as 0) for spec completeness.
+ *
+ * NOTE for the III descriptor: the FM9 evidence suggests the III's
+ * `buildSwitchPresetPC` (bank in CC32) may have the same latent
+ * mis-bank on real III hardware — flagged for a III owner to verify,
+ * not changed here.
  */
 export function buildSwitchPresetPC(
   presetNumber: number,
@@ -227,8 +240,8 @@ export function buildSwitchPresetPC(
   const bank = Math.floor(presetNumber / 128);
   const pc = presetNumber % 128;
   return [
-    0xb0 | ch0, 0x00, (bank >> 7) & 0x7f, // CC 0 = Bank MSB
-    0xb0 | ch0, 0x20, bank & 0x7f,        // CC 32 = Bank LSB
+    0xb0 | ch0, 0x00, bank & 0x7f,        // CC 0 = Bank Select — FM9 reads THIS (hardware-verified)
+    0xb0 | ch0, 0x20, 0x00,               // CC 32 — FM9 ignores it (hardware-verified); sent as 0
     0xc0 | ch0, pc & 0x7f,                // Program Change
   ];
 }

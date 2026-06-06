@@ -54,8 +54,8 @@ function checkTrue(label: string, cond: boolean): void {
   console.log(`  ${cond ? 'OK  ' : 'FAIL'} ${label}`);
 }
 
-console.log('=== FM9 codec stub: byte-exact envelope goldens (model byte 0x12 hypothesis) ===');
-checkTrue(`FM9_MODEL_ID is the documented hypothesis 0x12`, FM9_MODEL_ID === 0x12);
+console.log('=== FM9 codec stub: byte-exact envelope goldens (model byte 0x12, hardware-verified 2026-06-06) ===');
+checkTrue(`FM9_MODEL_ID is 0x12 (hardware-verified)`, FM9_MODEL_ID === 0x12);
 check('buildSetScene(0)', hex(buildSetScene(0)), 'f0000174120c001bf7');
 check('buildSetScene(7)', hex(buildSetScene(7)), 'f0000174120c071cf7');
 check('buildGetScene()', hex(buildGetScene()), 'f0000174120c7f64f7');
@@ -65,9 +65,11 @@ check('buildStatusDump()', hex(buildStatusDump()), 'f0000174121304f7');
 check('buildDeviceInquiry()', hex(buildDeviceInquiry()), 'f07e7f0601f7');
 
 console.log('=== Preset switch: standard MIDI PC + Bank Select ===');
+// Bank rides in CC0 (MSB) — HARDWARE-VERIFIED on a real FM9 (the unit
+// ignores CC32; see buildSwitchPresetPC's doc comment).
 check('buildSwitchPresetPC(5)', hex(buildSwitchPresetPC(5)), 'b00000b02000c005');
-check('buildSwitchPresetPC(130)', hex(buildSwitchPresetPC(130)), 'b00000b02001c002');
-check('buildSwitchPresetPC(511)', hex(buildSwitchPresetPC(511)), 'b00000b02003c07f');
+check('buildSwitchPresetPC(130)', hex(buildSwitchPresetPC(130)), 'b00001b02000c002');
+check('buildSwitchPresetPC(511)', hex(buildSwitchPresetPC(511)), 'b00003b02000c07f');
 checkTrue('buildSwitchPresetPC(512) throws (FM9 has 512 slots)', (() => {
   try { buildSwitchPresetPC(512); return false; } catch { return true; }
 })());

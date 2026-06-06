@@ -7,11 +7,13 @@
 // PC + Bank Select), scene switch (0x0C), STATUS DUMP (0x13), and the
 // 0x64 MULTIPURPOSE_RESPONSE error channel.
 //
-// The model byte (`FM9_MODEL_ID = 0x12`) is a HYPOTHESIS pending
-// hardware verification — see the constant's doc comment in
-// `setParam.ts`. NO block roster, NO param catalog, NO parameter
-// SET/GET path yet: those land after the foundation is confirmed on
-// real FM9 hardware and the FM9-Edit mining pass runs.
+// The model byte (`FM9_MODEL_ID = 0x12`) is 🟢 HARDWARE-VERIFIED
+// (2026-06-06 foundation probe) — see the constant's doc comment in
+// `setParam.ts`. Preset switch (bank in CC0), scene switch (0x0C),
+// QUERY PATCH NAME (0x0D), and STATUS DUMP (0x13) framing are all
+// confirmed against a real FM9. NO block roster, NO param catalog,
+// NO parameter SET/GET path yet: those land with the FM9-Edit mining
+// pass.
 
 export {
   FM9_MODEL_ID,
