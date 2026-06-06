@@ -201,6 +201,129 @@ export function isSetGetParameterResponse(bytes: readonly number[]): boolean {
   return isFm9Frame(bytes, FN_PARAMETER_SETGET);
 }
 
+// ── fn=0x01 GET response (HARDWARE-DECODED on FM9, 2026-06-06) ─────
+//
+// The FM9 ANSWERS the GET hypothesis — the first GET-response capture
+// in the entire III family (no public III capture exists). Three
+// captured 60-byte frames, byte-decoded:
+//
+//   pos 0-5:   F0 00 01 74 12 01
+//   payload:
+//     [0-1]   sub-action echo (09 00)
+//     [2-3]   effectId (14-bit LE)
+//     [4-5]   paramId  (14-bit LE)
+//     [6-10]  value: 5-septet LSB-first packing of the param's
+//             internal 32-bit IEEE-754 float (e.g. 0x3F000000 = 0.5
+//             for a centered bipolar param)
+//     [11-12] zeros (modifier slot?)
+//     [13-14] display-string buffer length (14-bit LE; 32 observed)
+//     [15..]  packValueChunked(display string) — the device's OWN
+//             display text ("ENGAGED", "0.0100", "0.0"), 8→7
+//             sliding-window packed, space/NUL padded
+//   then checksum + F7.
+//
+// CRITICAL EVIDENCE that GET does not write: a GET (value field zero)
+// against a param holding internal 0.5 returned 0.5 — the device
+// retained its value rather than accepting a SET-to-0.
+//
+// ⚠️ paramId binding caveat: the response for catalog
+// DISTORT_MASTER (III paramId 5) displayed "ENGAGED" (a toggle) —
+// the FM9's per-family param NUMBERING diverges from the III
+// catalog. Treat name→paramId mappings as unverified until the FM9
+// calibration pass sweeps ids read-only and rebinds them by display
+// string.
+
+/** Decode a 5-septet LSB-first packing of a 32-bit value. */
+function decode5Septet32(b: readonly number[]): number {
+  return (
+    ((b[0] & 0x7f) >>> 0) |
+    ((b[1] & 0x7f) << 7) |
+    ((b[2] & 0x7f) << 14) |
+    ((b[3] & 0x7f) << 21) |
+    ((b[4] & 0x7f) << 28)
+  ) >>> 0;
+}
+
+/** Reinterpret a u32 as an IEEE-754 float32. */
+function bitsToFloat32(bits: number): number {
+  const buf = new ArrayBuffer(4);
+  new DataView(buf).setUint32(0, bits, true);
+  return new DataView(buf).getFloat32(0, true);
+}
+
+/**
+ * Sliding-window 8→7 unpack (AM4-shared scheme; mirrors
+ * `shared/packValue.ts:unpackValueChunked` — duplicated here so the
+ * fm9 module stays dependency-light within the package).
+ */
+function unpackChunked(wire: readonly number[], rawLen: number): number[] {
+  const out = new Array<number>(rawLen).fill(0);
+  let rawPos = 0;
+  let wirePos = 0;
+  while (rawPos < rawLen) {
+    const thisChunkRaw = Math.min(7, rawLen - rawPos);
+    const thisChunkWire = thisChunkRaw === 7 ? 8 : thisChunkRaw + 1;
+    for (let i = 0; i < thisChunkWire; i++) {
+      const k = i + 1;
+      const b = (wire[wirePos + i] ?? 0) & 0x7f;
+      if (i > 0 && rawPos + i - 1 < rawLen) {
+        out[rawPos + i - 1] |= ((~(0x7f >> k) & b) >> (8 - k)) & 0xff;
+      }
+      if (i < thisChunkRaw && rawPos + i < rawLen) {
+        out[rawPos + i] = (b << k) & 0xff;
+      }
+    }
+    rawPos += thisChunkRaw;
+    wirePos += thisChunkWire;
+  }
+  return out;
+}
+
+/** True when an fn=0x01 frame is the long GET-response shape (carries a display string). */
+export function isGetParameterResponse(bytes: readonly number[]): boolean {
+  if (!isSetGetParameterResponse(bytes)) return false;
+  const payload = bytes.slice(6, -2);
+  if (payload.length < 17) return false;
+  // Not a STATE_BROADCAST, and the string-length field is non-zero.
+  if (payload[0] === 0x04 && payload[1] === 0x01) return false;
+  const strLen = (payload[13] & 0x7f) | ((payload[14] & 0x7f) << 7);
+  return strLen > 0 && payload.length >= 15 + strLen + Math.ceil(strLen / 7);
+}
+
+/**
+ * Parse the hardware-decoded fn=0x01 GET response. Returns the
+ * param's internal IEEE float, its raw u32 bits, and the device's own
+ * display string (ground truth #2 per the repo's verification
+ * hierarchy).
+ */
+export function parseGetParameterResponse(bytes: readonly number[]): {
+  effectId: number;
+  paramId: number;
+  /** Internal normalized value as IEEE-754 float32. */
+  internalValue: number;
+  /** Raw u32 bit pattern of the float (for goldens / debugging). */
+  valueBits: number;
+  /** The device's own display text, trailing space/NUL trimmed. */
+  displayString: string;
+} {
+  if (!isGetParameterResponse(bytes)) {
+    throw new Error(`parseGetParameterResponse: not an fn=0x01 GET response (len=${bytes.length})`);
+  }
+  const payload = bytes.slice(6, -2);
+  const strLen = (payload[13] & 0x7f) | ((payload[14] & 0x7f) << 7);
+  const raw = unpackChunked(payload.slice(15), strLen);
+  let end = raw.length;
+  while (end > 0 && (raw[end - 1] === 0 || raw[end - 1] === 0x20)) end--;
+  const valueBits = decode5Septet32(payload.slice(6, 11));
+  return {
+    effectId: decode14(payload[2], payload[3]),
+    paramId: decode14(payload[4], payload[5]),
+    internalValue: bitsToFloat32(valueBits),
+    valueBits,
+    displayString: String.fromCharCode(...raw.slice(0, end)),
+  };
+}
+
 /** Discriminator for `parseSetGetParameterResponse` results. */
 export type FM9ParameterFrameKind = 'set_echo' | 'state_broadcast';
 

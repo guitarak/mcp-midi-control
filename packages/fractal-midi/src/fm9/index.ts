@@ -46,6 +46,8 @@ export {
   buildGetParameter,
   isSetGetParameterResponse,
   parseSetGetParameterResponse,
+  isGetParameterResponse,
+  parseGetParameterResponse,
   buildDeviceInquiry,
   isDeviceInquiryResponse,
   parseDeviceInquiryResponse,

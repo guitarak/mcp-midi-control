@@ -60,6 +60,8 @@ import {
   type Param as FM9Param,
   buildGetParameter,
   buildSetParameter,
+  isGetParameterResponse,
+  parseGetParameterResponse,
   buildQueryPatchName,
   buildGetScene,
   buildSetScene,
@@ -366,6 +368,25 @@ const reader: DeviceReader = {
           'Fallback: get_preset reads placements/bypass/channels via the ' +
           'hardware-verified STATUS_DUMP.',
       );
+    }
+    // HARDWARE-DECODED (2026-06-06): the FM9 answers GETs with a
+    // 60-byte frame carrying the param's internal IEEE float AND the
+    // device's own display string. Prefer that parser; fall back to
+    // the short set-echo shape.
+    if (isGetParameterResponse(response)) {
+      const parsed = parseGetParameterResponse(response);
+      return {
+        block: blockSlugIn,
+        name,
+        wire_value: parsed.valueBits,
+        // The device's own display text — ground truth #2. ⚠️ The
+        // NAME→paramId binding is III-derived and observed to diverge
+        // on FM9 (calibration pending); trust the string, treat the
+        // name as approximate.
+        display_value: parsed.displayString,
+        unit: param.unit,
+        raw_response: response,
+      };
     }
     const parsed = parseSetGetParameterResponse(response);
     return {
@@ -709,9 +730,13 @@ export const FM9_DESCRIPTOR: DeviceDescriptor = {
     state_anchoring: [
       'Call get_preset first: it returns the placed blocks with per-block',
       'bypass + channel for the active scene in one ~150 ms round-trip',
-      '(hardware-verified STATUS_DUMP). Use get_param only for single',
-      'targeted reads; its fn=0x01 GET shape is unverified on FM9 firmware',
-      'and may time out — that is a known limitation, not a device fault.',
+      '(hardware-verified STATUS_DUMP). get_param works (fn=0x01 GET,',
+      'hardware-decoded 2026-06-06; read-only, does not write) and returns',
+      'the device\'s OWN display string plus the internal float. CAVEAT:',
+      'the name-to-paramId mapping is III-derived and observed to diverge',
+      'on FM9 (a "master" read returned a bypass-style "ENGAGED" string).',
+      'Trust the returned display string\'s semantics; treat the param NAME',
+      'as approximate until the calibration pass rebinds ids per family.',
     ].join(' '),
   },
 };
