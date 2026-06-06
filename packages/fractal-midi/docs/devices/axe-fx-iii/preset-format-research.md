@@ -273,7 +273,7 @@ content-hash field.
 ## Action items (research, not blocking shipping)
 
 - [ ] When a beta user with an Axe-Fx III runs the community capture
-  procedure (in the consumer MCP server's `docs/AXEFX3-BETA-TESTING.md`),
+  procedure (in the community capture guides under `../../capture-guides/`),
   capture an AxeEdit III parameter-edit USBPcap session. One 30-second
   capture of "knob turn" would unblock `set_param`. The project
   maintainer does not own a III.

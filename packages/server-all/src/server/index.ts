@@ -49,6 +49,9 @@
  * instead.
  */
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
@@ -58,9 +61,13 @@ import { AM4_PORT_NEEDLES } from '@mcp-midi-control/am4/midi.js';
 import { registerMidiControlTools } from './tools/midi-control.js';
 import { registerMidiPrimitiveTools } from './tools/midi-primitives.js';
 
-// import { registerAM4Tools } from '@mcp-midi-control/am4/tools/index.js';
 import { describeAxeFxIIPortStatus } from '@mcp-midi-control/axe-fx-ii/tools.js';
-import { describeAxeFxIIIPortStatus } from '@mcp-midi-control/axe-fx-iii/tools.js';
+import {
+  describeAxeFxIIIPortStatus,
+  describeFM3PortStatus,
+  describeFM9PortStatus,
+  describeVP4PortStatus,
+} from '@mcp-midi-control/fractal-modern/device.js';
 import { registerHydrasynthTools, describeHydrasynthPortStatus } from '@mcp-midi-control/hydrasynth/server.js';
 
 // Unified tool surface — descriptor registration. The dispatcher
@@ -71,7 +78,8 @@ import { registerDeviceResources } from '@mcp-midi-control/core/protocol-generic
 import { registerUnifiedTools } from '@mcp-midi-control/core/protocol-generic/tools.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
-import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/axe-fx-iii/device.js';
+import { AXEFXGEN1_DESCRIPTOR } from '@mcp-midi-control/axe-fx-gen1/descriptor.js';
+import { MODERN_FRACTAL_DESCRIPTORS } from '@mcp-midi-control/fractal-modern/device.js';
 import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
 
 // -- Server setup -----------------------------------------------------------
@@ -128,9 +136,25 @@ const SERVER_INSTRUCTIONS = [
   'and audition. When ambiguous, audition and ASK before persisting.',
 ].join('\n');
 
+// Report the package's real version in serverInfo. Read it from the
+// package manifest rather than hardcoding so it can never drift behind a
+// release bump (the 0.2.0 release ZIP shipped reporting "0.1.0" because
+// this was hardcoded). From dist/server/index.js, ../../package.json is the
+// server-all manifest; in the release ZIP that's the installed package's
+// own package.json. Falls back gracefully if the read ever fails.
+const SERVER_VERSION = ((): string => {
+  try {
+    const pkgPath = fileURLToPath(new URL('../../package.json', import.meta.url));
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version?: string };
+    return pkg.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+})();
+
 const server = new McpServer({
   name: 'mcp-midi-control',
-  version: '0.1.0',
+  version: SERVER_VERSION,
 }, {
   instructions: SERVER_INSTRUCTIONS,
 });
@@ -157,17 +181,27 @@ registerHydrasynthTools(server);    // Hydra-specific tools not yet on unified s
 // Order matters: register MORE SPECIFIC port_match regexes FIRST so
 // tiebreaking favors the narrower pattern.
 //
-//   1. Axe-Fx III  /axe-?fx ?iii/i   (most specific — wins on "Axe-Fx III")
+//   1. Modern Fractal family  /axe-?fx ?iii/i, /fm ?3/i, /fm ?9/i
+//                             (most specific — win on "Axe-Fx III" / "FM3" / "FM9")
 //   2. Axe-Fx II   /axe-?fx/i        (would also match III if III didn't win first)
 //   3. AM4         /Fractal/i        (catch-all for the modern Fractal family)
 //   4. Hydrasynth  /hydrasynth/i     (different vendor — order doesn't matter for it)
 //
-// Axe-Fx III is a community-beta descriptor: scaffolded from Fractal's
-// published v1.4 PDF and AxeEdit III editor assets, but NOT yet hardware-
-// verified end-to-end. Read + navigation tools work per spec; write tools
-// refuse with structured "pending capture" errors until a community
-// contributor runs the USBPcap workflow.
-registerMcpDevice(AXEFX3_DESCRIPTOR);
+// The modern Fractal devices (Axe-Fx III / FM3 / FM9) are community-beta:
+// one gen-3 codec factory, scaffolded from Fractal's published v1.4 PDF +
+// AxeEdit III assets, reused across the family by model byte. NOT yet
+// hardware-verified end-to-end. capabilities.support_tier carries the
+// machine-readable signal; each response carries a brief beta marker.
+// Registering via MODERN_FRACTAL_DESCRIPTORS (its declared order is the
+// registration order) means a newly-added family member is covered here
+// without editing this loop.
+for (const descriptor of MODERN_FRACTAL_DESCRIPTORS) {
+  registerMcpDevice(descriptor);
+}
+// gen-1 (Axe-Fx Standard/Ultra) registers BEFORE the II so a port named
+// "Axe-Fx Ultra" matches the more-specific /axe-?fx.*(ultra|standard)/i
+// pattern instead of the II's broad /axe-?fx/i.
+registerMcpDevice(AXEFXGEN1_DESCRIPTOR);
 registerMcpDevice(AXEFX2_DESCRIPTOR);
 registerMcpDevice(AM4_DESCRIPTOR);
 // Hydrasynth registers after the Fractal devices — its port_match
@@ -258,6 +292,25 @@ async function main(): Promise<void> {
     console.error(`Axe-Fx III port scan: ${describeAxeFxIIIPortStatus()}.`);
   } catch (err) {
     console.error(`Axe-Fx III port scan failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  // FM3 / FM9 port-scan banners — gen-3 siblings of the III, 🟡 community
+  // beta. Same independence rationale as the other per-device scans.
+  try {
+    console.error(`FM3 port scan: ${describeFM3PortStatus()}.`);
+  } catch (err) {
+    console.error(`FM3 port scan failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  try {
+    console.error(`FM9 port scan: ${describeFM9PortStatus()}.`);
+  } catch (err) {
+    console.error(`FM9 port scan failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  // VP4 port-scan banner — gen-3 effects pedal (AM4-shape, reads + mode switch
+  // only, device-state writes gated). Same independence rationale as above.
+  try {
+    console.error(`VP4 port scan: ${describeVP4PortStatus()}.`);
+  } catch (err) {
+    console.error(`VP4 port scan failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

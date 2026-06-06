@@ -58,9 +58,9 @@
  *   - The `(block, name)` key matches the snake_case `(param.block,
  *     param.name)` in `KNOWN_PARAMS`. Block field comes from
  *     `AxeFxIIParam.block` (e.g. `'drive'`, `'amp'`, `'reverb'`).
- *   - Entries are keyed by exact match; a `compressor.treshold`
- *     entry covers the wiki's misspelled key (the typo is preserved
- *     in KNOWN_PARAMS for byte-stable codec output).
+ *   - Entries are keyed by exact match; the `compressor.threshold`
+ *     entry pins the device-observed -80..0 dB range (the suffix-rule
+ *     default would overestimate the span).
  *
  * Maintainers: when adding a new entry,
  *   1. Confirm the display range is the SAME concept on both AM4
@@ -282,11 +282,11 @@ const EDITOR_OBSERVED: Record<string, CalibrationEntry> = {
   // rotary.drive: same situation as chorus.drive — 0..10 knob in
   // AxeEdit despite the AM4's 0.5..500 metadata.
   'rotary.drive': { displayMin: 0, displayMax: 10, provenance: 'editor-observed' },
-  // II compressor treshold: device raw_response proves range is -80..0 dB
+  // II compressor threshold: device raw_response proves range is -80..0 dB
   // (AM4 uses -60..+20; the suffix-rule default of -80..+20 overestimates
   // the span by 25%, producing miscalibrated writes like tool -22 landing
   // as -33.6 dB on the hardware).
-  'compressor.treshold': { displayMin: -80, displayMax: 0, provenance: 'editor-observed' },
+  'compressor.threshold': { displayMin: -80, displayMax: 0, provenance: 'editor-observed' },
 };
 
 /**
@@ -766,13 +766,35 @@ export const resolveAxeFxIIParamKind: ParamKindResolver = (
       });
     },
     decodeWire: (wire: number) =>
-      wireToDisplay(wire, {
-        displayMin: displayMin as number,
-        displayMax: displayMax as number,
-        displayScale,
-      }),
+      roundDisplay(
+        wireToDisplay(wire, {
+          displayMin: displayMin as number,
+          displayMax: displayMax as number,
+          displayScale,
+        }),
+      ),
   };
 };
+
+/**
+ * Round a decoded display value to the panel's natural resolution,
+ * stripping the float noise the wire→display linear/log inverse leaves
+ * behind (e.g. 7.000030518 → 7, -0.000305 → 0, 28.000732 → 28).
+ *
+ * Display-first contract: what get_param / get_preset return must equal
+ * what the front panel shows, and "nudge treble up one" must start from a
+ * clean 6, not 5.99994. Rounded here at the II decode boundary, NOT inside
+ * the shared `wireToDisplay` codec (other consumers may want full
+ * precision). Two decimals preserves every observed II panel resolution
+ * (1-decimal dB, 2-decimal ratio) while removing the sub-0.001 inverse
+ * noise; per-unit resolution is a future refinement if a finer-grained
+ * param ever appears. Encode (display→wire) is untouched, so the
+ * calibration round-trip goldens (tolerance-based) stay green.
+ */
+function roundDisplay(value: number): number {
+  const rounded = Math.round(value * 100) / 100;
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
 
 function resolveEnumWire(param: AxeFxIIParam, value: number | string): number {
   const enumValues = param.enumValues ?? {};

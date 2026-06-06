@@ -38,6 +38,22 @@
  * for a given wire value.
  */
 
+import {
+  REVERB_TYPES_VALUES,
+  DELAY_TYPES_VALUES,
+  CHORUS_TYPES_VALUES,
+  FLANGER_TYPES_VALUES,
+  PHASER_TYPES_VALUES,
+  WAH_TYPES_VALUES,
+  COMPRESSOR_TYPES_VALUES,
+  GEQ_TYPES_VALUES,
+  DRIVE_TYPES_VALUES,
+  FILTER_TYPES_VALUES,
+  TREMOLO_TYPES_VALUES,
+  ENHANCER_TYPES_VALUES,
+  GATE_TYPES_VALUES,
+} from '../am4/cacheEnums.js';
+
 /** Provenance tag for each overlay entry. */
 export type EnumProvenance = 'am4-shared' | 'fractal-convention' | 'iii-spec';
 
@@ -206,12 +222,71 @@ const SUFFIX_RULES: Array<readonly [string, EnumOverlayEntry]> = [
   ['_HOLD', BINARY_OFF_ON],
 ];
 
+// ── Effect-type model lists (gen-3 read leg, BK-093) ─────────────
+//
+// Each effect block's `*_TYPE` selector is an enum whose ORDINAL index
+// joins to AM4's verified model table for that family (the gen-3
+// state-broadcast / GET wire carries this same ordinal). This is the
+// READ leg of BK-093: it labels what the device reports.
+//
+// Byte-anchored for REVERB_TYPE: the 2026-06-03 FM9 capture proved the
+// gen-3 broadcast ordinal 16 == AM4 REVERB_TYPES[16] == 'Spring, Medium'
+// (and ordinal 1 == 'Room, Medium'). The other effect-type lists are
+// reused from AM4 by family and are high-confidence at the low ordinals
+// (shared Fractal heritage), but gen-3 firmware may EXTEND a list with
+// models AM4 never shipped, so treat a missing high-ordinal label as
+// "newer than AM4," not an error.
+//
+// Display-only: these enums carry `enum_display_only` at the catalog
+// layer so set-by-name is refused (the typed-SET RAW enum id is a
+// DIFFERENT encoding than the read ordinal and is not yet captured: the
+// write leg). The codec layer is unaffected; numeric wire values still
+// pass through.
+
+const EFFECT_TYPE_NOTE =
+  'Effect-type ordinals reused from AM4 by family (byte-anchored for Reverb; ' +
+  'gen-3 firmware may extend the list). Read-leg only: set-by-name is gated pending a capture.';
+
+function effectType(values: Readonly<Record<number, string>>): EnumOverlayEntry {
+  return { values, provenance: 'am4-shared', note: EFFECT_TYPE_NOTE };
+}
+
+const EFFECT_TYPE_OVERRIDES: Record<string, EnumOverlayEntry> = {
+  REVERB_TYPE: effectType(REVERB_TYPES_VALUES), // byte-anchored: ordinal 16 == 'Spring, Medium'
+  DELAY_TYPE: effectType(DELAY_TYPES_VALUES),
+  CHORUS_TYPE: effectType(CHORUS_TYPES_VALUES),
+  FLANGER_TYPE: effectType(FLANGER_TYPES_VALUES),
+  PHASER_TYPE: effectType(PHASER_TYPES_VALUES),
+  WAH_TYPE: effectType(WAH_TYPES_VALUES),
+  // DISTORT_TYPE deliberately has NO entry. On gen-3 the DISTORT family is
+  // the AMP block, so DISTORT_TYPE is the amp MODEL selector, not a drive-
+  // pedal picker. The AM4 DRIVE/AMP_TYPES tables are NOT a valid ordinal
+  // oracle for gen-3 amp ordinals (FM9 ordinals 65/179/264 exceed AM4's 248
+  // entries and the names disagree), so labeling it would fabricate wrong
+  // amp model names on all three devices. The amp model selector ships as a
+  // numeric wire passthrough (no enum_values, no enum_display_only) until a
+  // getBlockString amp-roster sweep binds device-true names.
+  //
+  // FUZZ_TYPE (eff=118) IS the user-facing drive/fuzz pedal type selector —
+  // NOT the amp. AM4's DRIVE_TYPES ordinals match byte-for-byte against FM9
+  // hw captures: ordinal 15 = Blues OD and ordinal 36 = Blackglass 7K both
+  // confirmed via fn=0x1F→0x75 + sub=0x1a label polls (2026-06-04 capture).
+  FUZZ_TYPE: effectType(DRIVE_TYPES_VALUES),
+  COMP_TYPE: effectType(COMPRESSOR_TYPES_VALUES),
+  GEQ_TYPE: effectType(GEQ_TYPES_VALUES),
+  FILTER_TYPE: effectType(FILTER_TYPES_VALUES),
+  TREMOLO_TYPE: effectType(TREMOLO_TYPES_VALUES),
+  ENHANCER_TYPE: effectType(ENHANCER_TYPES_VALUES),
+  GATE_TYPE: effectType(GATE_TYPES_VALUES),
+};
+
 // ── Direct-name overrides ────────────────────────────────────────
 //
 // Hand-curated entries for III-specific params where a suffix rule
 // would be wrong or where the vocabulary is non-standard.
 
 const DIRECT_OVERRIDES: Record<string, EnumOverlayEntry> = {
+  ...EFFECT_TYPE_OVERRIDES,
   GLOBAL_CABINETBYP: BYPASS_STATE,
   GLOBAL_PWRAMPBYP: BYPASS_STATE,
   GLOBAL_TUNERMUTE: BINARY_OFF_ON,
@@ -257,6 +332,23 @@ export function resolveEnumValues(name: string): EnumOverlayEntry | undefined {
     if (name.endsWith(suffix)) return entry;
   }
   return undefined;
+}
+
+/**
+ * Strict effect-type-only resolver: returns the byte-anchored `*_TYPE` model
+ * list for a param ONLY if its symbol is one of the curated effect-type
+ * overrides. Unlike `resolveEnumValues`, it does NOT apply the broad suffix
+ * conventions (`_BYP`, `_CHAN`, `_TEMPO`, `_SLOPE`, ...).
+ *
+ * Consumers that wire enum labels onto a catalog whose params are NOT reliably
+ * tagged `unit: 'enum'` (the FM3/FM9 device-true catalogs are all
+ * `unit: 'unverified'`) use this to label the high-confidence effect-type
+ * selectors without over-matching a continuous param that merely shares a
+ * suffix. The full `resolveEnumValues` is correct only when the param is known
+ * to be an enum (e.g. the III, whose catalog tags `unit: 'enum'`).
+ */
+export function resolveEffectTypeEnum(name: string): EnumOverlayEntry | undefined {
+  return EFFECT_TYPE_OVERRIDES[name];
 }
 
 /**

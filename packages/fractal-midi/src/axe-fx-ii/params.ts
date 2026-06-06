@@ -2133,7 +2133,7 @@ export const KNOWN_PARAMS = {
     "chorus.low_cut": { groupCode: "CHO", block: "chorus", paramId: 21, wikiName: "LOW CUT", name: "low_cut", controlType: "knob", parameterName: "CHORUS_LOWCUT", xmlLabel: "Low Cut" },
     "chorus.spread": { groupCode: "CHO", block: "chorus", paramId: 22, wikiName: "SPREAD", name: "spread", controlType: "knob", parameterName: "CHORUS_SPREAD", xmlLabel: "Spread" },
     "chorus.dimension": { groupCode: "CHO", block: "chorus", paramId: 23, wikiName: "DIMENSION", name: "dimension", controlType: "select", enumValues: CHORUS_DIMENSION_VALUES },
-    "compressor.treshold": { groupCode: "CPR", block: "compressor", paramId: 0, wikiName: "TRESHOLD", name: "treshold", controlType: "knob", parameterName: "COMP_THRESH", xmlLabel: "Threshold" },
+    "compressor.threshold": { groupCode: "CPR", block: "compressor", paramId: 0, wikiName: "TRESHOLD", name: "threshold", controlType: "knob", parameterName: "COMP_THRESH", xmlLabel: "Threshold" },
     "compressor.ratio": { groupCode: "CPR", block: "compressor", paramId: 1, wikiName: "RATIO", name: "ratio", controlType: "knob", parameterName: "COMP_RATIO", xmlLabel: "Ratio" },
     "compressor.attack": { groupCode: "CPR", block: "compressor", paramId: 2, wikiName: "ATTACK", name: "attack", controlType: "knob", parameterName: "COMP_ATTACK", xmlLabel: "Attack" },
     "compressor.release": { groupCode: "CPR", block: "compressor", paramId: 3, wikiName: "RELEASE", name: "release", controlType: "knob", parameterName: "COMP_RELEASE", xmlLabel: "Release" },

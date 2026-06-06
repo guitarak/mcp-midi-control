@@ -33,7 +33,7 @@
 import type { DeviceDescriptor, PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { registerParamKindResolver } from '@mcp-midi-control/core/protocol-generic/paramKind.js';
 
-import { AXE_FX_II_BLOCKS } from 'fractal-midi/axe-fx-ii';
+import { AXE_FX_II_BLOCKS, KNOWN_PARAMS, type AxeFxIIParam } from 'fractal-midi/axe-fx-ii';
 
 import { listConceptKeysForDevice } from '@mcp-midi-control/core/protocol-generic/concept-keys.js';
 
@@ -61,13 +61,47 @@ const AXEFX2_CONCEPT_KEYS: Readonly<Record<string, string>> = (() => {
 // each param's encode/decode closures + display range + unit).
 registerParamKindResolver('axe-fx-ii', resolveAxeFxIIParamKind);
 
-// Channel-blocks list — every AxeFxIIBlock.canBypass=true entry exposes
-// X/Y in principle. The wiki / firmware spec doesn't carry an explicit
-// "has channels" flag, so this is the closest proxy. Looper / Vocoder
-// / Megatap / Tone Match may not actually expose X/Y on Q8.02; Q7
-// (Session 66 wrap) flags this for HW verification.
+// X/Y channel-bearing block set for the Axe-Fx II XL+ (model byte 0x07,
+// the hardware this descriptor targets).
+//
+// Source of truth: Fractal Audio wiki "Channels" page → "Which effect
+// blocks support X/Y" table, the "Axe-Fx II XL and XL+" row:
+//   Amp, Cab, Chorus, Compressor, Delay, Drive, Flanger, GEQ, Gate,
+//   Mixer, PEQ, Phaser, Pitch, Rotary, Reverb, Tremolo, Wah.
+// Keyed by the stable 3-letter group code (blockTypes.ts) so the membership
+// can't drift on a display-name rename.
+//
+// This REPLACES the old `canBypass` proxy, which had three defects: it
+// over-included non-X/Y blocks (filter, enhancer, synth, formant, …),
+// emitted DISPLAY-form keys ("gate expander", "graphic eq", "volume/pan")
+// that don't match the canonical block keys used everywhere else, and never
+// deduped multi-instance blocks. An agent keying its params_by_channel
+// decision off that list got a failed first apply (the display-form key
+// didn't resolve against descriptor.blocks). The list now emits the
+// canonical block keys (== AxeFxIIParam.block), deduped and sorted.
+const XY_CHANNEL_GROUP_CODES: ReadonlySet<string> = new Set([
+  'AMP', 'CAB', 'CHO', 'CPR', 'DLY', 'DRV', 'FLG', 'GEQ', 'GTE',
+  'MIX', 'PEQ', 'PHA', 'PIT', 'ROT', 'REV', 'TRM', 'WAH',
+]);
+// The executor's per-channel write path requires a bypassable block, so the
+// advertised list must match what apply actually accepts. Mixer (MIX) is the
+// one wiki-listed X/Y group that is non-bypassable on the II — the hardware
+// supports X/Y on it, but our apply path can't author it, so intersecting
+// with the bypassable set drops it (advertise only what apply accepts).
+const BYPASSABLE_GROUP_CODES: ReadonlySet<string> = new Set(
+  AXE_FX_II_BLOCKS.filter((b) => b.canBypass).map((b) => b.groupCode.toUpperCase()),
+);
 const CHANNEL_BLOCKS: readonly string[] = Object.freeze(
-  AXE_FX_II_BLOCKS.filter((b) => b.canBypass).map((b) => b.name.toLowerCase().replace(/ \d+$/, '')),
+  Array.from(
+    new Set(
+      (Object.values(KNOWN_PARAMS) as readonly AxeFxIIParam[])
+        .filter((p) => {
+          const g = p.groupCode.toUpperCase();
+          return XY_CHANNEL_GROUP_CODES.has(g) && BYPASSABLE_GROUP_CODES.has(g);
+        })
+        .map((p) => p.block),
+    ),
+  ).sort(),
 );
 
 /**
@@ -154,7 +188,7 @@ const AXEFX2_BLOCK_PARAMS_SUMMARY: Readonly<Record<string, readonly string[]>> =
   flanger: ['effect_type', 'rate', 'depth', 'feedback', 'mix', 'level'],
   phaser: ['effect_type', 'rate', 'depth', 'feedback', 'mix', 'level'],
   wah: ['effect_type', 'freq_min', 'freq_max', 'resonance', 'control', 'level'],
-  compressor: ['effect_type', 'treshold', 'ratio', 'attack', 'release', 'level', 'mix'],
+  compressor: ['effect_type', 'threshold', 'ratio', 'attack', 'release', 'level', 'mix'],
   pitch: ['effect_type', 'mode', 'voice_1_harmony', 'voice_2_harmony', 'key', 'scale', 'mix', 'level'],
   cab: ['cab', 'mic', 'low_cut', 'high_cut', 'level', 'proximity'],
   pantrem: ['effect_type', 'rate', 'depth', 'duty', 'mix', 'level'],
@@ -185,6 +219,10 @@ export const AXEFX2_DESCRIPTOR: DeviceDescriptor = {
     has_channels: true,
     channel_names: ['X', 'Y'],
     channel_blocks: CHANNEL_BLOCKS,
+    // Multiple instances per block type (Amp 1/2, Reverb 1..4, etc.) are
+    // addressable via the `instance` arg; writer/reader resolve them with
+    // resolveBlockWithInstance.
+    has_block_instances: true,
     preset_location_format: /^([1-9]\d{0,3}|0)$/,
     supports_save: true,
     supports_lineage: true,
@@ -214,5 +252,6 @@ export const AXEFX2_DESCRIPTOR: DeviceDescriptor = {
     'chorus.rate': 'chorus.tempo',
     'flanger.rate': 'flanger.tempo',
     'phaser.rate': 'phaser.tempo',
+    'pantrem.rate': 'pantrem.tempo',
   },
 };

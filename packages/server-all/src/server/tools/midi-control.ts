@@ -76,13 +76,7 @@ export function registerMidiControlTools(server: McpServer): void {
 
     server.registerTool('reconnect_midi', {
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        description: [
-            'You almost never need this. The server opens (or refreshes) the MIDI handle automatically on EVERY tool call and binds to whatever device is present, ' +
-            `and it auto-reconnects after ${STALE_HANDLE_TIMEOUT_THRESHOLD} consecutive ack-less writes. So after plugging in or switching a device, do NOT call this first; just call the tool you actually want (get_preset, apply_preset, etc.) and it will connect.`,
-            'Call reconnect_midi ONLY to recover a handle that genuinely died mid-session, such as a physical USB replug or device power-cycle that the auto-reconnect did not catch. It is not a warm-up step and it does not fix cold-start ack drops (for those, just retry the call once).',
-            '- Without `port`: scans every registered device and reconnects each one currently visible on the MIDI bus. If nothing is visible, returns the list of registered devices + visible ports so the agent can diagnose.',
-            '- With `port`: case-insensitive needle to target one device (e.g. "am4", "hydra", "axe-fx").',
-        ].join(' '),
+        description: `You almost never need this. The server opens or refreshes the MIDI handle on EVERY tool call, binds to whatever device is present, and auto-reconnects after ${STALE_HANDLE_TIMEOUT_THRESHOLD} consecutive ack-less writes. After plugging in or switching a device, do NOT call this first; just call the tool you want (get_preset, apply_preset, etc.) and it connects. Use it ONLY to recover a handle that genuinely died mid-session (physical USB replug or power-cycle the auto-reconnect missed). It is not a warm-up step and does not fix cold-start ack drops; for those, just retry the call once. - Without \`port\`: reconnects every registered device currently visible on the bus; if none are visible, returns registered devices + visible ports to diagnose. - With \`port\`: case-insensitive needle to target one device (e.g. "am4", "hydra", "axe-fx").`,
         inputSchema: {
             port: z.string().optional().describe(
                 'Optional port-name needle to reconnect. Omit to reconnect every registered device currently visible on the MIDI bus. Pass a substring of the port name to target one device.',

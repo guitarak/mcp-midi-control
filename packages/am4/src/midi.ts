@@ -196,6 +196,13 @@ const HDR4_READ_PRESET_NAME_LO = 0x20;
 //     cold-start same-handle resend in wireOps.sendAndAwaitAck: without the
 //     resend the first write surfaces as no-ack; with it the resend lands
 //     and the write succeeds. The drop is one-shot per process.
+//   - 'front-panel-edited' (device-true dirty bit): the GET_PATCH
+//     descriptor reports byte[21] & 0x04 = SET regardless of what the
+//     agent wrote — simulating an out-of-band front-panel / AM4-Edit edit
+//     that `markDirty`/`isDirty` is blind to (the AM4 emits no push on
+//     those, HW-107). Exercises the navigation gate preferring the
+//     device-true bit: a fresh session (in-memory tracker clean) is still
+//     correctly refused because the device reports the buffer edited.
 type MockFixture =
   | 'clean-scratch'
   | 'populated-z01'
@@ -203,7 +210,8 @@ type MockFixture =
   | 'device-quirk-scene-7fff'
   | 'slow-response'
   | 'partial-ack'
-  | 'drop-first-ack';
+  | 'drop-first-ack'
+  | 'front-panel-edited';
 const MOCK_FIXTURE: MockFixture = ((): MockFixture => {
   const raw = process.env.MOCK_FIXTURE;
   if (
@@ -212,7 +220,8 @@ const MOCK_FIXTURE: MockFixture = ((): MockFixture => {
     raw === 'device-quirk-scene-7fff' ||
     raw === 'slow-response' ||
     raw === 'partial-ack' ||
-    raw === 'drop-first-ack'
+    raw === 'drop-first-ack' ||
+    raw === 'front-panel-edited'
   ) return raw;
   return 'clean-scratch';
 })();
@@ -268,6 +277,14 @@ const BLOCK_PID_LOW_REVERB = 0x0042;
 const BLOCK_PID_LOW_DELAY = 0x0046;
 const BLOCK_PID_LOW_CHORUS = 0x004e;
 
+// Amp/drive TYPE registers (enum index into AMP_TYPES / DRIVE_TYPES). The
+// save receipt reads these back via the get_param path. Return index 0 so the
+// receipt shows a real model name under the mock, not an out-of-range index.
+const AMP_TYPE_PID_LOW = 0x003a;
+const AMP_TYPE_PID_HIGH = 0x000a;
+const DRIVE_TYPE_PID_LOW = 0x0076;
+const DRIVE_TYPE_PID_HIGH = 0x000a;
+
 // Default mock preset placement: amp / chorus / reverb / delay on
 // slots 1..4. Gives agents that read Z04 something realistic to
 // tweak (without it, every slot reads as "none" and read-then-tweak
@@ -308,6 +325,10 @@ function mockReadValueFor(pidLow: number, pidHigh: number): number {
     const placed = MOCK_SLOT_BLOCK_TYPES.get(pidHigh);
     if (placed !== undefined) return placed;
   }
+  // Amp/drive model-type reads → enum index 0 so the save receipt shows a
+  // real model name (AMP_TYPES[0] / DRIVE_TYPES[0]), not 32767.
+  if (pidLow === AMP_TYPE_PID_LOW && pidHigh === AMP_TYPE_PID_HIGH) return 0;
+  if (pidLow === DRIVE_TYPE_PID_LOW && pidHigh === DRIVE_TYPE_PID_HIGH) return 0;
   if (MOCK_FIXTURE === 'partial-ack') return MOCK_PARTIAL_ACK_KNOB_VALUE;
   return MOCK_DEFAULT_PARAM_VALUE;
 }
@@ -468,6 +489,51 @@ function buildGetAllParamsTriple(outgoing: number[]): number[][] {
   ];
 }
 
+// ── GET_PATCH descriptor + device-true "edited" bit ─────────────────
+//
+// The navigation dirty-gate now prefers the AM4's device-true "edited"
+// bit over the in-memory `isDirty` tracker (see packages/am4/src/tools/
+// safeEdit.ts + shared/readOps.ts:readActiveBufferEditedBit). On hardware
+// (probe 2026-06-03), a GET_PATCH read (param-RW fn 0x01, readType 0x1F)
+// returns a ~238-byte descriptor whose `byte[21] & 0x04` is the edited
+// flag: 0x00 at rest, 0x04 after any working-buffer edit, back to 0x00 on
+// save. The mock synthesizes that frame so the gate is runtime-drivable
+// under MCP_MOCK_TRANSPORT=1.
+//
+// `mockBufferEdited` tracks the bit across calls the way the device does:
+//   - SET on an edit-class param write (action 0x01 WRITE to a real param /
+//     block-slot register — i.e. anything but the navigation registers).
+//   - CLEARED on save-to-location (action 0x1B) and on switch-preset.
+//   - Scene-switch (a view change, not a buffer edit) leaves it unchanged.
+// Under MOCK_FIXTURE='front-panel-edited' the bit reads SET regardless,
+// simulating an out-of-band edit the in-memory tracker can't see.
+const GET_PATCH_ACTION_LO = 0x1f;
+const ACTION_SAVE_TO_LOCATION_LO = 0x1b;
+const PRESET_CONTROL_PID_LOW = 0x00ce;
+const SWITCH_PRESET_PID_HIGH = 0x000a;
+const SCENE_SWITCH_PID_HIGH = 0x000d;
+const GET_PATCH_RESPONSE_TOTAL_BYTES = 238;
+const GET_PATCH_EDITED_BIT_BYTE = 21;
+const GET_PATCH_EDITED_BIT_VALUE = 0x04;
+
+let mockBufferEdited = false;
+
+/**
+ * Build the GET_PATCH descriptor response. Echoes the request envelope +
+ * addressing fields (bytes 1..11), sets byte[21] to the edited flag, and
+ * pads to the device's descriptor length. `front-panel-edited` forces the
+ * bit so the gate can be exercised with the in-memory tracker clean.
+ */
+function buildGetPatchResponse(outgoing: number[], edited: boolean): number[] {
+  const reportEdited = edited || MOCK_FIXTURE === 'front-panel-edited';
+  const body: number[] = new Array<number>(GET_PATCH_RESPONSE_TOTAL_BYTES - 2).fill(0);
+  body[0] = SYSEX_START;
+  for (let i = 1; i <= 11; i++) body[i] = outgoing[i] ?? 0;
+  body[GET_PATCH_EDITED_BIT_BYTE] = reportEdited ? GET_PATCH_EDITED_BIT_VALUE : 0x00;
+  const cs = fractalChecksum(body);
+  return [...body, cs, SYSEX_END];
+}
+
 export const am4MockResponder: MockResponder = (outgoing) => {
   if (outgoing.length < 8) return [];
   if (outgoing[0] !== SYSEX_START) return [];
@@ -491,6 +557,16 @@ export const am4MockResponder: MockResponder = (outgoing) => {
 
   switch (actionLo) {
     case ACTION_WRITE_LO:
+      // Track the device-true edited bit GET_PATCH reports. Switch-preset
+      // reloads the buffer (clean); scene-switch is a view change (no-op);
+      // any other write is an edit-class param/block write (dirties it).
+      if (pidLow === PRESET_CONTROL_PID_LOW && pidHigh === SWITCH_PRESET_PID_HIGH) {
+        mockBufferEdited = false;
+      } else if (pidLow === PRESET_CONTROL_PID_LOW && pidHigh === SCENE_SWITCH_PID_HIGH) {
+        // scene switch — leave mockBufferEdited unchanged
+      } else {
+        mockBufferEdited = true;
+      }
       if (coldStartDropArmed) {
         // Cold-start fixture: swallow this first write-echo (no ack), then
         // disarm so the cold-start resend in sendAndAwaitAck lands.
@@ -504,6 +580,12 @@ export const am4MockResponder: MockResponder = (outgoing) => {
       return [buildLongReadResponse(outgoing)];
     case ACTION_READ_PRESET_NAME_LO:
       return [buildPresetNameResponse(outgoing)];
+    case GET_PATCH_ACTION_LO:
+      return [buildGetPatchResponse(outgoing, mockBufferEdited)];
+    case ACTION_SAVE_TO_LOCATION_LO:
+      // Save commits the working buffer — device clears the edited bit.
+      mockBufferEdited = false;
+      return [buildCommandAck(outgoing)];
     default:
       return [buildCommandAck(outgoing)];
   }

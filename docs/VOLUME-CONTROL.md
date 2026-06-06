@@ -27,6 +27,8 @@ device's wire names:
 | Input gain | `amp.gain` | 0..10 | knob |
 | Amp master | `amp.master` | 0..10 | knob |
 | Output level | `amp.level` | -80..+20 | dB |
+| Scene level (per scene) | `preset.scene_1_level`..`scene_4_level` | -20..+20 | dB |
+| Whole-preset level | `preset.level` | -80..+20 | dB |
 | Cab output | `amp.cab_master_level` | knob | (per-amp scaling) |
 | Reverb mix | `reverb.mix` | 0..100 | % |
 | Delay mix | `delay.mix` | 0..100 | % |
@@ -86,6 +88,38 @@ Notes:
   (more level into the filter / amplifier path).
 - `amplevel` is the global output trim, equivalent to AM4's `amp.level`.
 - All FX wet params use the `*wet` wire name with a `.dry_wet` alias.
+
+## Scene & preset leveling — unity match (Fractal's philosophy)
+
+The default for balancing scenes and presets is **unity match**: set each
+scene (and each preset) so its **average** signal sits on the **white line
+(0 dB)** of the device's Internal Levels Meter. That line is the sweet spot —
+strong signal with ample headroom. The meter is calibrated with ~12 dB of
+headroom at the **red line** (OUT knob at max), so red is not clipping; match
+the average and let brief peaks ride above the line. Level by ear as the final
+check, especially clean vs high-gain.
+
+The non-obvious part: **gain is a loudness control in disguise.** Distortion
+raises average power, so a clean low-gain scene meters far *below* a saturated
+scene at the same level/master. The clean scene needs a **positive** trim
+(+6..+12 dB starting point), not a negative one. Arrangement-style spreads
+(clean sits back in the mix) are the opt-in `scene_leveling` arrangement_*
+recipes, not the default.
+
+Per-device leveling tool:
+- **AM4** — `preset.scene_1_level`..`scene_4_level` (±20 dB, post-chain, no
+  channel switch) is the primary scene-balance control. `amp.out_boost_level`
+  (0..+4 dB) is the clean way to do a ~+3 dB solo lift.
+- **Axe-Fx II** — `output.scene_1_main`..`scene_8_main` (±20 dB, the Output
+  block's per-scene "Scene Levels", one per scene) is the primary scene-balance
+  control — the direct analog of the AM4's `preset.scene_N_level`, post-chain
+  and no channel switch. `amp.level` / `cab.level` are secondary per-channel
+  trims (not `master_volume`, which changes tone). `output.level` is the single
+  global Main trim, not per-scene.
+
+The agent cannot read either device's output meter over MIDI, so after a
+multi-scene build it labels the levels unverified and asks the player to report
+the meter — the human meter read is the test signal.
 
 ## Disambiguation cheat sheet for agents
 

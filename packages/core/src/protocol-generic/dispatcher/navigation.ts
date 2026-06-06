@@ -66,7 +66,12 @@ export async function executeSwitchPreset(args: {
  * Full lifecycle for `save_preset`. Schema capability gate first
  * (some devices may not expose save).
  */
-export async function executeSavePreset(args: { port: string; location: string | number; name?: string }): Promise<WriteResult & { device: string }> {
+export async function executeSavePreset(args: {
+  port: string;
+  location: string | number;
+  name?: string;
+  confirm_overwrite?: boolean;
+}): Promise<WriteResult & { device: string }> {
   const descriptor = requireDevice(args.port);
   if (!descriptor.capabilities.supports_save) {
     throw new DispatchError(
@@ -83,7 +88,79 @@ export async function executeSavePreset(args: { port: string; location: string |
     );
   }
   const ctx = openCtx(descriptor);
-  const result = await descriptor.writer.savePreset(ctx, args.location, args.name);
+
+  // ── Overwrite gate (confirmable, never a hard wall) — device-agnostic.
+  // Runs only when the device exposes `checkOverwriteTarget`; devices that
+  // can't read a stored location's name simply skip it (today's behavior).
+  // Refuse ONLY when the target is occupied AND is not the active/edited
+  // location AND the caller did not confirm. A read miss degrades (proceed,
+  // but flag the unverified overwrite below).
+  let overwritePrecheckFailed = false;
+  if (args.confirm_overwrite !== true && descriptor.reader.checkOverwriteTarget) {
+    let target: Awaited<ReturnType<NonNullable<typeof descriptor.reader.checkOverwriteTarget>>>;
+    try {
+      target = await descriptor.reader.checkOverwriteTarget(ctx, args.location);
+    } catch {
+      target = undefined;
+    }
+    if (target === undefined) {
+      overwritePrecheckFailed = true;
+    } else if (target.occupant_name !== undefined && !target.is_active_location) {
+      return {
+        op: 'save_preset',
+        target: target.target_display,
+        acked: false,
+        warning:
+          `REFUSING TO OVERWRITE: ${target.target_display} already holds "${target.occupant_name}", ` +
+          `and it is not the location you are editing. Saving here would replace that preset. ` +
+          `Confirm with the user, then call save_preset again with confirm_overwrite: true to proceed, ` +
+          `or pick an empty location.`,
+        device: descriptor.display_name,
+      };
+    }
+  }
+
+  const result: WriteResult = await descriptor.writer.savePreset(ctx, args.location, args.name);
+
+  // ── Receipt (device-agnostic): when the save acked and the device exposes
+  // `readSaveSnapshot`, attach saved_snapshot + a human read-back line.
+  // Best-effort — a read-back failure never un-does a save that landed.
+  if (result.acked && descriptor.reader.readSaveSnapshot) {
+    try {
+      const { snapshot, missing } = await descriptor.reader.readSaveSnapshot(ctx, args.location);
+      result.saved_snapshot = snapshot;
+      const receiptLine =
+        `Saved chain: ${snapshot.block_chain.map((b) => (b === 'none' ? '(empty)' : b)).join(' → ')}` +
+        `${snapshot.amp_model ? `; amp: ${snapshot.amp_model}` : ''}` +
+        `${snapshot.drive_model ? `; drive: ${snapshot.drive_model}` : ''}` +
+        `${snapshot.preset_name ? `; name: "${snapshot.preset_name}"` : ''}.`;
+      const missingNote =
+        missing.length > 0 ? `Could not confirm ${missing.join(', ')} on read-back (best-effort).` : undefined;
+      result.info = [result.info, receiptLine, missingNote].filter((s): s is string => Boolean(s)).join(' ');
+    } catch {
+      result.info = [
+        result.info,
+        'Could not read back the saved preset to build a receipt (best-effort; the save itself landed).',
+      ].filter((s): s is string => Boolean(s)).join(' ');
+    }
+  }
+  if (overwritePrecheckFailed) {
+    result.info = [
+      result.info,
+      'NOTE: could not pre-check the target for an existing preset before saving (name read failed); ' +
+        'confirm with the user that nothing important was overwritten.',
+    ].filter((s): s is string => Boolean(s)).join(' ');
+  } else if (descriptor.reader.checkOverwriteTarget === undefined && args.confirm_overwrite !== true) {
+    // The device exposes no overwrite pre-check (only AM4 does today), so the
+    // gate above silently no-op'd. Tell the agent the target was not scanned,
+    // rather than letting it assume the AM4 refusal protects every device.
+    result.info = [
+      result.info,
+      `NOTE: ${descriptor.display_name} has no overwrite pre-check, so the target location was not scanned ` +
+        'for an existing preset before saving. Confirm with the user that the target was free or intended.',
+    ].filter((s): s is string => Boolean(s)).join(' ');
+  }
+
   // BK-075: save persists the working buffer to a location; layout itself
   // didn't change, but invalidating is the safe call — a subsequent
   // switch_preset back to here would otherwise serve a snapshot keyed by

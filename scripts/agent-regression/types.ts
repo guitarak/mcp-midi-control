@@ -10,7 +10,7 @@
  * Reference impl: scripts/agent-regression/runner.ts
  */
 
-export type Device = 'am4' | 'axe-fx-ii' | 'axe-fx-iii' | 'hydrasynth';
+export type Device = 'am4' | 'axe-fx-ii' | 'axe-fx-iii' | 'fm3' | 'fm9' | 'axe-fx-gen1' | 'hydrasynth';
 
 /**
  * Mock-transport fixture profile, selected per case to exercise alternate
@@ -64,9 +64,11 @@ export interface ToolCallValidator {
   check: (args: Record<string, unknown>, result: string | undefined) => true | string;
   /**
    * When provided, run the check against the Nth call to this tool
-   * (0-indexed). Otherwise runs against the first call.
+   * (0-indexed). Otherwise runs against the first call. Pass `'last'` to
+   * validate the agent's FINAL call to this tool — use when the agent may
+   * make exploratory calls first and only the last one is the real answer.
    */
-  call_index?: number;
+  call_index?: number | 'last';
   /**
    * When true, the validator silently passes if the tool was never
    * called. Use for "if the agent fires this tool, verify args, but

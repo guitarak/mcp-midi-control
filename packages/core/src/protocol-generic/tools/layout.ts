@@ -25,11 +25,7 @@ export function registerLayoutTools(server: McpServer): void {
 
   server.registerTool('set_block', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    description: [
-      'Place ONE block (or clear a slot) on a LINEAR-DEVICE preset. Surgical primitive. For grid devices (Axe-Fx II / III) or any multi-block build, use apply_preset instead. set_block does NOT cable cells, does NOT propagate routing through col 12, and does NOT terminate the chain at the device output. On grid devices its only safe use is post-apply_preset cleanup like swapping one cell\'s block_type.',
-      'Slot shape is device-specific: linear devices (AM4) take a 1-based integer (1..4). Grid devices (Axe-Fx II / III) accept {row, col} but the signal-chain wiring is your problem: apply_preset auto-cables row 2 and terminates at col 12; set_block does not. Real-world failure: 60% of set_block calls in agent traces failed because the agent reached for set_block on a grid device when apply_preset would have been the right tool.',
-      'block_type takes a registered block name ("amp", "drive", "reverb") or "none" to clear. See describe_device.block_types. For bypass (silence without removing), use set_bypass.',
-    ].join(' '),
+    description: 'Place ONE block, or clear a slot (block_type "none"), on a single preset. Surgical primitive. For grid devices (Axe-Fx II / III) or ANY multi-block build, use apply_preset, NOT set_block: set_block does not cable cells, propagate routing, or terminate the chain at the device output, whereas apply_preset auto-cables row 2 and terminates at col 12. On grid, set_block is safe only for post-apply_preset cleanup (e.g. swapping one cell\'s block_type). 60% of agent set_block failures were reaching for it on a grid device when apply_preset was right. block_type is a registered name ("amp", "drive", "reverb"); see describe_device.block_types. To silence without removing, use set_bypass.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       slot: z.union([
@@ -42,10 +38,14 @@ export function registerLayoutTools(server: McpServer): void {
         'Block type to place. Pass "none" to clear the slot. See describe_device.block_types. ' +
         'Schema enum constrained to the union of every registered device\'s legal placements.',
       ),
+      instance: z.number().int().min(1).optional().describe(
+        'Block instance (1-indexed) for grid devices with multiple blocks of the same type ' +
+        '(e.g. instance=2 places "Amp 2"). Default 1. Single-instance devices (AM4) reject anything > 1.',
+      ),
     },
-  }, async ({ port, slot, block_type }) => {
+  }, async ({ port, slot, block_type, instance }) => {
     try {
-      const result = await executeSetBlock({ port, slot, change: { block_type } });
+      const result = await executeSetBlock({ port, slot, change: { block_type, instance } });
       return asText(result);
     } catch (err) {
       return asError(err);

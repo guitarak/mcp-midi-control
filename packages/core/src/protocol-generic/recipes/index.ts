@@ -27,6 +27,18 @@ export {
 } from './filter.js';
 
 export {
+  AMP_RECIPES,
+  resolveAmpRecipe,
+  type AmpRecipeSpec,
+} from './amp.js';
+
+export {
+  REVERB_RECIPES,
+  resolveReverbRecipe,
+  type ReverbRecipeSpec,
+} from './reverb.js';
+
+export {
   AUTO_WAH_RECIPES,
   resolveAutoWahRecipe,
   type AutoWahRecipeSpec,

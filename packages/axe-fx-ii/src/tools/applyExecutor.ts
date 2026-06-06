@@ -11,6 +11,7 @@
 import type { AxeFxIIBlock } from 'fractal-midi/axe-fx-ii';
 import {
   buildGetBlockChannel,
+  buildGetBlockParameterValue,
   buildGetGridLayout,
   buildGetSceneNumber,
   buildSetBlockBypass as buildSetBlockBypassEnvelope,
@@ -24,12 +25,14 @@ import {
   buildStorePreset,
   buildSwitchPreset,
   isGetBlockChannelResponse,
+  isGetBlockParameterResponse,
   isGetGridLayoutResponse,
   isSceneNumberResponse,
   isSetCellRoutingResponse,
   isSetGridCellResponse,
   isStorePresetResponse,
   parseGetBlockChannelResponse,
+  parseGetBlockParameterResponse,
   parseGetGridLayoutResponse,
   parseSceneNumberResponse,
   parseSetCellRoutingResponse,
@@ -101,7 +104,7 @@ const FN02_ONLY_GROUPS = new Set(['CPR']);
  * FN02_ONLY_GROUPS (compressor) where fn=0x2e no-ops on all param
  * types. Hardware-confirmed 2026-05-26: compressor.effect_type
  * rejected fn=0x2e; alpha.7 field test showed all compressor knobs
- * (treshold, ratio, attack, release, level) also no-op via fn=0x2e.
+ * (threshold, ratio, attack, release, level) also no-op via fn=0x2e.
  */
 function buildParamBytes(
   effectId: number,
@@ -1102,17 +1105,85 @@ export async function runApplyPresetAtOps(
   // Only applied when the sequence contains param-writing ops (skip for
   // trivial/empty sequences). Output block effectId=140, paramId=0
   // (level_1) is a dB knob: -80 is silent, 0 is unity.
+  //
+  // The mute and the later restore are VERIFIED, not fire-and-forget. On a
+  // flaky USB link SysEx sends drop silently (observed 2026-06-06: four
+  // `MidiOutWinMM::sendMessage` errors in one session, and an Output block
+  // left at -80 dB after a dropped unmute). A dropped MUTE leaves the whole
+  // multi-step build audible — a half-built high-gain amp with no cab load
+  // self-oscillates into a screech. A dropped RESTORE leaves the rig silent.
+  // Read-back + single retry closes both holes. We also capture the
+  // pre-apply level and restore it exactly, instead of clobbering the
+  // player's mix to a hardcoded 0 dB.
+  const OUTPUT_LEVEL_PARAM = { effectId: 140, paramId: 0 } as const;
+  const SAFETY_SETTLE_MS = 60;
+
+  /** GET the Output level (dB). undefined on timeout / unparseable label. */
+  async function readOutputLevelDb(): Promise<number | undefined> {
+    const p = conn.receiveSysExMatching(
+      (b) => isGetBlockParameterResponse(b, OUTPUT_LEVEL_PARAM),
+      GET_RESPONSE_TIMEOUT_MS,
+    );
+    // If the send throws (transport drop), the receive promise would dangle as
+    // an unhandled rejection; consume it explicitly.
+    p.catch(() => undefined);
+    try {
+      conn.send(buildGetBlockParameterValue(OUTPUT_LEVEL_PARAM));
+      const parsed = parseFloat(parseGetBlockParameterResponse(await p).label);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Set the Output level (dB) and confirm it landed, retrying once. The
+   * post-set GET also acts as a drain barrier: because the device's SysEx
+   * handler is single-threaded and in-order, a GET response proves every
+   * preceding fire-and-forget param write has been processed, so the
+   * restore lands only after the chain has settled.
+   */
+  const SAFETY_MAX_ATTEMPTS = 2;
+  async function setOutputLevelVerified(targetDb: number, what: string): Promise<void> {
+    for (let attempt = 1; attempt <= SAFETY_MAX_ATTEMPTS; attempt++) {
+      const bytes = buildSetBlockParameterValue(OUTPUT_LEVEL_PARAM, targetDb);
+      conn.send(bytes);
+      totalBytes += bytes.length;
+      await new Promise((res) => setTimeout(res, SAFETY_SETTLE_MS));
+      const got = await readOutputLevelDb();
+      const confirmed = got !== undefined && Math.abs(got - targetDb) <= 1.0;
+      const tag = attempt > 1 ? ` [retry ${attempt - 1}]` : '';
+      if (confirmed) {
+        summaries.push(`  SAFETY: ${what} (output level_1 = ${targetDb} dB)${tag} ✓  (${bytes.length}B)`);
+        return;
+      }
+      const lastAttempt = attempt === SAFETY_MAX_ATTEMPTS;
+      if (!lastAttempt) {
+        // Re-send on BOTH a read-back mismatch AND a verify timeout. A
+        // correlated dropped-SET + timed-out-GET is exactly the failure this
+        // path guards (a silently dropped mute leaves the rig audible; a
+        // dropped restore leaves it muted), so a timeout must still retry.
+        summaries.push(
+          `  SAFETY: ${what} unconfirmed (${got === undefined ? 'verify timed out' : `device reads ${got} dB`}); retrying`,
+        );
+        continue;
+      }
+      // Final attempt: accept but flag honestly. A timeout means the SET very
+      // likely landed (we just can't confirm); a mismatch means it didn't.
+      summaries.push(
+        got === undefined
+          ? `  SAFETY: ${what} (output level_1 = ${targetDb} dB)${tag} (unverified — verify timed out after retry)  (${bytes.length}B)`
+          : `  SAFETY: ${what} STILL unconfirmed (device reads ${got} dB) after retry`,
+      );
+      return;
+    }
+  }
+
   const needsSafetyMute = ops.some((o) => o.kind === 'param');
+  let priorOutputDb: number | undefined;
   if (needsSafetyMute) {
-    const muteBytes = buildSetBlockParameterValue(
-      { effectId: 140, paramId: 0 },
-      -80,
-    );
-    conn.send(muteBytes);
-    totalBytes += muteBytes.length;
-    summaries.push(
-      `  SAFETY: muting output (level_1 = -80 dB) during preset apply  (${muteBytes.length}B)`,
-    );
+    priorOutputDb = await readOutputLevelDb();
+    await setOutputLevelVerified(-80, 'muting output during preset apply');
   }
 
   try {
@@ -1311,20 +1382,17 @@ export async function runApplyPresetAtOps(
       }
     }
   } finally {
-    // Safety unmute: restore Output level after all ops, even on error.
-    // 0 dB is unity (safe default). If the preset spec included an
-    // output.level_1 param, the apply ops already set the correct value
-    // during the sequence, so this is a no-op for that param. But if the
-    // sequence failed partway, this ensures the output is not left muted.
+    // Safety unmute: restore the Output level after all ops, even on error.
+    // Restore the EXACT pre-apply level when we captured it (no surprise mix
+    // change); fall back to 0 dB unity if the pre-read failed. Verified +
+    // retried so a dropped restore SET can't leave the rig muted.
     if (needsSafetyMute) {
-      const unmuteBytes = buildSetBlockParameterValue(
-        { effectId: 140, paramId: 0 },
-        0,
-      );
-      conn.send(unmuteBytes);
-      totalBytes += unmuteBytes.length;
-      summaries.push(
-        `  SAFETY: restoring output (level_1 = 0 dB)  (${unmuteBytes.length}B)`,
+      const restoreDb = priorOutputDb ?? 0;
+      await setOutputLevelVerified(
+        restoreDb,
+        priorOutputDb !== undefined
+          ? `restoring output to pre-apply level`
+          : `restoring output to unity`,
       );
     }
   }

@@ -138,5 +138,5 @@ known operations.
 - **`SYSEX_*` mapping, next step.** Capture one operation per `SYSEX_*`
   name (footswitch, dsp, gui-control, system-dump) and bind each to a
   specific fn byte. ~6 captures, ~10 min hardware time per beta user with
-  a III. Standardized community capture procedure lives in the consumer
-  MCP server's `docs/AXEFX3-BETA-TESTING.md`.
+  a III. Standardized community capture procedure lives in the community
+  capture guides under `../../capture-guides/`.

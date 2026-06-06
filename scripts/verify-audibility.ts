@@ -340,5 +340,172 @@ console.log('\nCase 17: chain at cols 1-6 + shunts through col 12 → ok=true (p
     `summary=${r.summary}, breaks=${JSON.stringify(r.breaks).slice(0, 200)}`);
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Power-user parallel topologies.
+// These are the routing patterns most frequently needed for wet/dry
+// rigs, parallel effects, and multi-input configurations.
+// ─────────────────────────────────────────────────────────────────
+
+// Case 18: 3-way fan-out — amp at r2c1 branches into three parallel
+// effects (delay r1c2, reverb r2c2, chorus r3c2), each on its own row,
+// all independent chains running to col 12 via shunts.
+// Models "multiple inputs branching from a single block."
+console.log('\nCase 18: 3-way fan-out (amp → delay / reverb / chorus, 3 independent chains) → ok=true');
+{
+  const CHORUS_1 = 120;
+  const cells: GridCell[] = [
+    cell(2, 1, AMP_1, 0),                      // amp: source for all three
+    cell(1, 2, DELAY_1, ROW2_IN),               // delay on row 1, receives from row 2 col 1
+    cell(2, 2, REV_1, ROW2_IN),                 // reverb on row 2, receives from row 2 col 1
+    cell(3, 2, CHORUS_1, ROW2_IN),              // chorus on row 3, receives from row 2 col 1
+    // extend all three rows to col 12 with shunts
+    cell(1, 3, SHUNT_BASE, ROW1_IN),
+    cell(2, 3, SHUNT_BASE + 1, ROW2_IN),
+    cell(3, 3, SHUNT_BASE + 2, ROW3_IN),
+    cell(1, 4, SHUNT_BASE + 3, ROW1_IN),
+    cell(2, 4, SHUNT_BASE + 4, ROW2_IN),
+    cell(3, 4, SHUNT_BASE + 5, ROW3_IN),
+    cell(1, 5, SHUNT_BASE + 6, ROW1_IN),
+    cell(2, 5, SHUNT_BASE + 7, ROW2_IN),
+    cell(3, 5, SHUNT_BASE + 8, ROW3_IN),
+    cell(1, 6, SHUNT_BASE + 9, ROW1_IN),
+    cell(2, 6, SHUNT_BASE + 10, ROW2_IN),
+    cell(3, 6, SHUNT_BASE + 11, ROW3_IN),
+    cell(1, 7, SHUNT_BASE + 12, ROW1_IN),
+    cell(2, 7, SHUNT_BASE + 13, ROW2_IN),
+    cell(3, 7, SHUNT_BASE + 14, ROW3_IN),
+    cell(1, 8, SHUNT_BASE + 15, ROW1_IN),
+    cell(2, 8, SHUNT_BASE + 16, ROW2_IN),
+    cell(3, 8, SHUNT_BASE + 17, ROW3_IN),
+    cell(1, 9, SHUNT_BASE + 18, ROW1_IN),
+    cell(2, 9, SHUNT_BASE + 19, ROW2_IN),
+    cell(3, 9, SHUNT_BASE + 20, ROW3_IN),
+    cell(1, 10, SHUNT_BASE + 21, ROW1_IN),
+    cell(2, 10, SHUNT_BASE + 22, ROW2_IN),
+    cell(3, 10, SHUNT_BASE + 23, ROW3_IN),
+    cell(1, 11, SHUNT_BASE + 24, ROW1_IN),
+    cell(2, 11, SHUNT_BASE + 25, ROW2_IN),
+    cell(3, 11, SHUNT_BASE + 26, ROW3_IN),
+    cell(1, 12, SHUNT_BASE + 27, ROW1_IN),
+    cell(2, 12, SHUNT_BASE + 28, ROW2_IN),
+    cell(3, 12, SHUNT_BASE + 29, ROW3_IN),
+  ];
+  const r = checkAudibility({ cells });
+  check('ok=true', r.ok === true, `breaks=${JSON.stringify(r.breaks).slice(0, 300)}`);
+  check('no breaks', r.breaks.length === 0);
+}
+
+// Case 19: Diamond topology — amp at r2c1 fans out to delay r2c2 AND
+// reverb r3c2, both merge into a mixer at r2c3 (receives from rows 2+3),
+// then the mixer extends to col 12 via shunts.
+// Classic wet/dry parallel rig: single input, two effect branches, merge.
+console.log('\nCase 19: diamond (amp → delay+reverb parallel, merge at mixer, output via shunts) → ok=true');
+{
+  const MIXER = 138;
+  const cells: GridCell[] = [
+    cell(2, 1, AMP_1, 0),
+    cell(2, 2, DELAY_1, ROW2_IN),            // delay: receives from r2c1
+    cell(3, 2, REV_1, ROW2_IN),              // reverb: cross-row fan-out from r2c1
+    cell(2, 3, MIXER, ROW2_IN | ROW3_IN),    // mixer: merges row-2 delay + row-3 reverb
+    cell(2, 4, SHUNT_BASE, ROW2_IN),
+    cell(2, 5, SHUNT_BASE + 1, ROW2_IN),
+    cell(2, 6, SHUNT_BASE + 2, ROW2_IN),
+    cell(2, 7, SHUNT_BASE + 3, ROW2_IN),
+    cell(2, 8, SHUNT_BASE + 4, ROW2_IN),
+    cell(2, 9, SHUNT_BASE + 5, ROW2_IN),
+    cell(2, 10, SHUNT_BASE + 6, ROW2_IN),
+    cell(2, 11, SHUNT_BASE + 7, ROW2_IN),
+    cell(2, 12, SHUNT_BASE + 8, ROW2_IN),
+  ];
+  const r = checkAudibility({ cells });
+  check('ok=true', r.ok === true, `breaks=${JSON.stringify(r.breaks).slice(0, 300)}`);
+  check('no breaks', r.breaks.length === 0);
+}
+
+// Case 20: Diamond with one broken leg.
+// Same diamond as Case 19, but the reverb branch (r3c2) has
+// routingFlags=0 — its input cable is missing. The delay branch still
+// reaches the mixer and the output, but the broken leg is a real
+// routing error and the walker must report it.
+console.log('\nCase 20: diamond with broken reverb leg (r3c2 routingFlags=0) → ok=false, break at r3c2');
+{
+  const MIXER = 138;
+  const cells: GridCell[] = [
+    cell(2, 1, AMP_1, 0),
+    cell(2, 2, DELAY_1, ROW2_IN),
+    cell(3, 2, REV_1, 0),                    // broken: no input cable
+    cell(2, 3, MIXER, ROW2_IN | ROW3_IN),
+    cell(2, 4, SHUNT_BASE, ROW2_IN),
+    cell(2, 5, SHUNT_BASE + 1, ROW2_IN),
+    cell(2, 6, SHUNT_BASE + 2, ROW2_IN),
+    cell(2, 7, SHUNT_BASE + 3, ROW2_IN),
+    cell(2, 8, SHUNT_BASE + 4, ROW2_IN),
+    cell(2, 9, SHUNT_BASE + 5, ROW2_IN),
+    cell(2, 10, SHUNT_BASE + 6, ROW2_IN),
+    cell(2, 11, SHUNT_BASE + 7, ROW2_IN),
+    cell(2, 12, SHUNT_BASE + 8, ROW2_IN),
+  ];
+  const r = checkAudibility({ cells });
+  check('ok=false (broken reverb leg)', r.ok === false);
+  check('break at row 3 col 2', r.breaks.some((b) => b.slot_ref.row === 3 && b.slot_ref.col === 2));
+  check('reason mentions routing_mask=0', r.breaks.some((b) => b.reason.includes('routing_mask=0')));
+}
+
+// Case 22: FX Loop → Output block — the classic "record rig" chain
+// terminator. Amp feeds FX Loop (send to DAW), FX Loop output goes to
+// the Output block at col 3. The Output block acts as the hardware sink;
+// no shunts to col 12 are needed. The FX Loop is engaged (not bypassed),
+// so the audibility check should fire a soft note AND ok=true.
+console.log('\nCase 22: amp → FX Loop → Output block (no shunts) → ok=true with 1 FX Loop note');
+{
+  const cells: GridCell[] = [
+    cell(2, 1, AMP_1, 0),
+    cell(2, 2, FX_LOOP, ROW2_IN),
+    cell(2, 3, OUTPUT, ROW2_IN),
+  ];
+  const r = checkAudibility({
+    cells,
+    bypassByBlockId: new Map([[FX_LOOP, false], [OUTPUT, false]]),
+    bypassModeByBlockId: new Map([[FX_LOOP, 'THRU'], [OUTPUT, 'THRU']]),
+  });
+  check('ok=true (Output block terminates chain)', r.ok === true, `breaks=${JSON.stringify(r.breaks)}`);
+  check('exactly 1 note (FX Loop engaged)', r.notes.length === 1);
+  check('note references FX Loop', r.notes[0]?.note.toLowerCase().match(/fx loop|send|return/) !== null);
+}
+
+// Case 21: MUTE-bypassed delay on parallel path — the delay is on row 2,
+// reverb on row 3, both reach the output via their own chains. The delay
+// is bypassed-MUTE, but the reverb path still carries signal, so the
+// delay is NOT a cut vertex and there must be no silence break.
+// The key distinction from Case 7: there the bypassed block WAS a cut vertex.
+console.log('\nCase 21: parallel path survives MUTE-bypass on one leg (reverb still carries signal) → ok=true');
+{
+  const cells: GridCell[] = [
+    cell(2, 1, AMP_1, 0),
+    cell(2, 2, DELAY_1, ROW2_IN),
+    cell(3, 2, REV_1, ROW2_IN),           // parallel reverb from amp
+    // both legs run independently to col 12
+    cell(2, 3, SHUNT_BASE, ROW2_IN),      cell(3, 3, SHUNT_BASE + 1, ROW3_IN),
+    cell(2, 4, SHUNT_BASE + 2, ROW2_IN),  cell(3, 4, SHUNT_BASE + 3, ROW3_IN),
+    cell(2, 5, SHUNT_BASE + 4, ROW2_IN),  cell(3, 5, SHUNT_BASE + 5, ROW3_IN),
+    cell(2, 6, SHUNT_BASE + 6, ROW2_IN),  cell(3, 6, SHUNT_BASE + 7, ROW3_IN),
+    cell(2, 7, SHUNT_BASE + 8, ROW2_IN),  cell(3, 7, SHUNT_BASE + 9, ROW3_IN),
+    cell(2, 8, SHUNT_BASE + 10, ROW2_IN), cell(3, 8, SHUNT_BASE + 11, ROW3_IN),
+    cell(2, 9, SHUNT_BASE + 12, ROW2_IN), cell(3, 9, SHUNT_BASE + 13, ROW3_IN),
+    cell(2, 10, SHUNT_BASE + 14, ROW2_IN),cell(3, 10, SHUNT_BASE + 15, ROW3_IN),
+    cell(2, 11, SHUNT_BASE + 16, ROW2_IN),cell(3, 11, SHUNT_BASE + 17, ROW3_IN),
+    cell(2, 12, SHUNT_BASE + 18, ROW2_IN),cell(3, 12, SHUNT_BASE + 19, ROW3_IN),
+  ];
+  // Delay (row 2) is bypassed-MUTE; reverb (row 3) is active.
+  const r = checkAudibility({
+    cells,
+    bypassByBlockId: new Map([[DELAY_1, true]]),
+    bypassModeByBlockId: new Map([[DELAY_1, 'MUTE']]),
+  });
+  check('ok=true (reverb carries signal on parallel path)', r.ok === true,
+    `breaks=${JSON.stringify(r.breaks)}`);
+  check('no breaks', r.breaks.length === 0);
+}
+
 console.log(`\n${failed === 0 ? 'all cases pass' : `${failed} case(s) failed`}.`);
 if (failed > 0) process.exit(1);

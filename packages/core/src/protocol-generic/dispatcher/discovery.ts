@@ -98,6 +98,10 @@ export interface ListParamsEntry {
   display_max?: number;
   has_aliases?: readonly string[];
   enum_values?: Readonly<Record<number, string>>;
+  /** True when `enum_values` are display/read-only: set-by-name is gated (the
+   *  device's name->wire mapping is uncaptured). Pass a numeric wire value or
+   *  change the param on the device. */
+  enum_display_only?: boolean;
   /** Manufacturer UI label (e.g. AM4-Edit's "Master Volume" for `amp.master`). */
   host_label?: string;
   /** Firmware-internal symbolic identifier (e.g. `DISTORT_MASTER`). */
@@ -274,6 +278,9 @@ export function listParams(args: {
         display_max: param.display_max,
         has_aliases: aliasList && aliasList.length > 0 ? aliasList : undefined,
         enum_values: includeEnum ? param.enum_values : undefined,
+        // Signal that the labels are read-only: an agent must NOT author a
+        // set-by-name for this param (the name->wire mapping is uncaptured).
+        enum_display_only: param.enum_display_only === true ? true : undefined,
         host_label: param.host_label,
         parameter_name: param.parameter_name,
         applies_only_when: param.applies_only_when,

@@ -42,13 +42,14 @@ status transition in the Refinement history footer).
 | Primitive | Class | Status | Devices | Notes |
 |---|---|---|---|---|
 | [septet-14bit](septet-14bit.md) | bit-level | matched | AM4 / II / III | 14-bit value as 2 septets; pidLow, pidHigh, action codes, effect IDs, preset numbers, tempo BPM, location bytes |
+| [gen1-nibble-split](gen1-nibble-split.md) | bit-level | matched-singleton | Standard/Ultra (gen-1) | Every 8-bit field (block id / param id / value) as 2 bytes, low nibble first `[v&0x0f,(v>>4)&0x0f]`; fixed `0x01` trailer, NO checksum. Distinct from gen-2 septet / gen-3 float32 |
 | [septet-21bit-byte2-mask-preservation](septet-21bit-byte2-mask-preservation.md) | bit-level | matched-singleton | II | 21-bit-in-3-bytes; `byte2 & 0x7c` MUST be preserved on writeback |
 | [msb-first-14bit-preset-payload](msb-first-14bit-preset-payload.md) | bit-level | matched | II / III | Preset numbers ≥128 encode MSB-first in fn 0x03 / 0x3c / 0x1d |
 | [xor-7f-envelope-checksum](xor-7f-envelope-checksum.md) | checksum | matched | AM4 / II / III | Universal Fractal envelope checksum: `bytes.reduce((a,b)=>a^b,0) & 0x7F` over F0..last payload byte |
 | [xor-fold-hash](xor-fold-hash.md) | checksum | matched | II (Q8 + Q9) | Footer hash = trivial 16-bit XOR-fold of decoded native ushorts; `FUN_00544cc0` |
 | [vendor-envelope-descriptor-table](vendor-envelope-descriptor-table.md) | struct-layout | matched | AM4 / II / III | Universal Fractal envelope spec: `(tag, wire-offset-from-F0, byte-count-or-units-per-element)` triples in `.rdata` |
 | [param-descriptor-16byte](param-descriptor-16byte.md) | struct-layout | matched | II / III / AM4 | 16-byte struct: `paramId at +0, name pointer at +8` |
-| [per-effect-paramtable-dispatcher](per-effect-paramtable-dispatcher.md) | dispatch-context | matched | AM4 / III | Switch dispatcher selecting per-effect ParamDescriptor tables; `(effectType, paramId)` addressing |
+| [per-effect-paramtable-dispatcher](per-effect-paramtable-dispatcher.md) | dispatch-context | matched | AM4 / III / FM3 / FM9 / VP4 | Switch dispatcher selecting per-effect ParamDescriptor tables; `(effectType, paramId)` addressing. Direct PE pattern-scan recovers rows without Ghidra |
 | [iii-paramid-pseudo-sentinel-ranges](iii-paramid-pseudo-sentinel-ranges.md) | struct-layout | matched-singleton | III | paramIds in `0xFF00..0xFFFE` are non-terminator pseudo-entries (UI separators); only `0xFFFFFFFF` is the true terminator |
 | [block-record-stride-8](block-record-stride-8.md) | struct-layout | matched-singleton | II | Block-record table at chunk 0 ushort 36+, stride 8 |
 | [preset-name-ascii-triplets](preset-name-ascii-triplets.md) | struct-layout | matched-singleton | II | 32 × 3-byte ASCII triplets `[ch, 0x00, 0x00]` at CHUNK00:008-103 |
@@ -62,7 +63,7 @@ status transition in the Refinement history footer).
 | [display-log10-scaling](display-log10-scaling.md) | coercion | matched-singleton | II | 17 hand entries gained `scaling: 'log10'`  |
 | [ii-compressor-calibration-divergence](ii-compressor-calibration-divergence.md) | coercion | matched-singleton | II | II STUDIO COMP uses different display ranges than AM4 compressor; threshold -80..0, attack 1..100, release 10..1000 |
 | [trim-tolerant-display-match](trim-tolerant-display-match.md) | coercion | matched | II | Device pads trailing whitespace; comparison uses `hw.trimEnd() === cat` |
-| [juce-binarydata-zip](juce-binarydata-zip.md) | label-extraction | matched | AM4 / III | Embedded ZIP in JUCE BinaryData; 1,299 AM4 + 10,250 III labels |
+| [juce-binarydata-zip](juce-binarydata-zip.md) | label-extraction | matched | AM4 / III / FM3 / FM9 / VP4 | Embedded ZIP (raw DEFLATE, no gzip magic) in JUCE BinaryData; 1,299 AM4 + 10,250 III labels + gen-3 FM family |
 | [fn28-enum-dump](fn28-enum-dump.md) | label-extraction | matched-singleton | II | Hardware-truth device-emitted enum labels; supersedes wiki |
 | [ii-axeedit-opcode-table](ii-axeedit-opcode-table.md) | fn-byte-mapping | matched-singleton | II | Static `OpcodeDescriptor` table in `.rdata`; 94 entries; `wire = enum - 1` |
 | [iii-host-emitter-fn-table](iii-host-emitter-fn-table.md) | fn-byte-mapping | matched-singleton | III | ~21 III host-emittable fn-bytes from caller-trace mining |
@@ -71,6 +72,14 @@ status transition in the Refinement history footer).
 | [ii-fn1f-atomic-read](ii-fn1f-atomic-read.md) | fn-byte-mapping | matched-singleton | II | fn=0x1F SYSEX_GET_ALL_PARAMS; single round-trip atomic read |
 | [ii-state-broadcast-triple-write](ii-state-broadcast-triple-write.md) | envelope-shape | matched-singleton | II | Host→device 0x74/0x75/0x76 write; bidirectional but NOT channel-aware; per-position encoding (wire16 vs display-int) |
 | [am4-fn1f-atomic-read](am4-fn1f-atomic-read.md) | fn-byte-mapping | matched-singleton | AM4 | fn=0x1F per-block atomic read; 2-byte effectId payload; 0x74/0x75/0x76 state-broadcast triple reply |
+| [gen3-fn1f-poll-block-bulk-read](gen3-fn1f-poll-block-bulk-read.md) | fn-byte-mapping | matched-singleton | FM9 | gen-3 fn=0x1F poll → 0x74/0x75/0x76 burst; positional body (index i == device-true paramId i); paged sections concatenate |
+| [gen3-fn03-request-preset-dump](gen3-fn03-request-preset-dump.md) | envelope | partial-N1 | FM9 | fn=0x03 [preset#:14b BIG-ENDIAN] → 0x77/0x78×N/0x79 dump; reply parses via presetDump.ts; read/backup only |
+| [gen3-enum-label-septet-stream](gen3-enum-label-septet-stream.md) | bit-level | partial-N1 | FM9 | enum value NAMES cross the wire septet-packed; 8→7 unpack starting at byte 5; carriers sub=0x2e/0x1a/0x09/0x2a/0x01 |
+| [gen3-enum-setecho-rawid-name](gen3-enum-setecho-rawid-name.md) | protocol-exchange | partial-N1 | FM9 | typed-SET (sub=0x09) OUT carries raw-id, IN echoes the name → {raw-id → name} write-leg pairing (amp echoes numeric) |
+| [gen3-fn01-grid-set-position-insert](gen3-fn01-grid-set-position-insert.md) | envelope-shape | matched | III / FM9 | block insert: fn=0x01 sub=0x32 = `[effectId:14b] .. [gridPos:14b]` (sub=0x30 cell-select companion); gridPos=col*6+row (6-row grid); byte9=0x08 = shunt. No-hardware loopMIDI, byte-identical across model 0x10/0x12 |
+| [gen3-fn01-grid-routing](gen3-fn01-grid-routing.md) | envelope-shape | matched | III / FM9 / FM3 | routing cable: fn=0x01 sub=0x35; 26-byte frame; two formula variants: 6-row (III/FM9) uses scaled colTerm + destSign; 4-row (FM3) uses colTerm=srcCol, no destSign, b23=(destRow-1)×32. Row-1 even-col works on FM3, refused on 6-row (not yet decoded). FM9-Edit 26 cables + FM3-Edit 10 cables over loopMIDI |
+| [gen3-fn01-store-preset](gen3-fn01-store-preset.md) | envelope-shape | matched | III / FM9 | store/save-to-location: fn=0x01 sub=0x26 = `[presetNum:14b LSB-first @ byte12-13]`. Corrects the fn=0x1D save guess. No-hardware loopMIDI capture, model 0x10 + 0x12 |
+| [gen3-editor-sync-read-surface](gen3-editor-sync-read-surface.md) | envelope-shape | matched-singleton | FM9 | editor connect/sync reads: every fn=0x01 response echoes query bytes 5..11; per-sub fixed response lengths; sub=0x7b placed-flag (bytes 12-13 nonzero == placed); 0x74 head is 12 bytes (no flag). The read surface a codec-backed device simulator answers to render the grid |
 | [ii-fn06-set-cell-routing](ii-fn06-set-cell-routing.md) | fn-byte-mapping | matched-singleton | II | fn=0x06 grid-cell edge connect/disconnect; 3-byte payload |
 | [ii-fn07-modifier-read](ii-fn07-modifier-read.md) | envelope-shape | matched-singleton | II | fn=0x07 field-indexed modifier read; `[effId][slot][field][value16][ASCII label]`; fn 0x18 is request-only |
 | [hydra-sysex-envelope-base64-crc32](hydra-sysex-envelope-base64-crc32.md) | checksum | matched-singleton | Hydra | ASM envelope `F0 00 20 2B 00 6F <base64-payload> F7`; 4-byte CRC32-derived checksum |

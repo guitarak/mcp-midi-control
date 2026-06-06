@@ -31,15 +31,25 @@ import {
   buildSetTempo,
   buildGetTempo,
   buildStatusDump,
+  buildSwitchPresetPC,
   buildSetParameter,
   buildGetParameter,
   buildSetParameterBypass,
+  buildRequestPresetDump,
   packValue16,
   unpackValue16,
   isSetGetParameterResponse,
   parseSetGetParameterResponse,
+  isGetParameterResponse,
+  parseGetParameterResponse,
   parseStateBroadcast,
+  parseGen3StateBroadcastHead,
+  parseGen3StateBroadcastBody,
+  parseGen3SetValueEcho,
   resolveEffectId,
+  resolveEnumValues,
+  resolveGen3EnumNameToRawId,
+  createModernFractalCodec,
 } from '../../src/axe-fx-iii/index.js';
 
 function hex(bytes: readonly number[]): string {
@@ -69,6 +79,18 @@ const cases: Case[] = [
   { label: 'buildSetScene(0)', built: buildSetScene(0), expected: 'f0000174100c0019f7' },
   { label: 'buildSetScene(7)', built: buildSetScene(7), expected: 'f0000174100c071ef7' },
   { label: 'buildGetScene()', built: buildGetScene(), expected: 'f0000174100c7f66f7' },
+
+  // SWITCH PRESET — raw MIDI Bank Select (CC0+CC32) + Program Change.
+  // Per-device bank encoding: 'standard' (III/FM3) = bank in CC0<<7|CC32;
+  // 'msb' (FM9) = bank in CC0, CC32=0. Preset 412 = bank 3, PC 28 (0x1c).
+  { label: 'buildSwitchPresetPC(0) standard', built: buildSwitchPresetPC(0), expected: 'b00000b02000c000' },
+  { label: 'buildSwitchPresetPC(412) standard — bank 3 in CC32', built: buildSwitchPresetPC(412), expected: 'b00000b02003c01c' },
+  { label: 'buildSwitchPresetPC(412, 1, "msb") FM9 — bank 3 in CC0', built: buildSwitchPresetPC(412, 1, 'msb'), expected: 'b00003b02000c01c' },
+  { label: 'buildSwitchPresetPC(27, 1, "msb") FM9 — bank 0 unchanged', built: buildSwitchPresetPC(27, 1, 'msb'), expected: 'b00000b02000c01b' },
+  // Codec binding: the III codec (default) stays standard; the FM9 codec
+  // (bankSelect 'msb') threads the mode through to the builder.
+  { label: 'codec(0x10).buildSwitchPresetPC(412) — III standard', built: createModernFractalCodec(0x10).buildSwitchPresetPC(412), expected: 'b00000b02003c01c' },
+  { label: 'codec(0x12,msb).buildSwitchPresetPC(412) — FM9 MSB', built: createModernFractalCodec(0x12, { bankSelect: 'msb' }).buildSwitchPresetPC(412), expected: 'b00003b02000c01c' },
 
   // 0x0D QUERY PATCH NAME — preset index 0..1023, or 'current' (two sentinel bytes).
   { label: 'buildQueryPatchName(0)', built: buildQueryPatchName(0), expected: 'f0000174100d000018f7' },
@@ -104,6 +126,21 @@ const cases: Case[] = [
   // NOT fn=0x02 as initially II-ported). 10 public captures.
   // Envelope: F0 00 01 74 10 01 [09 00] [eff_lo eff_hi] [pid_lo pid_hi]
   //   00 00 00 [v0 v1 v2] 00 00 00 [cs] F7  (23 bytes)
+  // 0x03 REQUEST_PRESET_DUMP — fm=0x12 (FM9), big-endian septet preset#.
+  // Wire-confirmed against FM9 hw fw 11.00 capture (preset indices 49, 129, 197, 273,
+  // 274, 355, 443, 444 captured; these two are cross-checked from those captures).
+  // Big-endian: hi7 = (n >> 7) & 0x7F, lo7 = n & 0x7F (unlike LE used in buildStorePreset).
+  {
+    label: 'buildRequestPresetDump(49, 0x12) — FM9 preset 49',
+    built: buildRequestPresetDump(49, 0x12),
+    expected: 'f0000174120300310025f7',
+  },
+  {
+    label: 'buildRequestPresetDump(273, 0x12) — FM9 preset 273 (spans both septet bytes)',
+    built: buildRequestPresetDump(273, 0x12),
+    expected: 'f0000174120302110007f7',
+  },
+
   {
     label: 'buildSetParameter(66, 0, 0) — Reverb 1 paramId 0 min',
     built: buildSetParameter(66, 0, 0),
@@ -140,9 +177,9 @@ interface ParseCase {
 }
 
 const parseCases: ParseCase[] = [
-  // FC-12: Drive 1 boost ON (effectId=58, paramId=40, value=508)
+  // FC-12: Amp 1 boost ON (effectId=58 = ID_DISTORT1 = the Amp block, paramId=40, value=508)
   {
-    label: 'FC-12 Drive 1 boost ON',
+    label: 'FC-12 Amp 1 boost ON',
     bytes: [
       0xf0, 0x00, 0x01, 0x74, 0x10, 0x01, 0x52, 0x00, 0x3a, 0x00, 0x28, 0x00,
       0x00, 0x00, 0x00, 0x7c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x2b, 0xf7,
@@ -222,8 +259,39 @@ export function runAxeFxIIISetParamTests(): void {
   if (resolveEffectId('Compressor 1') !== 46) {
     throw new Error(`resolveEffectId("Compressor 1") drift — expected 46, got ${resolveEffectId('Compressor 1')}`);
   }
-  if (resolveEffectId('Drive 1') !== 58) {
-    throw new Error(`resolveEffectId("Drive 1") drift — expected 58, got ${resolveEffectId('Drive 1')}`);
+  // ID_DISTORT1=58 is the AMP block; ID_FUZZ1=118 is the user-facing Drive pedal.
+  if (resolveEffectId('Amp 1') !== 58) {
+    throw new Error(`resolveEffectId("Amp 1") drift — expected 58, got ${resolveEffectId('Amp 1')}`);
+  }
+  if (resolveEffectId('Drive 1') !== 118) {
+    throw new Error(`resolveEffectId("Drive 1") drift — expected 118, got ${resolveEffectId('Drive 1')}`);
+  }
+
+  // fn=0x01 GET-response parser — real-hardware FM9 captures (model 0x12),
+  // community fm9-catalog branch (commit a2a4664, 2026-06-06). The frame
+  // carries the param's internal float + the device's own display string.
+  const GET_AMP = [0xf0,0x00,0x01,0x74,0x12,0x01,0x09,0x00,0x3a,0x00,0x05,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x20,0x00,0x22,0x53,0x48,0x74,0x0a,0x1d,0x0a,0x44,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x14,0xf7];
+  const GET_DLY = [0xf0,0x00,0x01,0x74,0x12,0x01,0x09,0x00,0x46,0x00,0x11,0x00,0x00,0x00,0x00,0x78,0x03,0x00,0x00,0x20,0x00,0x18,0x0b,0x46,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x46,0xf7];
+  const FM9_MODEL = 0x12;
+  for (const [label, frame, eff, pid, bits] of [
+    ['GET_AMP', GET_AMP, 58, 5, 0x00000000],
+    ['GET_DLY', GET_DLY, 70, 17, 0x3f000000],
+  ] as const) {
+    if (!isGetParameterResponse(frame, FM9_MODEL)) {
+      failed.push(`${label}: isGetParameterResponse returned false on a captured GET frame`);
+      continue;
+    }
+    const g = parseGetParameterResponse(frame, FM9_MODEL);
+    if (g.effectId !== eff || g.paramId !== pid || g.valueBits !== bits) {
+      failed.push(`${label}: GET parse drift — expected eff=${eff} pid=${pid} bits=0x${bits.toString(16)}, got eff=${g.effectId} pid=${g.paramId} bits=0x${g.valueBits.toString(16)}`);
+    }
+    if (g.displayString.length === 0 || !/^[\x20-\x7e]+$/.test(g.displayString)) {
+      failed.push(`${label}: GET display string not printable/non-empty — got ${JSON.stringify(g.displayString)}`);
+    }
+  }
+  // A 23-byte SET echo is NOT a 60-byte GET response.
+  if (isGetParameterResponse(parseCases[0].bytes)) {
+    failed.push('isGetParameterResponse false-positive on a SET-echo frame');
   }
 
   // Round-trip self-consistency: build → parse → equality. Anchors the
@@ -278,6 +346,109 @@ export function runAxeFxIIISetParamTests(): void {
     failed.push('parseStateBroadcast: expected throw on set_echo frame, got silent return');
   }
 
+  // Gen-3 0x74/0x75 STATE-BROADCAST burst — byte-verified from the first
+  // FM9 hardware capture (model 0x12, htrom2015 2026-06-03). The 0x74 head
+  // identifies block 66 (Reverb); the 0x75 body's first three packValue16
+  // triples are Reverb Mix (65534 = 100%), Level (39320), Pan (32767 = center).
+  const bcastHead = [0xf0, 0x00, 0x01, 0x74, 0x12, 0x74, 0x42, 0x00, 0x24, 0x02, 0x07, 0xf7];
+  const head = parseGen3StateBroadcastHead(bcastHead);
+  if (head.blockId !== 66 || head.itemCount !== 292) {
+    failed.push(`parseGen3StateBroadcastHead drift: expected {blockId:66,itemCount:292}, got ${JSON.stringify(head)}`);
+  }
+  const bcastBody = [
+    0xf0, 0x00, 0x01, 0x74, 0x12, 0x75, 0x00, 0x02,
+    0x7e, 0x7f, 0x03, // Mix   = 65534 (100.00% front-panel reading)
+    0x18, 0x33, 0x02, // Level = 39320
+    0x7f, 0x7f, 0x01, // Pan   = 32767 (center)
+    0x00, 0xf7,       // cksum + F7
+  ];
+  const body = parseGen3StateBroadcastBody(bcastBody);
+  if (
+    body.sectionId !== 0 || body.values.length !== 3
+    || body.values[0] !== 65534 || body.values[1] !== 39320 || body.values[2] !== 32767
+  ) {
+    failed.push(`parseGen3StateBroadcastBody drift: expected sectionId 0 + [65534,39320,32767], got ${JSON.stringify(body)}`);
+  }
+  let threwOnBadFn = false;
+  try {
+    parseGen3StateBroadcastBody(bcastHead); // 0x74, not 0x75
+  } catch {
+    threwOnBadFn = true;
+  }
+  if (!threwOnBadFn) {
+    failed.push('parseGen3StateBroadcastBody: expected throw on non-0x75 frame');
+  }
+
+  // Gen-3 typed SET (sub 09 00) round-trips byte-exact against the captured
+  // FM9-Edit Reverb TYPE change (Medium Room → Medium Spring), FW 11.00 2026-06-03.
+  const fm9TypeSet = buildSetParameter(66, 10, 524, 0x12);
+  const fm9TypeSetExpected = [
+    0xf0, 0x00, 0x01, 0x74, 0x12, 0x01, 0x09, 0x00, 0x42, 0x00, 0x0a, 0x00,
+    0x00, 0x00, 0x00, 0x0c, 0x04, 0x00, 0x00, 0x00, 0x00, 0x5f, 0xf7,
+  ];
+  if (hex(fm9TypeSet) !== hex(fm9TypeSetExpected)) {
+    failed.push(`FM9 typed-SET drift: buildSetParameter(66,10,524,0x12) != captured frame\n  ours: ${hex(fm9TypeSet)}\n  cap:  ${hex(fm9TypeSetExpected)}`);
+  }
+
+  // Gen-3 60-byte SET value-echo response (FM9-confirmed): the device echoes
+  // effectId/paramId + a 5-septet float32 normalized value. The captured TYPE
+  // echo's float = 16/78 = 0.205128 (Medium Spring = ordinal 16 of 79 types).
+  const fm9Echo = [
+    0xf0, 0x00, 0x01, 0x74, 0x12, 0x01, 0x09, 0x00, 0x42, 0x00, 0x0a, 0x00,
+    0x20, 0x1a, 0x48, 0x72, 0x03, 0x00, 0x00, 0x20, 0x00, 0x26, 0x59, 0x2c,
+    0x46, 0x4b, 0x55, 0x5a, 0x20, 0x29, 0x5c, 0x0e, 0x26, 0x4b, 0x39, 0x4e,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0xf7,
+  ];
+  const echo = parseGen3SetValueEcho(fm9Echo);
+  if (echo.effectId !== 66 || echo.paramId !== 10 || Math.abs(echo.normalizedValue - 16 / 78) > 1e-5) {
+    failed.push(`parseGen3SetValueEcho drift: expected {eff:66,pid:10,val~0.20513}, got ${JSON.stringify(echo)}`);
+  }
+
+  // ── Enum overlay + write-leg resolution goldens ────────────────────────────
+  //
+  // FUZZ_TYPE (eff=118, drive/fuzz pedal type selector) was added to the
+  // family-shared EFFECT_TYPE_OVERRIDES in enumOverlay.ts using AM4's
+  // DRIVE_TYPES table. Byte-anchored: FM9 hw capture confirmed ordinals 15 and
+  // 36 match AM4's Blues OD and Blackglass 7K (2026-06-04).
+  // GEN3_ENUM_ORDINAL_TO_RAW_ID was extended: FUZZ_TYPE ordinal 15 → raw-id 523
+  // (byte-exact from FM9 capture 3, sub=0x09 SET frame for eff=118 pid=0 val=523).
+
+  // FUZZ_TYPE family overlay coverage.
+  const fuzzOverlay = resolveEnumValues('FUZZ_TYPE');
+  if (fuzzOverlay === undefined) {
+    failed.push('resolveEnumValues("FUZZ_TYPE") returned undefined — FUZZ_TYPE missing from family overlay');
+  } else {
+    if (fuzzOverlay.values[15] !== 'Blues OD') {
+      failed.push(`FUZZ_TYPE ordinal 15: expected "Blues OD", got "${fuzzOverlay.values[15]}"`);
+    }
+    if (fuzzOverlay.values[36] !== 'Blackglass 7K') {
+      failed.push(`FUZZ_TYPE ordinal 36: expected "Blackglass 7K", got "${fuzzOverlay.values[36]}"`);
+    }
+    if (fuzzOverlay.provenance !== 'am4-shared') {
+      failed.push(`FUZZ_TYPE provenance: expected "am4-shared", got "${fuzzOverlay.provenance}"`);
+    }
+  }
+
+  // Blues OD write-leg: name → ordinal → raw-id round-trip.
+  const bluesOdResult = resolveGen3EnumNameToRawId('FUZZ_TYPE', 'Blues OD');
+  if (bluesOdResult.status !== 'resolved') {
+    failed.push(`resolveGen3EnumNameToRawId("FUZZ_TYPE","Blues OD"): expected "resolved", got "${bluesOdResult.status}"`);
+  } else {
+    if (bluesOdResult.rawId !== 523) {
+      failed.push(`Blues OD raw-id: expected 523 (FM9 capture-confirmed), got ${bluesOdResult.rawId}`);
+    }
+    if (bluesOdResult.ordinal !== 15) {
+      failed.push(`Blues OD ordinal: expected 15, got ${bluesOdResult.ordinal}`);
+    }
+  }
+
+  // Blackglass 7K has a read-leg label but NO captured raw-id → capture_pending.
+  const bgResult = resolveGen3EnumNameToRawId('FUZZ_TYPE', 'Blackglass 7K');
+  if (bgResult.status !== 'capture_pending') {
+    failed.push(`resolveGen3EnumNameToRawId("FUZZ_TYPE","Blackglass 7K"): expected "capture_pending", got "${bgResult.status}"`);
+  }
+
   if (failed.length > 0) {
     throw new Error(
       `${failed.length}/${cases.length + parseCases.length + roundTripCases.length + 2} Axe-Fx III codec golden(s) failed:\n` +
@@ -288,6 +459,7 @@ export function runAxeFxIIISetParamTests(): void {
 
 export const AXEFX3_GOLDEN_CASE_COUNT = (() => {
   // Mirror the runner's count for the test runner's progress line.
-  // (cases + parseCases + 264 round-trips + 2 broadcast assertions.)
-  return cases.length + parseCases.length + 4 * 6 * 11 + 2;
+  // (cases + parseCases + 264 round-trips + 2 legacy-broadcast + 3 gen-3-broadcast
+  //  + 2 FM9 write-path (typed-SET match + value-echo) + 4 FUZZ_TYPE enum assertions.)
+  return cases.length + parseCases.length + 4 * 6 * 11 + 2 + 3 + 2 + 4;
 })();

@@ -26,7 +26,7 @@ Code lives in [`src/axe-fx-iii/`](../../../src/axe-fx-iii/) (codec) and the cons
 
 ## See also
 
-- [`../../AXEFX3-BETA-TESTING.md`](../../AXEFX3-BETA-TESTING.md):
+- The community capture guides ([`../../capture-guides/testing-axe-fx-iii.md`](../../capture-guides/testing-axe-fx-iii.md)):
   workflow for III owners testing the beta surface.
 - [`../../research/fractal-protocol-decode-status.md`](../../research/fractal-protocol-decode-status.md):
   current decode coverage across all Fractal devices.

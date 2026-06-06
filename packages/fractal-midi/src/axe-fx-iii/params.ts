@@ -743,7 +743,7 @@ export const PARAMS: readonly Param[] = [
   { family: 'DISTORT', paramId: 15, name: 'DISTORT_INPUTSELECT', displayLabel: 'Input Select', unit: 'enum' }, // inferred from AM4
   { family: 'DISTORT', paramId: 16, name: 'DISTORT_DEPTH', displayLabel: 'Depth', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // inferred from AM4
   { family: 'DISTORT', paramId: 17, name: 'DISTORT_OFFSET1', unit: 'numeric' }, // post-gen overlay: numeric index/counter (Fractal convention)
-  { family: 'DISTORT', paramId: 18, name: 'DISTORT_CLIPTYPE2', unit: 'enum' }, // inferred from AM4
+  { family: 'DISTORT', paramId: 18, name: 'DISTORT_CLIPTYPE2', displayLabel: 'Type', unit: 'enum' }, // inferred from AM4
   { family: 'DISTORT', paramId: 19, name: 'DISTORT_SUPPLYSAG', displayLabel: 'Supply Sag', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // inferred from AM4
   { family: 'DISTORT', paramId: 20, name: 'DISTORT_PRESENCE', displayLabel: 'Presence', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // inferred from AM4
   { family: 'DISTORT', paramId: 21, name: 'DISTORT_LEVEL', displayLabel: 'Level', unit: 'db', displayMin: -80, displayMax: 20 }, // inferred from AM4
@@ -2981,7 +2981,7 @@ export const PARAMS_BY_FAMILY: Readonly<Record<string, readonly Param[]>> = {
     { family: 'DISTORT', paramId: 15, name: 'DISTORT_INPUTSELECT', displayLabel: 'Input Select', unit: 'enum' }, // inferred from AM4
     { family: 'DISTORT', paramId: 16, name: 'DISTORT_DEPTH', displayLabel: 'Depth', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // inferred from AM4
     { family: 'DISTORT', paramId: 17, name: 'DISTORT_OFFSET1', unit: 'numeric' }, // post-gen overlay: numeric index/counter (Fractal convention)
-    { family: 'DISTORT', paramId: 18, name: 'DISTORT_CLIPTYPE2', unit: 'enum' }, // inferred from AM4
+    { family: 'DISTORT', paramId: 18, name: 'DISTORT_CLIPTYPE2', displayLabel: 'Type', unit: 'enum' }, // inferred from AM4
     { family: 'DISTORT', paramId: 19, name: 'DISTORT_SUPPLYSAG', displayLabel: 'Supply Sag', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // inferred from AM4
     { family: 'DISTORT', paramId: 20, name: 'DISTORT_PRESENCE', displayLabel: 'Presence', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // inferred from AM4
     { family: 'DISTORT', paramId: 21, name: 'DISTORT_LEVEL', displayLabel: 'Level', unit: 'db', displayMin: -80, displayMax: 20 }, // inferred from AM4
@@ -5288,7 +5288,7 @@ export const PARAM_BY_KEY: Readonly<Record<string, Param>> = {
   'DISTORT.DISTORT_INPUTSELECT': { family: 'DISTORT', paramId: 15, name: 'DISTORT_INPUTSELECT', displayLabel: 'Input Select', unit: 'enum' }, // inferred from AM4
   'DISTORT.DISTORT_DEPTH': { family: 'DISTORT', paramId: 16, name: 'DISTORT_DEPTH', displayLabel: 'Depth', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // inferred from AM4
   'DISTORT.DISTORT_OFFSET1': { family: 'DISTORT', paramId: 17, name: 'DISTORT_OFFSET1', unit: 'numeric' }, // post-gen overlay: numeric index/counter (Fractal convention)
-  'DISTORT.DISTORT_CLIPTYPE2': { family: 'DISTORT', paramId: 18, name: 'DISTORT_CLIPTYPE2', unit: 'enum' }, // inferred from AM4
+  'DISTORT.DISTORT_CLIPTYPE2': { family: 'DISTORT', paramId: 18, name: 'DISTORT_CLIPTYPE2', displayLabel: 'Type', unit: 'enum' }, // inferred from AM4
   'DISTORT.DISTORT_SUPPLYSAG': { family: 'DISTORT', paramId: 19, name: 'DISTORT_SUPPLYSAG', displayLabel: 'Supply Sag', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // inferred from AM4
   'DISTORT.DISTORT_PRESENCE': { family: 'DISTORT', paramId: 20, name: 'DISTORT_PRESENCE', displayLabel: 'Presence', unit: 'knob_0_10', displayMin: 0, displayMax: 10 }, // inferred from AM4
   'DISTORT.DISTORT_LEVEL': { family: 'DISTORT', paramId: 21, name: 'DISTORT_LEVEL', displayLabel: 'Level', unit: 'db', displayMin: -80, displayMax: 20 }, // inferred from AM4

@@ -63,14 +63,7 @@ export function registerParamTools(server: McpServer): void {
 
   server.registerTool('set_param', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    description: [
-      'Write one parameter, addressed by (block, name) in display units (knob 0..10, dB, ms, %, enum name or wire index). Call describe_device({port}) first for per-device idioms; agent_guidance covers relative-change, tempo sync, applicability gates, enum conventions.',
-      'Pass `channel` to target a specific A/B/C/D or X/Y; server switches first, then writes.',
-      'Pass `instance` for grid devices with multiple blocks of the same type (e.g. instance=2 targets Amp 2 on Axe-Fx II). Default 1.',
-      'Aliases + enum matching auto-correct (drive.volume <-> drive.level on AM4; case + whitespace + concept-keys like "USA IIC+" <-> "USA MK IIC+"). Response echoes the canonical name; quote that back.',
-      'Wire-ack is NOT audible confirmation. Unplaced blocks ack silently; type-gated knobs (amp.master on non-master Marshalls) silently no-op. Call find_compatible_types before writing a type + a specific knob.',
-      'Tempo lock (AM4/II): a delay.time/rate write is silently ignored while tempo is synced; clear tempo to NONE first.',
-    ].join(' '),
+    description: 'Write one parameter by (block, name) in display units (knob 0..10, dB, ms, %, enum name or wire index). Call describe_device({port}) first; its agent_guidance covers relative-change, tempo sync, applicability gates, enum conventions. `channel` targets a specific A/B/C/D or X/Y (server switches first, then writes); `instance` targets duplicate blocks on grid devices (instance=2 = Amp 2 on Axe-Fx II, default 1). Aliases + enum matching auto-correct (drive.volume<->drive.level on AM4; case, whitespace, concept-keys like "USA IIC+"<->"USA MK IIC+"); the response echoes the canonical name, quote that back. Wire-ack is NOT audible confirmation: unplaced blocks and type-gated knobs (amp.master on non-master Marshalls) ack silently then no-op; call find_compatible_types before writing a type plus a specific knob. Tempo lock (AM4/II): a delay.time/rate write is silently ignored while tempo is synced; clear tempo to NONE first.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       block: z.string().describe('Block name (e.g. "amp", "drive", "reverb", "delay").'),

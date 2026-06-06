@@ -692,12 +692,21 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
     }),
 
     // ---------- DRIVE MODELS ----------
+    //
+    // gen-3 (axeFxIII column, shared by III/FM3/FM9): the drive/fuzz model
+    // selector reuses AM4's DRIVE_TYPES at the observed ordinals. MEDIUM
+    // confidence — the 2026-06-03 FM9 capture (fw 11.00) bound 2 points
+    // (ordinal 15 = "Blues OD", ordinal 36 = "Blackglass 7K") that match
+    // DRIVE_TYPES exactly, but the gen-3 FUZZ_TYPE list is not byte-anchored
+    // end-to-end and may extend beyond AM4. Each value below is validated to
+    // be a real DRIVE_TYPES member by verify-enum-coverage. (Set-by-name is
+    // still gated on gen-3; this column is for translation + reverse lookup.)
     'proco-rat': Object.freeze({
       block: 'drive',
       paramName: 'type',
       am4: 'Rat Distortion',
       axeFxII: 'RAT DIST',
-      axeFxIII: null,
+      axeFxIII: 'Rat Distortion',
       description: 'Pro Co RAT',
     }),
     'butler-tube-driver-3-knob': Object.freeze({
@@ -705,7 +714,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Tube Drive 3-Knob',
       axeFxII: 'TUBE DRV 3-KNOB',
-      axeFxIII: null,
+      axeFxIII: 'Tube Drive 3-Knob',
       description: 'Butler Tube Driver (3-knob)',
     }),
     'butler-tube-driver-4-knob': Object.freeze({
@@ -713,7 +722,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Tube Drive 4-Knob',
       axeFxII: 'TUBE DRV 4-KNOB',
-      axeFxIII: null,
+      axeFxIII: 'Tube Drive 4-Knob',
       description: 'Butler Tube Driver (4-knob)',
     }),
     'tycobrahe-octavia': Object.freeze({
@@ -721,7 +730,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Octave Distortion',
       axeFxII: 'OCTAVE DIST',
-      axeFxIII: null,
+      axeFxIII: 'Octave Distortion',
       description: 'Tycobrahe Octavia',
     }),
     'tape-distortion-generic': Object.freeze({
@@ -729,7 +738,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Tape Distortion',
       axeFxII: 'TAPE DIST',
-      axeFxIII: null,
+      axeFxIII: 'Tape Distortion',
       description: 'Generic tape distortion',
     }),
     'marshall-shredmaster': Object.freeze({
@@ -737,7 +746,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Shred Distortion',
       axeFxII: 'SHRED DIST',
-      axeFxIII: null,
+      axeFxIII: 'Shred Distortion',
       description: 'Marshall Shredmaster',
     }),
     'boss-mt2-metal-zone': Object.freeze({
@@ -745,22 +754,32 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'M-Zone Distortion',
       axeFxII: 'M-ZONE DIST',
-      axeFxIII: null,
+      axeFxIII: 'M-Zone Distortion',
       description: 'Boss MT-2 Metal Zone',
     }),
     'cochrane-timmy': Object.freeze({
       block: 'drive', paramName: 'type',
-      am4: 'Timothy', axeFxII: 'TIMOTHY', axeFxIII: null,
+      am4: 'Timothy', axeFxII: 'TIMOTHY', axeFxIII: 'Timothy',
       description: 'Cochrane Timmy (Tim Pedal)',
     }),
 
     // ---------- REVERB ALGORITHMS ----------
+    //
+    // gen-3 (axeFxIII column, shared by III/FM3/FM9): the reverb TYPE
+    // selector is BYTE-ANCHORED to AM4's REVERB_TYPES. The 2026-06-03 FM9
+    // capture (fw 11.00) confirmed gen-3 broadcast ordinal 1 = "Room, Medium",
+    // 16 = "Spring, Medium", 45 = "Hall, Music" — all matching REVERB_TYPES.
+    // So the gen-3 reverb display name == the AM4 name for every shared model;
+    // axeFxIII = am4 here, validated against REVERB_TYPES by verify-enum-
+    // coverage. (gen-3 may EXTEND the list with models AM4 never shipped;
+    // those simply have no row. Set-by-name is still gated on gen-3 — this
+    // column drives translation + reverse lookup only.)
     'room-small': Object.freeze({
       block: 'reverb',
       paramName: 'type',
       am4: 'Room, Small',
       axeFxII: 'SMALL ROOM',
-      axeFxIII: null,
+      axeFxIII: 'Room, Small',
       description: 'Small room reverb',
     }),
     'room-medium': Object.freeze({
@@ -768,7 +787,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Room, Medium',
       axeFxII: 'MEDIUM ROOM',
-      axeFxIII: null,
+      axeFxIII: 'Room, Medium',
       description: 'Medium room reverb',
     }),
     'room-large': Object.freeze({
@@ -776,7 +795,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Room, Large',
       axeFxII: 'LARGE ROOM',
-      axeFxIII: null,
+      axeFxIII: 'Room, Large',
       description: 'Large room reverb',
     }),
     'hall-small': Object.freeze({
@@ -784,7 +803,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Hall, Small',
       axeFxII: 'SMALL HALL',
-      axeFxIII: null,
+      axeFxIII: 'Hall, Small',
       description: 'Small hall reverb',
     }),
     'hall-medium': Object.freeze({
@@ -792,7 +811,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Hall, Medium',
       axeFxII: 'MEDIUM HALL',
-      axeFxIII: null,
+      axeFxIII: 'Hall, Medium',
       description: 'Medium hall reverb',
     }),
     'hall-large': Object.freeze({
@@ -800,7 +819,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Hall, Large',
       axeFxII: 'LARGE HALL',
-      axeFxIII: null,
+      axeFxIII: 'Hall, Large',
       description: 'Large hall reverb',
     }),
     'chamber-small': Object.freeze({
@@ -808,7 +827,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Chamber, Small',
       axeFxII: 'SMALL CHAMBER',
-      axeFxIII: null,
+      axeFxIII: 'Chamber, Small',
       description: 'Small chamber reverb',
     }),
     'chamber-medium': Object.freeze({
@@ -816,7 +835,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Chamber, Medium',
       axeFxII: 'MEDIUM CHAMBER',
-      axeFxIII: null,
+      axeFxIII: 'Chamber, Medium',
       description: 'Medium chamber reverb',
     }),
     'chamber-large': Object.freeze({
@@ -824,7 +843,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Chamber, Large',
       axeFxII: 'LARGE CHAMBER',
-      axeFxIII: null,
+      axeFxIII: 'Chamber, Large',
       description: 'Large chamber reverb',
     }),
     'plate-small': Object.freeze({
@@ -832,7 +851,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Plate, Small',
       axeFxII: 'SMALL PLATE',
-      axeFxIII: null,
+      axeFxIII: 'Plate, Small',
       description: 'Small plate reverb',
     }),
     'plate-medium': Object.freeze({
@@ -840,7 +859,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Plate, Medium',
       axeFxII: 'MEDIUM PLATE',
-      axeFxIII: null,
+      axeFxIII: 'Plate, Medium',
       description: 'Medium plate reverb',
     }),
     'plate-large': Object.freeze({
@@ -848,7 +867,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Plate, Large',
       axeFxII: 'LARGE PLATE',
-      axeFxIII: null,
+      axeFxIII: 'Plate, Large',
       description: 'Large plate reverb',
     }),
     'spring-small': Object.freeze({
@@ -856,7 +875,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Spring, Small',
       axeFxII: 'SMALL SPRING',
-      axeFxIII: null,
+      axeFxIII: 'Spring, Small',
       description: 'Small spring reverb',
     }),
     'spring-medium': Object.freeze({
@@ -864,7 +883,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Spring, Medium',
       axeFxII: 'MEDIUM SPRING',
-      axeFxIII: null,
+      axeFxIII: 'Spring, Medium',
       description: 'Medium spring reverb',
     }),
     'spring-large': Object.freeze({
@@ -872,7 +891,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Spring, Large',
       axeFxII: 'LARGE SPRING',
-      axeFxIII: null,
+      axeFxIII: 'Spring, Large',
       description: 'Large spring reverb',
     }),
     'hall-concert': Object.freeze({
@@ -880,7 +899,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Hall, Concert',
       axeFxII: 'CONCERT HALL',
-      axeFxIII: null,
+      axeFxIII: 'Hall, Concert',
       description: 'Concert hall reverb',
     }),
     'plate-london-emt140': Object.freeze({
@@ -888,7 +907,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Plate, London',
       axeFxII: 'LONDON PLATE',
-      axeFxIII: null,
+      axeFxIII: 'Plate, London',
       description: 'EMT 140 (London plate)',
     }),
     'plate-sun': Object.freeze({
@@ -896,7 +915,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Plate, Sun',
       axeFxII: 'SUN PLATE',
-      axeFxIII: null,
+      axeFxIII: 'Plate, Sun',
       description: 'Sun plate reverb',
     }),
     'room-huge': Object.freeze({
@@ -904,7 +923,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Room, Huge',
       axeFxII: 'HUGE ROOM',
-      axeFxIII: null,
+      axeFxIII: 'Room, Huge',
       description: 'Huge room reverb',
     }),
     'room-drum': Object.freeze({
@@ -912,7 +931,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Room, Drum',
       axeFxII: 'DRUM ROOM',
-      axeFxIII: null,
+      axeFxIII: 'Room, Drum',
       description: 'Drum room reverb',
     }),
     'chamber-deep': Object.freeze({
@@ -920,7 +939,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Chamber, Deep',
       axeFxII: 'DEEP CHAMBER',
-      axeFxIII: null,
+      axeFxIII: 'Chamber, Deep',
       description: 'Deep chamber reverb',
     }),
     'hall-asylum': Object.freeze({
@@ -928,7 +947,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Hall, Asylum',
       axeFxII: 'ASYLUM HALL',
-      axeFxIII: null,
+      axeFxIII: 'Hall, Asylum',
       description: 'Asylum hall reverb',
     }),
     'plate-vocal': Object.freeze({
@@ -936,7 +955,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Plate, Vocal',
       axeFxII: 'VOCAL PLATE',
-      axeFxIII: null,
+      axeFxIII: 'Plate, Vocal',
       description: 'Vocal plate reverb',
     }),
     'hall-wide': Object.freeze({
@@ -944,7 +963,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
       paramName: 'type',
       am4: 'Hall, Wide',
       axeFxII: 'WIDE HALL',
-      axeFxIII: null,
+      axeFxIII: 'Hall, Wide',
       description: 'Wide hall reverb',
     }),
   });
@@ -1035,7 +1054,14 @@ function rowFieldForPort(
       return row.am4;
     case 'axe-fx-ii':
       return row.axeFxII;
+    // The gen-3 family (Axe-Fx III / FM3 / FM9) shares one effect codec and
+    // one set of effect-type enum display strings, so FM3 / FM9 read the
+    // same `axeFxIII` column. (Setting a gen-3 enum BY NAME is still gated
+    // — `enum_display_only` — until the raw-id capture lands; this only maps
+    // the canonical display string used for translation + reverse lookup.)
     case 'axe-fx-iii':
+    case 'fm3':
+    case 'fm9':
       return row.axeFxIII;
     default:
       return null;

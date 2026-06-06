@@ -457,6 +457,92 @@ check(
   `expected 11 cables, got ${colTwoCables.length}`,
 );
 
+// ─────────────────────────────────────────────────────────────────
+// Case 9: FX Loop + Output block as chain terminator.
+//
+// Topology:
+//   col 1    col 2    col 3    col 4
+//   row 2    amp  →   cab  →  fxloop → output
+//
+// The Output block at r2c4 acts as the hardware output sink. No shunts
+// are needed; the chain terminates at the Output block (id=140).
+// The FX Loop block (id=136) sits between cab and output.
+//
+// This exercises two behaviors:
+//   1. FX Loop placed in a cable chain like any other block
+//   2. Output block used as a chain terminator instead of shunts to col 12
+//
+// Both are legal on the Axe-Fx II: the hardware treats the Output block
+// as a permanent chain sink regardless of which column it sits in.
+// ─────────────────────────────────────────────────────────────────
+console.log('\nCase 9: FX Loop + Output block as chain terminator');
+
+const fxLoopChain: ApplyPresetAtInput = {
+  preset_number: 666,
+  blocks: [
+    { id: 'amp',    block: 'Amp 1',    row: 2, col: 1 },
+    { id: 'cab',    block: 'Cab 1',    row: 2, col: 2 },
+    { id: 'fxloop', block: 'FX Loop',  row: 2, col: 3 },
+    { id: 'out',    block: 'Output',   row: 2, col: 4 },
+  ],
+  routing: [
+    { from: 'amp',    to: 'cab' },
+    { from: 'cab',    to: 'fxloop' },
+    { from: 'fxloop', to: 'out' },
+  ],
+};
+
+const fxLoopOps = buildApplyPresetAtOps(fxLoopChain, { wire: true });
+
+const fxLoopPlaceBlocks = fxLoopOps.filter((o) => o.kind === 'place_block');
+const fxLoopCables      = fxLoopOps.filter((o) => o.kind === 'cable');
+
+check(
+  'places exactly 4 blocks (amp + cab + fxloop + output)',
+  fxLoopPlaceBlocks.length === 4,
+  `got ${fxLoopPlaceBlocks.length}`,
+);
+check(
+  'emits exactly 3 cables (no auto-shunt extension past Output block)',
+  fxLoopCables.length === 3,
+  `got ${fxLoopCables.length}`,
+);
+
+// Verify the cable from FX Loop (r2c3) to Output (r2c4).
+const expectedFxLoopToOutput = buildSetCellRouting({
+  srcRow: 2, srcCol: 3, dstRow: 2, dstCol: 4, connect: true,
+});
+const fxLoopToOutput = fxLoopCables.find((o) => /fxloop.*out/.test(o.summary));
+check(
+  'fxloop → output cable byte-exact',
+  fxLoopToOutput !== undefined && hex(fxLoopToOutput.bytes) === hex(expectedFxLoopToOutput),
+  fxLoopToOutput ? `got ${hex(fxLoopToOutput.bytes)} vs ${hex(expectedFxLoopToOutput)}` : 'op not found',
+);
+
+// Confirm FX Loop block is placed (not mistaken for a shunt or skipped).
+const fxLoopPlace = fxLoopPlaceBlocks.find((o) => /FX.Loop|fxloop/i.test(o.summary));
+check(
+  'FX Loop block placement op emitted',
+  fxLoopPlace !== undefined,
+  `placements: ${fxLoopPlaceBlocks.map((o) => o.summary).join(' | ')}`,
+);
+
+// Confirm Output block is placed.
+const outputPlace = fxLoopPlaceBlocks.find((o) => /Output|output/i.test(o.summary));
+check(
+  'Output block placement op emitted',
+  outputPlace !== undefined,
+  `placements: ${fxLoopPlaceBlocks.map((o) => o.summary).join(' | ')}`,
+);
+
+// No shunts — the Output block terminates the chain at col 4.
+const fxLoopShunts = fxLoopPlaceBlocks.filter((o) => /SHUNT|shunt/i.test(o.summary));
+check(
+  'no shunts auto-placed (Output block terminates at col 4)',
+  fxLoopShunts.length === 0,
+  `got ${fxLoopShunts.length} shunt placement(s)`,
+);
+
 console.log('');
 if (failed > 0) {
   console.error(`✗ ${failed} check(s) FAILED.`);

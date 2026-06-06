@@ -8,6 +8,154 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
+## [0.2.0]
+
+Adds the rest of the modern Fractal floor-unit family (FM3 and FM9) and a
+one-command macOS install. The Axe-Fx III, FM3, and FM9 now run on one shared
+gen-3 codec with per-device parameter catalogs mined from each unit's own editor,
+so a parameter write addresses the right control on each device instead of
+borrowing the III's numbering.
+
+### Added
+
+- **Fractal Audio FM9** (model byte 0x12) and **Fractal Audio FM3** (model byte
+  0x11), community beta. They share the Axe-Fx III's gen-3 SysEx protocol, scenes,
+  and A to D channels, on the FM9's 6x14 grid and the FM3's 4x12 grid, and are
+  controlled through the same unified tools as every other device. Like the III,
+  they ship behind a beta notice pending a hardware round-trip from an owner; see
+  the per-device beta-testing guides.
+- **Fractal Axe-Fx Standard / Ultra** (gen-1, model byte 0x01), community beta.
+  A descriptor decoded byte-for-byte from the published gen-1 SysEx spec: 922
+  parameters across 35 blocks. Both writing (`set_param` / `set_params`) and
+  reading (`get_param` / `get_params`) are wired: a parameter query (function 0x02
+  with the set/query flag cleared) returns the live value and the device's own
+  label. Whole-preset dump, save, and preset/scene/channel switching are out of
+  scope, so those tools decline cleanly. Gen-1 also participates in
+  `translate_preset` as a source into Axe-Fx II and AM4. All decoded from the spec
+  and unconfirmed on hardware; confirm changes on the front panel.
+- **Preset backup and restore (`export_preset` / `import_preset`).** `export_preset`
+  writes a byte-exact `.syx` backup of the active working buffer to disk, and
+  `import_preset` re-applies a backup to the device, on Fractal AM4 and Axe-Fx II.
+  `import_preset` targets the working buffer by default, or a stored
+  `target_location` when save is explicitly authorized. `export_preset` also takes
+  an optional `location` to dump a stored preset slot straight from device flash;
+  that path is gen-3 (Axe-Fx III / FM3 / FM9), wire-confirmed on FM9 (the `fn=0x03`
+  request and `fn=0x77/0x78/0x79` dump).
+- **macOS install.** `npm run setup-mac` builds and registers the server with
+  Claude Desktop in one command, with no config-file editing. See
+  `docs/INSTALL-MAC.md`. Windows keeps its one-click installer.
+- **More AM4 parameters, from hardware probes.** Amp expert controls
+  (`plate_suppr_diodes`, `cab_zoom`, `dynacab_sync`), 23 global-block enum tables,
+  and the amp channel LED color enum are now wired and labeled from hardware-probe
+  captures, so more of the AM4's front panel is reachable by name.
+
+### Changed
+
+- **The modern Fractal family is one codec, not three.** The Axe-Fx III, FM3, and
+  FM9 are per-device configs of a single model-byte-parameterized gen-3 codec
+  factory; adding a gen-3 device is a config, not a package. The III's behavior is
+  unchanged and is now frozen by a byte-identity gate.
+- **Device-true parameter catalogs for FM3 and FM9.** Each device's parameter IDs
+  are mined from its own editor (validated to 100 percent against the III's
+  known-good table) rather than reused from the III. Parameter IDs are
+  device-specific, so reusing the III's would have addressed the wrong control on
+  about 13 percent (FM3) and 24 percent (FM9) of shared parameters; each device
+  now uses its own.
+- **One tool surface.** The Fractal device-namespaced tools (`am4_*`, `axefx2_*`,
+  `axefx3_*`) are removed; every Fractal device is driven through the unified,
+  port-routed tools (`apply_preset`, `set_param`, `get_param`, and the rest). If
+  you had a saved prompt naming a `*_`-prefixed tool, point it at the unified tool
+  with a `port` argument instead. The Hydrasynth keeps its `hydra_*` tools.
+- **Signal-chain routing on the gen-3 grid.** `apply_preset` lays out the cables
+  between blocks on the III/FM9 6x14 and FM3 4x12 grids (the `fn=0x01 sub=0x35`
+  routing op), decoded from FM9-Edit and FM3-Edit captures, so a built preset
+  passes signal end to end instead of placing unconnected blocks.
+
+### Fixed
+
+- The modern family's `set_bypass` and `switch_scene` now report a device
+  rejection instead of always claiming the write succeeded.
+- The gen-3 patch-name read used the Axe-Fx III's model byte on every device; FM3
+  and FM9 reads now use their own.
+- **`apply_preset` on gen-3 now sends calibrated values.** It was passing spec
+  knob values (e.g. `treble: 5.5`) straight to the encoder, which rejected
+  non-integers and silently sent integer knob values as raw wire (so `gain: 5`
+  went out near zero instead of mid-travel). It now coerces display to wire
+  through each parameter's calibration, the same path `set_param` already used.
+- `set_block` is bounded to each device's grid (the FM3's 4x12 no longer accepts an
+  III-sized cell), and auto-save is gated where the store envelope is unpublished.
+- Port routing: a port that enumerates as a Fractal FM9 or FM3 resolves to that
+  device rather than falling through to the AM4 catch-all.
+- **Axe-Fx II read values round to the panel.** `get_preset` and post-apply
+  read-back returned raw float noise from the wire-to-display inverse (a panel
+  `7.0` reading came back as `7.000030518`), which fouled read-modify-write
+  nudges. Values now round to each parameter's display resolution at the read
+  boundary.
+- **Axe-Fx II `channel_blocks` is now the real X/Y set.** `describe_device`
+  advertised a malformed channel-block list (filtered on bypassable rather than
+  channel-bearing blocks, emitted display names instead of canonical keys, and
+  duplicated multi-instance blocks). An agent that trusted it sent channel params
+  to a block with no channels and failed the first apply. It now lists only
+  genuinely X/Y-capable block types, deduped, as canonical keys.
+- **`compressor.threshold` spelling.** The Axe-Fx II compressor threshold was
+  registered as `treshold`; it is now `threshold`, with `treshold` kept as a
+  back-compat alias so existing prompts and recipes keep resolving.
+- **AM4 save returns a verifiable receipt and guards overwrites.** `save_preset`
+  reads the stored slot back after writing and reports what actually landed, and it
+  pre-flight scans a non-empty target location and refuses to overwrite it unless
+  overwrite is confirmed. This closes a reported case where a save appeared to go
+  to one location while the slot held a different preset.
+- **AM4 tone builds no longer hang.** A large `apply_preset` is bounded by a total
+  time budget with diagnostic logging, so an unresponsive device degrades to a
+  partial result with a clear message instead of stalling for minutes.
+- **AM4 unsaved-edit gate no longer over-refuses.** The dirty-buffer check is
+  rebased onto deterministic edit tracking and the device-true edited bit, so
+  navigating away no longer refuses with a false "unsaved edits" warning when the
+  buffer is clean.
+- **AM4 scene levels read back correctly.** The per-scene Level controls (Scene
+  1-4 on the Main Levels page) were decoded against the wrong dB range, so
+  `get_param` / `get_preset` / `list_params` reported wrong values (a +10 dB scene
+  read back as -5). The writes were always correct; only the read-back display was
+  wrong. They now decode against the device's actual plus/minus 20 dB range.
+- **Leveling guidance follows Fractal's unity-match philosophy.** The built-in
+  volume guidance on the AM4 and Axe-Fx II steered scene balancing backwards (it
+  pushed clean scenes quieter). It now matches Fractal's own approach: balance
+  every scene to the white-line 0 dB average, treat the red line as headroom not
+  clipping, and raise the clean scene rather than lower it. The Axe-Fx II guidance
+  now points at its real per-scene control (`output.scene_N_main`).
+- **Channel LED colors can be set inside `apply_preset`.** The AM4 amp slot's
+  per-channel map now accepts a `color` key, so a whole preset including footswitch
+  colors builds in one call instead of a follow-up write.
+- **Axe-Fx II output is muted safely during `apply_preset`.** The mute and restore
+  around a multi-step build are now verified and retried (a dropped mute on a flaky
+  USB link could let a half-built amp screech), and the output is restored to its
+  exact pre-apply level instead of a fixed value.
+- **FM9 preset switching lands the right preset.** The FM9 reads MIDI Bank Select
+  from CC0 (MSB), and the bank-plus-program-change is now sent as separate MIDI
+  messages, fixing both a wrong bank above preset 127 and a Windows MIDI limitation
+  that silently dropped the combined message. Axe-Fx III and FM3 keep the
+  spec-standard bank encoding.
+- **Built-in recipes are validated against each device.** Several block-stack
+  recipes carried amp / block / enum names that no longer matched the catalog, so
+  applying them failed; every recipe is now materialized and checked at build time.
+- The server reports its real version in serverInfo instead of a hardcoded value.
+
+### Under the hood
+
+- A byte-identity gate freezes the Axe-Fx III's catalog and `describe_device`
+  surface, so the shared factory cannot silently change the III anchor.
+- The VP4 (model byte 0x14) is registered and reachable through `describe_device`
+  and the read tools; device-state writes are gated pending confirmation of its
+  serial-chain block-placement wire shape.
+- FM9 amp-voicing, drive/fuzz, and filter type names read back from the device
+  where hardware captures confirmed them; the drive/fuzz type vocabulary is shared
+  across the gen-3 family. Amp *model* names still read back as numbers on gen-3
+  pending an owner capture of the model list (the amp-model ordinals are
+  device-specific and exist only on the hardware).
+- The first hardware-captured gen-3 single-parameter GET response (the device's
+  internal value plus its own display label, from a community FM9) is decoded and
+  available as a read-only calibration primitive for the paramId rebind work.
+
 ## [0.1.0]
 
 First public release. A local MCP server that lets Claude control real USB MIDI
@@ -29,7 +177,7 @@ generic MIDI for any USB device.
   every write is byte-verified against that evidence, but no round-trip has been
   confirmed on real III hardware yet. Every III tool response carries a beta
   notice. III owners can confirm what works without writing code; see
-  `docs/AXEFX3-BETA-TESTING.md`.
+  `packages/fractal-midi/docs/capture-guides/testing-axe-fx-iii.md`.
 - **Any USB MIDI device.** The generic-MIDI primitives reach gear that has no
   registered descriptor, so a Line 6 Helix, a Boss GT-1000, or any synth with a
   published CC chart is controllable from day one.
@@ -131,4 +279,5 @@ generic MIDI for any USB device.
 - Apache-2.0, with the patent grant, from day one. Trademark statement in
   `NOTICE`. Security policy in `SECURITY.md`.
 
+[0.2.0]: https://github.com/TheAndrewStaker/mcp-midi-control/releases/tag/v0.2.0
 [0.1.0]: https://github.com/TheAndrewStaker/mcp-midi-control/releases

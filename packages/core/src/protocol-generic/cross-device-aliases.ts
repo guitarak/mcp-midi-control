@@ -187,15 +187,21 @@ export const CROSS_DEVICE_ALIASES: Readonly<
     // agree with AM4 ("Level", "Type"), so most cases work out of
     // the box. The entries below cover the cases where the canonical
     // form on III differs from the obvious word.
+    // gen-3 `drive` is the user-facing Drive / OD / Fuzz pedal (FUZZ family).
+    // It has its OWN `drive` knob (FUZZ_DRIVE) and `level` output, so no
+    // `drive -> gain` rewrite here (that belonged to the old amp-as-drive
+    // mislabel; the amp tone stack lives on the `amp` block now).
     drive: Object.freeze({
       volume: 'level',
       output: 'level',
-      // III's DISTORT_DRIVE display label is "Gain"; accept either.
-      drive: 'gain',
     }),
-    // III amp's main volume display label is "Master"; II/AM4 aliases
-    // accepted. III amp's amp-type-enum knob is `type` (matches AM4).
+    // gen-3 `amp` is the DISTORT family (tone stack + power section). Its
+    // input-drive knob is DISTORT_DRIVE (stripped key `drive`); the unified
+    // surface accepts `gain` as the display word per cross-device convention.
+    // Master volume display label is "Master"; II/AM4 aliases accepted. The
+    // amp-model enum knob is `type` (matches AM4).
     amp: Object.freeze({
+      gain: 'drive',
       master_volume: 'master',
       volume: 'master',
       effect_type: 'type',
@@ -262,7 +268,10 @@ export function resolveParamAlias(
   // Defensive normalization: tolerate whitespace and mixed case on
   // the port + block + name keys. Canonical lookups in this table
   // are stored lowercase.
-  const portKey = port.trim().toLowerCase();
+  const rawPortKey = port.trim().toLowerCase();
+  // The gen-3 family (Axe-Fx III / FM3 / FM9) shares one effect codec and
+  // one param-naming convention, so FM3 / FM9 reuse the III's alias table.
+  const portKey = rawPortKey === 'fm3' || rawPortKey === 'fm9' ? 'axe-fx-iii' : rawPortKey;
   const blockKey = blockType.trim().toLowerCase();
   const nameKey = paramName.trim().toLowerCase();
 

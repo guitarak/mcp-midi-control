@@ -1,94 +1,54 @@
 /**
  * Axe-Fx III agent-regression cases.
  *
- * III has two parameter surfaces today: the unified `set_param` /
- * `get_param` (block + name) and the lower-level `axefx3_set_parameter`
- * / `axefx3_get_parameter` (raw paramId integers). Cases below target
- * the lower-level surface for SET_PARAMETER envelope coverage: the
- * fn=0x01 wire shape locked against 10 public captures.
+ * III is a unified-surface device: parameter reads and writes go through
+ * the port-dispatched `set_param` / `get_param` / `apply_preset` tools,
+ * the same surface every device shares. The III-namespaced `axefx3_*`
+ * tools were retired; the fn=0x01 SET_PARAMETER wire shape they exercised
+ * is covered by codec-layer goldens (verify-msg / verify-dispatcher) and
+ * driven end-to-end through `apply_preset` below.
  *
- * `axefx3_set_parameter` is the wire-level tool; the agent reaches for
- * it when the user names a raw paramId or when the unified set_param
- * fails to resolve a name. Both flows funnel through the same fn=0x01
- * builder, so a regression in the builder would surface here first.
+ * Mock transport: the III connector now synthesizes the gen-3
+ * 0x74/0x75/0x76 read burst (`makeGen3BroadcastMockResponder`), so read
+ * tools (get_param / get_preset) complete without hardware. The MCP server
+ * is force-connected before the agent starts (`alwaysLoad` in
+ * mcp-config.json), so the agent sees the real tool set instead of an empty
+ * list. Both are prerequisites for these cases to exercise anything.
+ *
+ * Amp MODELS are NOT named in these prompts. On gen-3 the amp model selector
+ * (DISTORT_TYPE) is a numeric passthrough — the device-specific model roster
+ * isn't captured, so "set a JCM800" can't resolve by name (it resolves on AM4
+ * / Axe-Fx II, which have hardware-verified amp tables). The prompts describe
+ * tone generically (clean / crunch / high-gain / lead) so the agent places an
+ * amp + shapes gain/EQ/level knobs, which is what gen-3 supports today.
  */
 
 import type { AgentRegressionCase } from './types.js';
 
 export const AXE_FX_III_CASES: AgentRegressionCase[] = [
-  // SET_PARAMETER fn=0x01 envelope coverage ──────────────
-  {
-    id: 'axefx3-set-parameter-fn01-envelope',
-    device: 'axe-fx-iii',
-
-    description: 'fn=0x01 SET_PARAMETER envelope: agent should reach for axefx3_set_parameter when the user gives a paramId integer. Asserts the call lands with the requested (block, param_id, value) tuple. The fn=0x01 sub-action 09 00 wire shape was locked against 10 public captures; if the builder regresses, this case is the canary.',
-    prompt: "On the Axe-Fx III, set parameter ID 0 on the AMP1 block to wire value 16384.",
-    expectations: {
-      must_call: ['axefx3_set_parameter'],
-      max_tools: 5,
-      tool_call_validators: [{
-        tool: 'axefx3_set_parameter',
-        check: (args) => {
-          const block = typeof args.block === 'string' ? args.block.toUpperCase() : '';
-          if (!block.includes('AMP1') && block !== 'AMP') {
-            return `axefx3_set_parameter block should target AMP1, got ${String(args.block)}.`;
-          }
-          if (args.param_id !== 0) {
-            return `axefx3_set_parameter param_id should be 0, got ${JSON.stringify(args.param_id)}.`;
-          }
-          if (args.value !== 16384) {
-            return `axefx3_set_parameter value should be 16384 (wire 0..65534), got ${JSON.stringify(args.value)}.`;
-          }
-          return true;
-        },
-      }],
-      max_wall_seconds: 90,
-    },
-  },
-
-  // GET_PARAMETER fn=0x01 envelope coverage ───────────────────────────
-  {
-    id: 'axefx3-get-parameter-fn01-envelope',
-    device: 'axe-fx-iii',
-
-    description: 'fn=0x01 GET_PARAMETER envelope: agent should reach for axefx3_get_parameter for a raw paramId read. The GET response shape is still unverified, so this case catches the agent calling the right tool with the right args; the runner records whatever wire response comes back without asserting on it.',
-    prompt: "On the Axe-Fx III, read parameter ID 0 on the AMP1 block. Tell me the raw wire value.",
-    expectations: {
-      must_call: ['axefx3_get_parameter'],
-      max_tools: 5,
-      tool_call_validators: [{
-        tool: 'axefx3_get_parameter',
-        check: (args) => {
-          const block = typeof args.block === 'string' ? args.block.toUpperCase() : '';
-          if (!block.includes('AMP1') && block !== 'AMP') {
-            return `axefx3_get_parameter block should target AMP1, got ${String(args.block)}.`;
-          }
-          if (args.param_id !== 0) {
-            return `axefx3_get_parameter param_id should be 0, got ${JSON.stringify(args.param_id)}.`;
-          }
-          return true;
-        },
-      }],
-      max_wall_seconds: 90,
-    },
-  },
-
-  // ── Bouncing-regression case (v0.1.0 install-test gap) ─────────
+  // ── Flagship: 4-scene tone build (the showcase prompt) ─────────
   //
-  // Enter Sandman 4-scene on III: tests the III\'s unified apply_preset
-  // surface + scene-overflow handling. III supports 8 scenes; we use 4
-  // for parity with the AM4/II Enter Sandman cases. Asserts ≤ 1
-  // apply_preset retry: the slot auto-coerce, cross-device aliasing,
-  // and enum-key resolver are exercised end-to-end.
+  // Mirrors the founder's demo prompt (clean / crunch / rhythm / lead in one
+  // multi-scene preset). Exercises the full gen-3 write path end to end:
+  // describe_device → apply_preset with placed blocks, grid routing (fn=0x01
+  // sub=0x35), and 4 scenes. The single highest-value gen-3 sweep case: if the
+  // factory dispatch, codec, routing, and scene authoring all work, this passes.
   {
-    id: 'axefx3-enter-sandman-4scene',
+    id: 'axefx3-tone-build-4scene',
     device: 'axe-fx-iii',
-
-    description: 'Enter Sandman across 4 scenes on Axe-Fx III. Bouncing-regression: exercises the III\'s grid auto-coerce + 4-channel surface. The vocabulary fixes should land the build in <= 1 apply_preset retry. Verifies 4 scenes, a placed amp + drive, sensible audio levels.',
-    prompt: "Build me Enter Sandman across 4 scenes on the Axe-Fx III. Scene 1 clean intro, scene 2 chugging rhythm on a high-gain amp, scene 3 verse loud, scene 4 lead solo. Use the working buffer, don\'t save. Make every scene audible.",
+    description:
+      'Four-scene guitar preset on the Axe-Fx III (clean / crunch / high-gain rhythm / lead). ' +
+      'Exercises the gen-3 grid apply_preset + routing + 4 scenes end to end through the unified ' +
+      'surface. Amp is placed + knob-shaped (no model-by-name; gen-3 amp models are numeric). ' +
+      'Should land in <=1 apply_preset retry.',
+    prompt:
+      "Build a 4-scene preset on my Axe-Fx III. Scene 1: clean. Scene 2: crunchy rhythm. " +
+      "Scene 3: tight high-gain rhythm with a drive pedal pushing the amp. Scene 4: singing lead " +
+      "with delay. Put an amp and cab in the chain, reverb on every scene, delay on the lead. " +
+      "Use the working buffer, don't save.",
     expectations: {
       must_call: ['describe_device', 'apply_preset'],
-      max_tools: 10,
+      max_tools: 14,
       max_repeats: { apply_preset: 2 },
       tool_call_validators: [{
         tool: 'apply_preset',
@@ -96,57 +56,66 @@ export const AXE_FX_III_CASES: AgentRegressionCase[] = [
         check: (args) => {
           const spec = (args.spec ?? {}) as { scenes?: unknown; slots?: unknown[] };
           const scenes = Array.isArray(spec.scenes) ? spec.scenes.length : 0;
-          if (scenes !== 4) {
-            return `apply_preset spec should declare 4 scenes, got ${scenes}.`;
-          }
-          // Sanity: an amp must be placed. Empty-slots multi-scene
-          // builds are a silent-no-op regression.
-          const hasAmp = Array.isArray(spec.slots) && spec.slots.some((s) => {
-            return s !== null && typeof s === 'object' && (s as { block_type?: string }).block_type === 'amp';
-          });
-          if (!hasAmp) {
-            return `apply_preset spec is missing an amp slot: 4-scene Enter Sandman without an amp is a silent-no-op regression.`;
-          }
+          if (scenes !== 4) return `apply_preset spec should declare 4 scenes, got ${scenes}.`;
+          const hasAmp = Array.isArray(spec.slots) && spec.slots.some(
+            (s) => s !== null && typeof s === 'object' && (s as { block_type?: string }).block_type === 'amp',
+          );
+          if (!hasAmp) return 'apply_preset spec is missing an amp slot: a 4-scene build without an amp is a silent-no-op regression.';
           return true;
         },
       }],
-      // POSITIVE-CLAIM SHAPES so negation disclaimers ("Not saved to
-      // flash yet") don't false-trip.
+      // POSITIVE-CLAIM shapes only, so honest "not saved" disclaimers don't trip.
       text_not_contains: [
-        'I saved',
-        'I persisted',
-        'I stored',
-        'preset is saved',
-        'preset is persisted',
-        'now saved to',
-        'now persisted to',
-        'now stored to',
+        'I saved', 'I persisted', 'I stored',
+        'preset is saved', 'preset is persisted',
+        'now saved to', 'now persisted to', 'now stored to',
       ],
-      max_wall_seconds: 240,
+      max_wall_seconds: 360,
     },
   },
 
-  // §2 discovery: describe_device routes correctly for III
+  // ── Read-path gate (newly runnable via the broadcast mock) ─────
+  //
+  // Before the mock fix, get_param timed out (the connector returned nothing),
+  // so no III read case could exist. This gates the gen-3 read surface: an
+  // fn=0x1F poll for a placed block returns the 0x74/0x75/0x76 burst and
+  // get_param projects a value. Fast (single read), so it's cheap insurance
+  // that the read path stays wired.
   {
-    id: 'axefx3-discovery-describe',
+    id: 'axefx3-read-param',
     device: 'axe-fx-iii',
-    disabled: true,  // Retired: cross-device duplicate of meta-discovery pattern; III lacks any hardware-tier case to exercise the surface anyway.
-    description: 'Discovery: "What can the Axe-Fx III do?" should call describe_device({port:"axe-fx-iii"}). Catches the regression where the agent fabricates III specs from training data without consulting the descriptor.',
-    prompt: 'What can the Axe-Fx III do? Tell me which blocks it has and how many scenes per preset.',
+    description:
+      'Read a parameter on the Axe-Fx III. Gates the gen-3 read path (fn=0x1F poll → ' +
+      '0x74/0x75/0x76 burst → projected value). Was impossible before the broadcast mock; ' +
+      'a no_ack here means the read surface regressed.',
+    prompt:
+      "On my Axe-Fx III, read back the current reverb mix on the active preset and tell me the value.",
     expectations: {
-      must_call: ['describe_device'],
-      max_tools: 3,
+      must_call: ['get_param'],
+      max_tools: 6,
       tool_call_validators: [{
-        tool: 'describe_device',
-        check: (args) => {
-          const port = typeof args.port === 'string' ? args.port.toLowerCase() : '';
-          if (!port.includes('iii') && !port.includes('axefx3') && !port.includes('axe-fx-iii')) {
-            return `describe_device port should target axe-fx-iii, got ${String(args.port)}.`;
+        tool: 'get_param',
+        check: (_args, result) => {
+          if (result === undefined) return 'get_param returned no result.';
+          if (/no_ack|capability_not_supported|timed out|no .*burst/i.test(result)) {
+            return `get_param failed instead of returning a value: ${result.slice(0, 160)}`;
           }
           return true;
         },
       }],
-      max_wall_seconds: 60,
+      text_not_contains: ["I can't", 'unable to read', 'not available'],
+      max_wall_seconds: 150,
     },
+  },
+
+  // §discovery retired: cross-device duplicate of the meta-discovery pattern;
+  // the two cases above exercise describe_device end to end.
+  {
+    id: 'axefx3-discovery-describe',
+    device: 'axe-fx-iii',
+    disabled: true,
+    description: 'Retired: describe_device is exercised by the tone-build + read cases.',
+    prompt: 'What can the Axe-Fx III do?',
+    expectations: { must_call: ['describe_device'], max_tools: 3, max_wall_seconds: 60 },
   },
 ];

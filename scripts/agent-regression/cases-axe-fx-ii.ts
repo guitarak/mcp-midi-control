@@ -287,14 +287,6 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
         ['set_block'],
         ['set_block', 'set_param'],
         ['set_block', 'set_params'],
-        // Legacy device-namespaced primitives kept for back-compat.
-        ['set_block_at_cell', 'set_params'],
-        ['set_block_at_cell', 'set_param'],
-        // Device-namespaced surface (axefx2_*): Sonnet sometimes picks
-        // these on II prompts.
-        ['axefx2_set_block_at_cell', 'set_params'],
-        ['axefx2_set_block_at_cell', 'axefx2_set_param'],
-        ['axefx2_set_block_at_cell', 'set_param'],
       ],
       max_tools: 8,
       max_repeats: { apply_preset: 1 },
@@ -424,15 +416,15 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
   // a validation_info[] warning with level='warning', dropped_param,
   // reason, retry_action.
   //
-  // Acceptable agent recoveries: a follow-up `axefx2_set_cell_routing`
-  // call to connect a previous-column cell into amp, OR a chat-only
-  // acknowledgement of the broken-cable state. Both paths pass.
+  // Acceptable agent recoveries: a follow-up apply_preset with a
+  // routing[] array to cable a previous-column cell into amp, OR a
+  // chat-only acknowledgement of the broken-cable state. Both paths pass.
   {
     id: 'axefx2-routing-mask-warning',
     device: 'axe-fx-ii',
 
     mockFixture: 'populated-unrouted',
-    description: 'Routing-mask=0 trap: agent set_param on amp.gain when amp is placed at (row 2, col 3) with routing_mask=0 (no input cable). Dispatcher pre-flight surfaces validation_info[] warning naming the broken-cable state + retry_action pointing at axefx2_set_cell_routing. Agent must NOT positive-claim audible success; acceptable paths are a follow-up cable write OR a chat-only acknowledgement.',
+    description: 'Routing-mask=0 trap: agent set_param on amp.gain when amp is placed at (row 2, col 3) with routing_mask=0 (no input cable). Dispatcher pre-flight surfaces validation_info[] warning naming the broken-cable state + retry_action pointing at apply_preset with a routing[] array. Agent must NOT positive-claim audible success; acceptable paths are a follow-up cable write OR a chat-only acknowledgement.',
     prompt: "On the Axe-Fx II, set the amp gain to 6.",
     expectations: {
       must_call: ['set_param'],

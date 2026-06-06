@@ -122,7 +122,7 @@ values needs an `fn=0x01` GET sweep, which is itself hypothesis-only
 viable but more expensive than the II classifier and has more
 unknowns.
 
-## What's still uncertain, addendum for `docs/AXEFX3-BETA-TESTING.md`
+## What's still uncertain, addendum for the community capture guides (`../../capture-guides/`)
 
 A III owner can settle this conclusively in **about 60 seconds** of
 testing. Propose adding a Section 9 to the beta-testing doc:

@@ -57,13 +57,24 @@ are NOT in the III's third-party spec:
 - **No `SET_PARAMETER_VALUE` function.** Per-block parameter writes
   are not exposed in the spec. The Axe-Fx II spec exposes `0x02
   SET_PARAMETER_VALUE`; the III deliberately omits it.
-- **No `STORE_PRESET` / `SAVE_PRESET` function.** The III's preset-
-  store wire format is a community-reverse-engineered **18-frame
-  envelope** (1× `0x77` header + 16× `0x78` body + 1× `0x79` footer
-  for the III; 10-frame for FM3/FM9). Body content is **Huffman-
-  compressed**. Full research log + post-by-post evidence chain in
-  [`preset-format-research.md`](preset-format-research.md).
-  Forum thread #159885 is archived locally at `founder-private notes`.
+- **No spec-published `STORE_PRESET` / `SAVE_PRESET` function**, but the
+  editor's own store op is decoded: **`fn=0x01 sub=0x26`** persists the
+  working buffer to a preset location (destination presetNum septet @ 12-13,
+  LSB-first). Captured byte-exact from III-Edit (0x10) and FM9-Edit (0x12)
+  over loopMIDI; this is what the codec's `save_preset` now emits. See the
+  editor-WRITE surface table below and cookbook `gen3-fn01-store-preset`.
+  Distinct from the preset-binary **dump** formats, of which there are two
+  (both read-confirmed on FM9, see the preset-dump RECEIVE section below):
+  a **stored-preset** dump (`fn=0x03 [preset# BE]` → `0x77/0x78/0x79`) and an
+  **edit-buffer** dump (`fn=0x43` no-args → `0x51/0x52`) of the currently-loaded
+  preset. The unified `export_preset` (byte-exact backup of the *active* buffer)
+  is wired to the edit-buffer dump (the gen-3 `reader.dumpActivePresetBinary`
+  sends `fn=0x43` and collects the `0x51/0x52` run with a read-until-quiet
+  terminator); exporting a *stored* location would use the `fn=0x03` path (not
+  yet wired). The edit-buffer request is FM9-confirmed; III/FM3/VP4 share the
+  gen-3 codec but are community-beta for this path. Full research log in
+  [`preset-format-research.md`](preset-format-research.md). Forum thread
+  #159885 is archived locally at `founder-private notes`.
 - **No `FRONT_PANEL_CHANGE` push (0x21).** Our earlier design notes
   reference `0x21` as the III's dirty-state signal, it is NOT in
   v1.4. Source for that claim is unidentified; treat as unverified.
@@ -95,7 +106,7 @@ explicit assignment).
 | `ID_COMP1..4` (Compressor) | 4 | 46, 47, 48, 49 |
 | `ID_GRAPHEQ1..4` | 4 | 50, 51, 52, 53 |
 | `ID_PARAEQ1..4` | 4 | 54, 55, 56, 57 |
-| `ID_DISTORT1..4` (Drive) | 4 | 58, 59, 60, 61 |
+| `ID_DISTORT1..4` (Amp) | 4 | 58, 59, 60, 61 |
 | `ID_CAB1..4` | 4 | 62, 63, 64, 65 |
 | `ID_REVERB1..4` | 4 | 66, 67, 68, 69 |
 | `ID_DELAY1..4` | 4 | 70, 71, 72, 73 |
@@ -110,7 +121,7 @@ explicit assignment).
 | `ID_TREMOLO1..4` (Pan/Tremolo) | 4 | 106, 107, 108, 109 |
 | `ID_PITCH1..4` | 4 | 110, 111, 112, 113 |
 | `ID_FILTER1..4` | 4 | 114, 115, 116, 117 |
-| `ID_FUZZ1..4` | 4 | 118, 119, 120, 121 |
+| `ID_FUZZ1..4` (user-facing Drive pedal) | 4 | 118, 119, 120, 121 |
 | `ID_ENHANCER1..4` | 4 | 122, 123, 124, 125 |
 | `ID_MIXER1..4` | 4 | 126, 127, 128, 129 |
 | `ID_SYNTH1..4` | 4 | 130, 131, 132, 133 |
@@ -136,13 +147,14 @@ explicit assignment).
 
 ### Anomalies in v1.4 effect-ID table
 
-1. **AMP is missing from the effect-ID enumeration.** No `ID_AMP1..N`
-   appears in the PDF. AMP IDs may be in the unaccounted-for 3..34
-   range (32 reserved slots between ID_CONTROL and ID_TUNER), or
-   may be deliberately omitted from the third-party MIDI surface.
-   **Until verified on hardware, treat AMP bypass/channel control
-   as 🟡 unsupported.** A test-against-hardware would be a single
-   STATUS_DUMP call against a preset known to contain the AMP block,    the response would reveal whichever ID corresponds to the AMP.
+1. **There is no separate `ID_AMP` because `ID_DISTORT1..4` (58..61) IS
+   the AMP block.** The enum auto-increments with no `ID_AMP`, `ID_DRIVE`,
+   or `ID_NAM`, and the amp tone-stack + power section lives at effect IDs
+   58..61. Confirmed: (a) the FM9 gen-3 broadcast head reports blockId 58
+   with itemCount 588 = (146+1)*4, matching the DISTORT family's max wire
+   paramId; (b) AxeEdit III `__amp_layout.xml model='16'` binds the block
+   literally named "Amp" entirely onto the DISTORT_* params. AMP
+   bypass/channel control is therefore addressable at 58..61.
 
 2. **Recent blocks are absent.** Spec is v1.4 / firmware 1.13 era
    (~2018). Current firmware is 32.03 (March 2026). Blocks added in
@@ -152,15 +164,17 @@ explicit assignment).
    - **Newer Multiplexer instances** beyond 4 (if any): unknown
    - Their IDs are presumably ≥ 201, but we don't know which.
 
-3. **`ID_FUZZ` is its own entry** separate from `ID_DISTORT`.
-   Fractal's modern UI calls everything "Drive", but the PDF
-   distinguishes Distort (= drive) from Fuzz at the SysEx layer.
-   Whether these are two separate placeable block types or one
-   block-type with two ID ranges is unclear.
+3. **`ID_FUZZ1..4` (118..121) is the user-facing Drive / OD / Fuzz
+   pedal block** — a distinct placeable block from the amp. FM9
+   hardware-confirmed: the broadcast head's itemCount 172 = (42+1)*4
+   matches the FUZZ family's max wire paramId. This is the pedal the
+   editor labels "Drive"; it carries drive/tone/level/mix, not a tone
+   stack.
 
-4. **`ID_DISTORT` is Fractal's older name for the Drive block.**
-   For 3rd-party MIDI purposes, this is what populates as "DRV" in
-   editor assets / wiki.
+4. **`ID_DISTORT1..4` (58..61) is the AMP block, not a drive pedal.**
+   The DISTORT family carries the amp tone stack (gain/bass/mid/treble/
+   master/presence/level) and the amp MODEL selector (DISTORT_TYPE).
+   `ID_DISTORT` is Fractal's firmware-internal name for the amp.
 
 ## Bugs found 2026-05-15, RESOLVED
 
@@ -190,9 +204,22 @@ The list below is preserved as a historical record:
 | 7 | `axefx3_get_active_preset_number` and `get_preset_name` ought to be one tool: 0x0D query returns BOTH the preset number AND its name. | both navigation.ts handlers | One 0x0D query gives `nn nn` (preset number) + `dd*32` (name). |
 | 8 | `FN_SET_PARAMETER_VALUE = 0x02` is declared as a constant, but `0x02` is NOT in the v1.4 PDF. This is family inference from Axe-Fx II. | `setParam.ts:51` | The III's parameter-write opcode is NOT documented anywhere public. Family inference is the only path. |
 | 9 | `FN_FRONT_PANEL_CHANGE = 0x21` is referenced in design notes as the III dirty signal. Not in v1.4 PDF. Source unidentified. | `setParam.ts:59`, [`design-notes.md`](design-notes.md) | Treat as unverified. The PDF documents only `0x10` (tempo down-beat) and `0x11` (tuner) as push frames. |
-| 10 | Block roster (`blockTypes.ts`) ships every block with `id: null` claiming "effectId pending capture." Effect IDs ARE in the spec Appendix 1, only AMP and post-firmware-1.13 blocks are unspecified. | `blockTypes.ts` | Populate `id:` from Appendix 1. Leave AMP, NAM, Dynamic Distortion as `null`. |
+| 10 | Block roster (`blockTypes.ts`) ships every block with `id: null` claiming "effectId pending capture." Effect IDs ARE in the spec Appendix 1, only AMP and post-firmware-1.13 blocks are unspecified. | `blockTypes.ts` | Populate `id:` from Appendix 1. Leave NAM, Dynamic Distortion as `null`. (SUPERSEDED for AMP: AMP = `ID_DISTORT1..4` = 58..61, see Anomalies 1 + 4 above; only NAM / Dynamic Distortion stay `null`.) |
 
 ## 0x01 PARAMETER_SETGET, byte-verified from public captures 🟢 SET / 🟡 GET
+
+> **FM9 hardware confirmation (2026-06-03).** A community FM9 capture (model `0x12`,
+> FW 11.00) of a Reverb TYPE change made in FM9-Edit contains the typed SET, and it is
+> **byte-exact** to `buildSetParameter(effectId=66, paramId=10, value=524)` — so the
+> `sub 09 00` typed-SET wire shape is now confirmed on real gen-3 hardware (not just III
+> public captures). The capture also reveals: (1) a second SET sub-action `52 00`
+> (mouse-drag) whose value is a **5-septet-LE float32 normalized [0,1]** at bytes 12–16
+> (vs the typed form's 3-septet int at 15–17); (2) the **device's 60-byte SET value-echo
+> response** (effectId@8–9, paramId@10–11, 5-septet float32 @12–16, then a descriptor
+> block) — the synchronous SET response previously noted as "not in any public capture".
+> Parsers: `decode5SeptetFloat32`, `parseGen3SetValueEcho` (golden-tested). NOTE: enum/type
+> params carry the **raw enum id** in the SET (524 = Medium Spring), a different space from
+> the `0x75` dump's **ordinal index** (16); the name↔raw-id dictionary is not yet mined.
 
 **Status (2026-05-18, PIVOT).** The III's parameter-write
 opcode is **`fn=0x01`** with a 2-byte sub-action discriminator, NOT
@@ -579,6 +606,250 @@ show **function bytes outside that range** being used in real III
 traffic. These are likely the "set parameter / set modifier" calls
 the public spec deliberately omits.
 
+### Functions 0x74 / 0x75 / 0x76 — gen-3 STATE-BROADCAST burst (FM9 hardware-confirmed 🟢)
+
+**Source:** first real gen-3 hardware capture — an **FM9** (model byte `0x12`,
+firmware 11.00, FM9-Edit 1.03.19) contributed by a community tester, 2026-06-03.
+Byte evidence is golden-tested in `test/axe-fx-iii/setparam.test.ts`. This is the
+real device→host edit-broadcast channel; it **supersedes the earlier `0x21`
+front-panel-push speculation** below for gen-3 dirty-state detection.
+
+The device emits a four-frame burst whenever a block's working-buffer state
+changes (front-panel edit) **and** as the response to an `fn=0x1F` bulk-read
+poll. For block 66 (Reverb 1):
+
+```
+HEAD  F0 00 01 74 12 74 [blockId:14b] [itemCount:14b] [flag] [cs] F7   (12 B)
+        e.g. F0 00 01 74 12 74 42 00 24 02 07 F7  → block 66, itemCount 292
+BODY  F0 00 01 74 12 75 [sectionId] [flag] [N × packValue16] [cs] F7   (778 B: 256 params)
+        e.g. F0 00 01 74 12 75 00 02 7E 7F 03 ...  → param[0]=65534
+TAIL  F0 00 01 74 12 75 24 00 [...] [cs] F7                            (118 B: tail section)
+END   F0 00 01 74 12 76 [cs] F7                                        (8 B)
+```
+
+- `blockId` / `itemCount` / values are **14-bit septet-LE**; values are the
+  3-septet `packValue16` (lo7 / mid7 / top2).
+- The body is **positional but CHANNEL-BLOCKED** — see the box below. It is NOT a
+  flat paramId-indexed vector. Reverb index 0 = **Mix** on channel A, tracking the
+  front-panel knob: `7E 7F 03` = 65534 = **100.00%** ⇒ full-scale ≈ 65534.
+
+> ✅ **The 0x75 body is channel-blocked: `index = channel × stride + paramId`,
+> `stride = itemCount / 4` (FM9 hardware-confirmed, 2026-06-04; 5-refuter validated).**
+> The body packs four contiguous copies of every paramId slot, one per channel A–D
+> (the `×4` is the channel count the `0x13` STATUS_DUMP reports in `dd` bits 3:1).
+> A controlled amp-Balance drag (0 → −100; capture
+> `fm9-amp-balance-0-to-neg100-*-2026-06-04`, blockId 58 = ID_DISTORT1) changed only
+> **index 149 = 1×147 + 2** — channel **B**, `paramId 2` (`DISTORT_PAN`) — while the
+> channel-A/C/D copies (indices 2, 296, 443) stayed constant. `itemCount` matches
+> the channel-blocked shape across **5 distinct blocks** observed in existing FM9
+> captures (`itemCount = (max device-true paramId + 1) × 4`, every one divisible by 4):
+> **DISTORT 588 = 147×4**, **REVERB 292 = 73×4**, **Phaser 140 = 35×4**,
+> **Filter 148 = 37×4**, **Drive/Fuzz 172 = 43×4**. The earlier "per-block offset 147 / two
+> distinct index spaces" reading was incomplete: 147 is just `1 × stride` because the
+> edit happened to be on channel B; it is NOT a permutation and NOT a fixed offset.
+> Off-by-one note: the `0x75` body starts at byte 8; offsets 7/9 produce garbage (at
+> offset 7 the changed value misreads as "→ index 2", the alignment trap).
+>
+> **Read path (shipped 2026-06-04, replaces the earlier DISTORT guard):**
+> `fractal-modern/src/reader.ts` projects `values[channel × stride + paramId]`.
+> `get_param`/`get_params` honor a channel arg (always correct); with no channel they
+> return the value when it is identical across all four channels (the common case)
+> and otherwise REFUSE, listing each channel's value, so the caller re-asks with a
+> channel rather than getting a silent guess. `get_preset` reads the channel-A copy
+> (`paramId < stride`) and warns that per-channel params are reported as channel A.
+> The old code's `values[paramId]` was silently "channel A only". The write path
+> (`set_param`, raw-id) is unaffected.
+
+  **Continuous-param SET (mouse-drag), FM9-confirmed 2026-06-04:** the same capture
+  byte-anchors the continuous-value write (prior FM9 SET confirmation was an enum/type
+  change only). 9 OUT frames `F0 00 01 74 12 01 52 00 [eff:14b] [pid:14b] [v0..v4] 00 00 00 [cs] F7`
+  (23 B), eff = ID_DISTORT1 (58), pid = 2, value = **5-septet LE float32 normalized
+  [0,1]** at bytes 12–16, display = `norm*200 − 100` for Balance (0.5 → balance 0,
+  0.0 → −100). The device answers each with a **60-byte IN echo** (`fn=0x01 len=60`,
+  value re-quantized ≈ 1/630 at bytes 12–16); the first echo reports the pre-drag
+  state. A stray `pid=16301` from a `sub=0x56` non-echo status frame is a known
+  artifact to skip (appears once in the reverb capture too).
+- Parsers: `parseGen3StateBroadcastHead` / `parseGen3StateBroadcastBody`
+  (`src/axe-fx-iii/setParam.ts`), golden-tested against these bytes. Wired into
+  gen-3 dirty-state (`fractal-modern/src/midi.ts`): inbound `fn=0x74` marks the
+  buffer dirty, so front-panel edits now trip the safe-edit gate on FM9/FM3/III.
+- **Read-back GET** observed in the same capture: FM9-Edit reads a param via
+  `fn=0x01` sub `01 00` (flat 14-bit ordinal @8-9, **no** effectId) → a 115-byte
+  param-info response (value + range/type/label). Our codec's GET uses sub `09 00`
+  + effectId; the `01 00` ordinal scheme is not yet mapped.
+
+### Function 0x1F: block bulk-read POLL (host to device), our gen-3 read path
+
+The `0x74/0x75/0x76` burst above is also the **reply to a host poll**. The poll is
+a 10-byte frame carrying just the block/effect id:
+
+```
+POLL  F0 00 01 74 [model] 1F [effectId:14b septet-LE] [cs] F7   (10 B)
+        e.g. F0 00 01 74 12 1F 42 00 [cs] F7  → poll Reverb 1 (block 66)
+```
+
+The device answers with the `0x74/0x75(×N)/0x76` burst ~1 ms later; there is **no
+separate fn=0x1F response body**. This is structurally identical to the Axe-Fx II's
+`fn=0x1F` SYSEX_GET_ALL_PARAMS atomic read (same opcode, same triple-frame answer,
+same positional body); see cookbook [[am4-fn1f-atomic-read]] and the new
+[[gen3-fn1f-poll-block-bulk-read]].
+
+- **This is our gen-3 `get_param` / `get_params` read path** (the fn=0x01 sub=0x09
+  per-param GET was never seen on the wire, and sub=0x01 is a descriptor query, not
+  a value read). The reader polls the block, collects the burst, and indexes the
+  positional `0x75` body by paramId.
+- **Paging:** a whole-block dump pages across multiple `0x75` sections (Reverb =
+  a 256-value section + a 36-value tail = itemCount 292). Concatenate the sections
+  in arrival order; the tail **continues** the paramId sequence (section 0 →
+  paramId 0..255, section 1 → 256..291).
+- Builder + assembler: `buildBlockBulkReadPoll(effectId)` +
+  `assembleGen3BlockBulkRead(frames)` (`src/axe-fx-iii/setParam.ts`), bound on the
+  `ModernFractalCodec` factory and golden-tested in `test/modern-family/catalog.test.ts`.
+  Reader: `fractal-modern/src/reader.ts` (`collectBlockBulkRead`).
+- 🟡 The poll→burst shape is FM9-confirmed, but our **server issuing** the poll is
+  not yet confirmed end-to-end on hardware (community beta). Enum values are labeled
+  via the read-leg overlay (`enum_values`), but the block must be **placed** (an
+  unplaced block answers a poll with an `fn=0x64` MULTIPURPOSE_RESPONSE NACK, not a burst).
+
+### Functions 0x03 / 0x77 / 0x78 / 0x79 — preset dump RECEIVE (FM9 hardware-confirmed 🟢, read direction)
+
+A 2026-06-04 FM9 capture (fw 11.00 / FM9-Edit 1.03.19; Fractal-Bot "Receive" of a
+run of presets) is the **first hardware confirmation of the device→host preset dump**
+and its trigger. The 0x77/0x78/0x79 envelope previously documented below (under the
+"PRESET-SAVE" community-RE rows) is confirmed in the **read** direction; the host→device
+**write-back** direction is still NOT captured (the editor received, never sent).
+
+```
+OUT  F0 00 01 74 [model] 03 [preset#:14b BIG-ENDIAN septet] [cs] F7   (10 B) REQUEST_PRESET_DUMP
+IN   F0 00 01 74 [model] 77 [preset#:14b BE] [wordCount:14b LE] [cs] F7  (13 B) DUMP HEAD
+IN   F0 00 01 74 [model] 78 [2B chunk-discrim] [3072B septet body] [cs] F7 (3082 B) DUMP BODY ×N
+IN   F0 00 01 74 [model] 79 [3B] [cs] F7                              (11 B) DUMP TAIL
+```
+
+- The preset number on `fn=0x03`/`fn=0x77` is **big-endian** septet (`(b6<<7)|b7`),
+  unlike the little-endian param ids elsewhere. Captured FM9 requests decoded to valid
+  indices 49, 129, 197, 273, 274, 355, 443, 444.
+- Head word-count field (bytes 8-9, **little-endian** septet) = 8192 = the fixed preset
+  word allocation. Reassembled body: word1 = `0xAA55` magic, ASCII name at word4+
+  (2 chars/16-bit word), decoded e.g. `"4x12 Plexi DARK AltCab -'25f"` — the EXACT layout
+  shipped in `packages/fractal-modern/src/presetDump.ts` (`parsePresetDump` /
+  `extractPresetName`). The codec's prior "structural lower bound, not byte-verified
+  against a live device push" caveat is **discharged for the read direction**.
+- Checksum: standard Fractal XOR-&0x7F; validated across all captured dump frames.
+- **Edit-buffer dump:** `OUT fn=0x43` (no args, byte-exact `F0 00 01 74 [model] 43 [cs]
+  F7`) → `IN fn=0x51` head (11B, payload `00 00 04`, a format tag not a count) + `fn=0x52`×N
+  body (canonical **3082 B**, same word packing as `0x78`; inner section layout TBD).
+  **No tail frame** (unlike the stored dump's `0x79`): the burst is a homogeneous `0x52`
+  run that ends when the device goes quiet. Pulls the currently-edited preset; this is the
+  active-buffer scope `export_preset` maps to. (Off-canonical body lengths seen in the
+  USBPcap capture were drop/coalesce artifacts; production node-midi reads clean per-frame
+  SysEx, so a read-until-quiet collector is exact.)
+- **User cab / IR dump:** `OUT fn=0x19 [idx:14b][0x10]` → `IN fn=0x7a` head + `fn=0x7b`×~8
+  (1290 B) body + `fn=0x7c` tail. Empty slots are all-`0x7F`. Bonus IR-backup capability,
+  not yet wired.
+- Full decode + evidence is in the maintainer's private session notes.
+
+### Enum value labels DO cross the wire (septet-packed, FM9-confirmed 🟢)
+
+Correcting the earlier "labels are device-resident, never on the wire" conclusion: enum
+value names are transmitted **septet-packed**, decodable by the streaming MSB-first 8→7
+unpack **starting at byte index 5** (the fn byte): `acc=(acc<<7)|byte; while(bits>=8){
+bits-=8; emit (acc>>bits)&0xff}` over `frame[5 .. len-2]`. A one-byte misalignment
+(starting at byte 6) yields garbage — that error is why prior full-capture scans reported
+"zero labels."
+
+- **WRITE leg {raw-id → name} byte-confirmed:** a typed SET (`fn=0x01 sub=0x09`, 23B OUT)
+  carries the **raw enum id** in its value field; the device's **60B IN response** carries
+  that value's **name** in the septet layer. Captured pairs: reverb 524=`Medium Spring`,
+  529=`Music Hall`; drive 523=`Blues OD` (all agree with AM4 ordinal-table names). Amp
+  (eff=58) echoes the ordinal numerically; the amp model NAME comes via `fn=0x01 sub=0x1a`
+  (getParameterInfo current-value label) instead.
+- **Value LISTS:** `fn=0x01 sub=0x2e` IN dumps a param's full value list as positional
+  32-char fields; `sub=0x2a` dumps the cab/IR browser list; `sub=0x1f` the modifier
+  sources; `sub=0x01` block instance names.
+- **READ-leg {ordinal → name} (device-true, captured + verified):** pairing each
+  `sub=0x1a` current-value label with the matching `fn=0x1F`→`0x75` bulk-read ordinal
+  (arrival-order concat, `record[paramId]`) recovers FM9-true names. Verified points
+  (FM9 fw 11.00): **AMP** (eff=58 pid=10, the gap AM4 cannot fill) ordinal
+  264=`SV Bass 1`, 65=`SV Bass 2`, 179=`Texas Star Clean` (names match the tester's
+  notes); REVERB (eff=66 pid=10) 1=`Medium Room`, 16=`Medium Spring`, 45=`Music Hall`;
+  DRIVE (eff=118 pid=0) 15=`Blues OD`, 36=`Blackglass 7K`; FILTER (eff=114 pid=0)
+  6=`Peaking`. These are READ-leg ordinals — NOT the SET raw-id (e.g. "Music Hall"
+  reads as ordinal 45 but SET-writes raw-id 529). Partial (only swept values); the full
+  amp roster still needs the Type-dropdown sweep.
+- **To harvest full per-type tables:** open each block's *Type dropdown* (forces a sub=0x2e
+  list dump per param), or re-mine the editor resources now that the 32-char septet format
+  is known. The block-PANEL-open capture only yields current-value + cab-IR lists.
+- Full evidence + recovered pairs are in the maintainer's private session notes.
+
+### gen-3 editor-WRITE surface (loopMIDI-decoded, no hardware) 🟢
+
+Driving the Fractal editors (III-Edit / FM9-Edit / FM3-Edit) against a
+loopMIDI virtual port and reading their outbound SysEx decoded the gen-3
+block-edit ops. All are `fn=0x01` with a sub-action byte at position 6; the
+14-bit arg slots are septet pairs (effectId @ 8-9, gridPos/presetNum @ 12-13).
+
+| sub | op | payload | status |
+|---|---|---|---|
+| `0x32` | block INSERT | effectId @8-9, gridPos @12-13 | matched (0x10/0x11/0x12) |
+| `0x30` | cell SELECT (insert companion) | gridPos @12-13 | matched |
+| `0x26` | STORE / save-to-location | presetNum @12-13 (LSB-first) | matched |
+| `0x35` | routing / connect | 26-byte frame; b21/b22/b23 encode src+dest cell | matched (6-row + 4-row) |
+
+`gridPos = col*ROWS + row` (0-indexed, column-major). **Grid shapes
+(wire + official-spec confirmed): III / FM9 = 6 rows × 14 cols; FM3 = 4
+rows × 12 cols.** Shunt elements use the insert op with byte 9 (effectId
+high septet) = `0x08`. Full decode + golden: cookbook
+`gen3-fn01-grid-set-position-insert`, `gen3-fn01-store-preset`,
+`gen3-fn01-grid-routing`; method:
+`docs/capture-guides/loopmidi-editor-emulation.md`. The codec's `set_block`
+now emits this confirmed `sub=0x32` insert op (was the ported, untested
+`fn=0x05`); device-side persistence remains the hardware-verification step.
+
+#### sub=0x35 SET_GRID_ROUTING — full decode
+
+26-byte wire frame (same structure for all gen-3 model bytes):
+
+```
+F0 00 01 74 <model> 01 35 00 00 00 00 00 <OP> 00 00 00 00 00 00 02 00 <b21> <b22> <b23> <cs> F7
+```
+
+`OP` = `0x01` connect, `0x02` disconnect.
+
+Two formula variants, selected by grid row count:
+
+**6-row grids (III 0x10, FM9 0x12) — 26/26 byte-confirmed, FM9-Edit loopMIDI, 2026-06-05:**
+
+```
+srcGp    = (srcCol − 1) × 6 + (srcRow − 1)
+b21      = floor(srcGp / 2)
+colTerm  = floor(3·(srcCol−1)/2) + 1
+destSign = destRow ≥ 3 ? 1 : 0
+b22      = ((srcGp & 1) << 6) | (colTerm + destSign)
+b23      = ((|destRow−3| + (srcCol even ? 2 : 0)) mod 4) << 5
+```
+
+Constraint: srcRow=1 even srcCol is not yet captured for 6-row grids
+(pattern not closed; capture r1c2→r1c3, r1c2→r3c3 with FM9-Edit to close it).
+
+**4-row grids (FM3 0x11) — 10/10 byte-confirmed, FM3-Edit loopMIDI, 2026-06-05:**
+
+```
+srcGp = (srcCol − 1) × 4 + (srcRow − 1)
+b21   = floor(srcGp / 2)
+b22   = ((srcGp & 1) << 6) | srcCol          ← colTerm = srcCol; no destSign
+b23   = (destRow − 1) << 5                   ← linear 0-indexed encoding; no mod-4 wrap
+```
+
+All rows 1–4 and all srcCol parity (including row-1 even-col) work on the 4-row formula.
+Row-1 even-col confirmed by capture r1c2→r1c3.
+
+Key structural differences:
+- 6-row b22 uses a `3/2`-scaled colTerm and a destRow threshold (destSign); 4-row uses srcCol directly.
+- 6-row b23 is centered at row 3 with mod-4 wrap; 4-row is a flat `(destRow−1)×32` linear map.
+
+Captures archived: `samples/captured/fm3-routing-probe-*.json` (gitignored).
+
 ### Function 0x01, long-payload write (likely SET_PARAMETER / SET_MODIFIER)
 
 Examples from captures of AxeEdit III / FC-12 footswitch traffic:
@@ -807,7 +1078,7 @@ Full JSON: `samples/captured/decoded/ghidra-axeedit3-paramnames.json`
 | 0x07 | COMP | 37 | ID_COMP1=46 |
 | 0x08 | GEQ | 21 | ID_GRAPHEQ1=50 |
 | 0x09 | PEQ | 33 | ID_PARAEQ1=54 |
-| 0x0a | DISTORT (Drive) | 143 | ID_DISTORT1=58 |
+| 0x0a | DISTORT (Amp) | 143 | ID_DISTORT1=58 |
 | 0x0b | CABINET | 126 | ID_CAB1=62 |
 | 0x0c | REVERB | 71 | ID_REVERB1=66 |
 | 0x0d | DELAY | 89 | ID_DELAY1=70 |
@@ -942,12 +1213,12 @@ Given the function-byte map + Appendix 1 effect IDs:
 - ✅ `axefx3_status_dump()`, 0x13 (correct already, parser too)
 - ❌ `axefx3_switch_preset`, NOT possible via SysEx; use MIDI PC instead. Tool should be removed or relabeled `send_preset_change_pc`.
 - ✅ `axefx3_set_param`, opcode is fn=`0x01` PARAMETER_SETGET with sub-action `09 00` (typed-input), byte-verified against 10 public captures spanning two effect blocks and two paramIds (see the 0x01 PARAMETER_SETGET section above). NOT fn=`0x02` (that was the wrong II-port, now closed). Param-IDs come from the AxeEdit III binary mining, not the published third-party PDF. The SET wire shape ships verified; the GET response shape is still unverified.
-- ❌ `axefx3_save_preset`, multi-frame envelope (0x77/0x78/0x79); needs community capture or test against hardware.
+- 🟢 `save_preset` (gen-3 path, used via the `port` argument), store-to-location is `fn=0x01 sub=0x26` (presetNum septet @12-13, LSB-first), captured byte-exact from III-Edit (0x10) and FM9-Edit (0x12) over loopMIDI; the codec now emits this. Wire shape confirmed; device persistence (front-panel confirm + flash write) is the remaining hardware-verification step. The 0x77/0x78/0x79 multi-frame envelope is the separate full preset-binary transfer (export), still undecoded.
 
 ## Cross-references
 
 - **Project README and CLAUDE.md**: point at `docs/REFERENCES.md` for any "where do I find X" question. The III spec is row 30 there.
 - **III package source**: `src/axe-fx-iii/setParam.ts` carries an inline pointer to this doc at the top of the file (after edits land).
-- **Community beta-testing workflow**: [`docs/AXEFX3-BETA-TESTING.md`](../../AXEFX3-BETA-TESTING.md). III owners run a small list of tool calls and report whether the front panel matches the response.
+- **Community beta-testing workflow**: the community capture guides ([`../../capture-guides/testing-axe-fx-iii.md`](../../capture-guides/testing-axe-fx-iii.md)). III owners run a small list of tool calls and report whether the front panel matches the response.
 - **Design notes** (some predate the bug discovery here): [`design-notes.md`](design-notes.md).
 - **Forum reverse-engineering** of preset save format, Fractal Forum thread #159885 ("Axe-Fx III and deconstructing / parsing a .syx / sysex preset file"). Three-function envelope: `0x77` (header, contains destination), 16× `0x78` (body chunks), `0x79` (footer).

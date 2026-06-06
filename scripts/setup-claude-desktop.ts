@@ -42,9 +42,8 @@ const MERGE_SCRIPT = path.join(PROJECT_ROOT, 'installer', 'merge-mcp-config.ps1'
 
 if (process.platform !== 'win32') {
     console.error(
-        'setup-claude-desktop: Windows-only for now. macOS / Linux contributors ' +
-        'still need to hand-edit Claude Desktop\'s config (see README "Connect to ' +
-        'Claude" section). P5-006 tracks adding Mac/Linux bootstrap.',
+        'setup-claude-desktop: this is the Windows helper. On macOS / Linux run ' +
+        '`npm run setup-mac` instead (see docs/INSTALL-MAC.md).',
     );
     process.exit(1);
 }

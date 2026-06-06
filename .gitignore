@@ -40,6 +40,14 @@ samples/
 # Each file is ~12 KB; never committed.
 backups/
 
+# Research-script output — regenerable JSON/manifests from the _research
+# pipelines (gen-1 catalog extraction, gen-2 spec diff, archive crawl).
+# The committed codec (e.g. fractal-midi/src/axe-fx-gen1/params.ts) is the
+# durable artifact; these intermediates are rebuilt by their scripts.
+scripts/_research/gen1-out/
+scripts/_research/gen2-out/
+scripts/_research/archive-crawl/
+
 # Agent-regression sweep artifacts — local-only analytics corpus.
 # Per-case stream-json traces (~100 KB each, 30+ per full sweep) and
 # the append-only summary log accumulate quickly. Useful for cross-
@@ -81,3 +89,7 @@ docs/TOOL-ARCHIVE.md
 # Workflow-tool scratch. The orchestration runtime persists each generated
 # workflow script here; they are local run artifacts, not source.
 scripts/_workflows/
+
+# Scratch output from II enum-extraction pipeline (regenerable)
+scripts/_scratch_ii_*.json
+scripts/_scratch_ii_*.mjs

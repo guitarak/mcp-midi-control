@@ -146,13 +146,13 @@ const cases: ApplyCase[] = [
     expectedWire: displayToWireLinear(25, 0, 100),
     reason: 'AM4_SHARED 0..100 (chorus.mix)',
   },
-  // compressor.treshold — EDITOR_OBSERVED -80..0 (was -80..+20, bug)
+  // compressor.threshold — EDITOR_OBSERVED -80..0 (was -80..+20, bug)
   {
     block: 'compressor',
-    param: 'treshold',
+    param: 'threshold',
     display: -22,
     expectedWire: displayToWireLinear(-22, -80, 0),
-    reason: 'EDITOR_OBSERVED -80..0 (compressor.treshold, device string -22.0 dB)',
+    reason: 'EDITOR_OBSERVED -80..0 (compressor.threshold, device string -22.0 dB)',
   },
   // compressor.ratio — AM4_SHARED 1..20 log10
   {
@@ -237,9 +237,9 @@ check(
   })(),
 );
 check(
-  'getCalibration(compressor, treshold) returns EDITOR_OBSERVED -80..0',
+  'getCalibration(compressor, threshold) returns EDITOR_OBSERVED -80..0',
   (() => {
-    const e = getCalibration('compressor', 'treshold');
+    const e = getCalibration('compressor', 'threshold');
     return e !== undefined && e.displayMin === -80 && e.displayMax === 0;
   })(),
 );

@@ -16,7 +16,7 @@
       "@mcp-midi-control/core/*": ["packages/core/src/*"],
       "@mcp-midi-control/am4/*": ["packages/am4/src/*"],
       "@mcp-midi-control/axe-fx-ii/*": ["packages/axe-fx-ii/src/*"],
-      "@mcp-midi-control/axe-fx-iii/*": ["packages/axe-fx-iii/src/*"],
+      "@mcp-midi-control/fractal-modern/*": ["packages/fractal-modern/src/*"],
       "@mcp-midi-control/hydrasynth/*": ["packages/hydrasynth/src/*"],
       "@mcp-midi-control/server-all/*": ["packages/server-all/src/*"]
     }

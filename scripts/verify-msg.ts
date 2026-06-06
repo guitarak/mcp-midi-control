@@ -1142,6 +1142,31 @@ const cases: { label: string; built: number[]; expected: string }[] = [
     built: buildSetParam('preset.routing_slot_4', 1),
     expected: 'f000017415014e011600010000000400000010037826f7',
   },
+  // 2026-06-05: amp channel LED color params. 7-color enum confirmed via
+  // device front-panel scroll on Amp Type page (Red/Orange/Yellow/Green/
+  // Cyan/Blue/Purple = indices 0-6). Wire: pidLow=0x00CE, pidHigh 0x71-0x74,
+  // float32(colorIndex), action=0x0001. Hardware-confirmed via
+  // probe-am4-channel-color.ts sweep with AM4 in Amp Mode.
+  {
+    label: 'buildSetParam("amp.channel_a_color", "Red") — 2026-06-05',
+    built: buildSetParam('amp.channel_a_color', 0),
+    expected: 'f000017415014e01710001000000040000000000002af7',
+  },
+  {
+    label: 'buildSetParam("amp.channel_a_color", "Blue") — 2026-06-05',
+    built: buildSetParam('amp.channel_a_color', 5),
+    expected: 'f000017415014e01710001000000040000001404003af7',
+  },
+  {
+    label: 'buildSetParam("amp.channel_a_color", "Purple") — 2026-06-05',
+    built: buildSetParam('amp.channel_a_color', 6),
+    expected: 'f000017415014e017100010000000400000018040036f7',
+  },
+  {
+    label: 'buildSetParam("amp.channel_b_color", "Red") — 2026-06-05',
+    built: buildSetParam('amp.channel_b_color', 0),
+    expected: 'f000017415014e017200010000000400000000000029f7',
+  },
   // Session 85 + 86 (2026-05-16): PATCH scene-MIDI message decode.
   // 48 wire-addressable params unlocked. pidHigh = base_row +
   // (scene-1)*4 + (msg-1); base_row 0x40/0x50/0x60 = Type/Channel/

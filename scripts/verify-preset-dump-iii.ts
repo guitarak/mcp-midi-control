@@ -42,7 +42,7 @@ import {
   parsePresetBank,
   parsePresetDump,
   serializePresetDump,
-} from '@mcp-midi-control/axe-fx-iii/presetDump.js';
+} from '@mcp-midi-control/fractal-modern/presetDump.js';
 
 const BANK_PATHS = [
   'samples/factory/Axe-Fx-III-Factory-Preset-Banks-28p06/Axe-Fx_III_BANK_A-250603-182903.syx',
@@ -255,17 +255,27 @@ for (const path of BANK_PATHS) {
     bad(`${path}: parsePresetDump(offset=0) threw`, err instanceof Error ? err.message : String(err));
   }
 
-  // Preset-name decoding probe (HYPOTHESIS, not asserted). The II uses
-  // chunk-0 offset 8 stride 3 to encode 32 ASCII chars. The III SHOULD
-  // share the same primitive given the byte-identical descriptor shape,
-  // but the offset/stride is not verified for III. Surface the first 5
-  // decoded names so a human can eyeball them; do NOT assert.
+  // Preset-name decoding. The name lives in chunk 0's septet-packed ushort
+  // body: a 0xAA55 magic at word 1, ASCII from word 4 (2 chars/word). This
+  // decode is verified offline against these factory banks (real Fractal
+  // preset names) and the on-disk FM9 export. Assert every preset name is
+  // non-empty printable ASCII, and surface the first 5 for eyeballing.
+  let nameFails = 0;
+  for (let i = 0; i < parsed.length; i++) {
+    const n = extractPresetName(parsed[i]);
+    if (n.length === 0 || !/^[\x20-\x7e]+$/.test(n)) nameFails++;
+  }
+  check(
+    `${path}: all ${parsed.length} preset names decode to non-empty printable ASCII`,
+    nameFails === 0,
+    `${nameFails} presets failed the name decode`,
+  );
   const sampleNames: string[] = [];
   for (let i = 0; i < Math.min(5, parsed.length); i++) {
     sampleNames.push(extractPresetName(parsed[i]));
   }
   console.log(
-    `  info  ${path}: first 5 hypothetical preset names (chunk0 off=8 stride=3, II convention): ` +
+    `  info  ${path}: first 5 preset names (chunk0 word-packed, 0xAA55 magic): ` +
       sampleNames.map((n) => JSON.stringify(n)).join(', '),
   );
 }

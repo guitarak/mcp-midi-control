@@ -28,6 +28,7 @@ import {
   KNOWN_PARAMS,
   PARAM_ALIASES,
   decode as am4Decode,
+  roundDisplayValue,
   findEnumCandidates,
   resolveEnumValue,
   type Param,
@@ -95,7 +96,7 @@ export function makeDecode(param: Param): ParamSchema['decode'] {
       const idx = Math.round(wire);
       return param.enumValues?.[idx] ?? idx;
     }
-    return am4Decode(param, wire);
+    return roundDisplayValue(param, am4Decode(param, wire));
   };
 }
 

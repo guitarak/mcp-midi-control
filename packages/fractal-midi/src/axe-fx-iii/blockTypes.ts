@@ -12,20 +12,25 @@
  * exposes the first-instance ID + instance count; resolvers compute
  * `instance_N_id = firstId + (N-1)`.
  *
- * Anomalies / unknowns documented in `docs/SYSEX-MAP-AXE-FX-III.md`:
- *   - **AMP is absent from v1.4 Appendix 1.** AMP effect IDs are
- *     either in the 3..34 reserved range or deliberately omitted. The
- *     AMP block entry below carries `firstId: null` until a STATUS_DUMP
- *     against a preset containing AMP decodes its ID.
+ * Block bindings + anomalies (full evidence in `docs/devices/axe-fx-iii/SYSEX-MAP.md`):
+ *   - **`ID_DISTORT1..4` (firstId 58) IS the AMP block.** The v1.4 enum
+ *     auto-increments with NO `ID_AMP`, `ID_DRIVE`, or `ID_NAM`, so the
+ *     amp tone-stack + power section lives at effect IDs 58..61. This is
+ *     FM9-hardware-confirmed (the gen-3 broadcast head reports blockId 58
+ *     with itemCount 588 = (146+1)*4, matching the DISTORT family's max
+ *     wire paramId) and editor-binary-confirmed (AxeEdit III
+ *     `__amp_layout.xml model='16'` binds the block literally named "Amp"
+ *     entirely onto the DISTORT_* params; the III v1.4 spec places it at
+ *     enum position 58). FM3 inferred (shares this catalog + the same
+ *     143-param DISTORT family). AMP is NOT a `firstId: null` block.
+ *   - **`ID_FUZZ1..4` (firstId 118) is the user-facing Drive / OD / Fuzz
+ *     pedal block.** FM9-hardware-confirmed via the broadcast head's
+ *     itemCount 172 = (42+1)*4 (the FUZZ family's max wire paramId). The
+ *     editor binds the separate "Drive" block onto the FUZZ_* params.
  *   - **Post-firmware-1.13 blocks have no effect ID in the v1.4 PDF**:
  *     NAM, Dynamic Distortion, IR Capture (as a block; the Appendix
  *     has `ID_IRCAPTURE = 36` for the utility), and recent layouts.
- *     These also carry `firstId: null`.
- *   - **`ID_DISTORT`** in the PDF maps to what AxeEdit III displays as
- *     the **Drive** block (DRV). Same hardware, different name.
- *   - **`ID_FUZZ`** is a separate effect-ID range from `ID_DISTORT`,
- *     yet AxeEdit III may collapse both under the Drive picker. We
- *     model FUZZ as its own catalog entry per the spec.
+ *     These carry `firstId: null`.
  */
 
 /** Confidence tag for each catalog entry's `firstId`. */
@@ -86,7 +91,11 @@ export const AXE_FX_III_BLOCKS: readonly AxeFxIIIBlock[] = [
   { firstId: 46,   instances: 4, name: 'Compressor',           groupCode: 'CMP', confidence: 'spec-v1.4' },
   { firstId: 50,   instances: 4, name: 'Graphic EQ',           groupCode: 'GEQ', confidence: 'spec-v1.4' },
   { firstId: 54,   instances: 4, name: 'Parametric EQ',        groupCode: 'PEQ', confidence: 'spec-v1.4' },
-  { firstId: 58,   instances: 4, name: 'Drive',                groupCode: 'DRV', confidence: 'spec-v1.4' },
+  // ID_DISTORT1=58 is the AMP block (tone-stack + power section), NOT a
+  // drive pedal. FM9-hardware-confirmed (broadcast itemCount 588=(146+1)*4
+  // == DISTORT family max wire paramId), III v1.4 enum position 58 +
+  // AxeEdit III __amp_layout.xml model='16', FM3 inferred (shared catalog).
+  { firstId: 58,   instances: 4, name: 'Amp',                  groupCode: 'AMP', confidence: 'spec-v1.4' },
   { firstId: 62,   instances: 4, name: 'Cab',                  groupCode: 'CAB', confidence: 'spec-v1.4' },
   { firstId: 66,   instances: 4, name: 'Reverb',               groupCode: 'REV', confidence: 'spec-v1.4' },
   { firstId: 70,   instances: 4, name: 'Delay',                groupCode: 'DLY', confidence: 'spec-v1.4' },
@@ -101,7 +110,10 @@ export const AXE_FX_III_BLOCKS: readonly AxeFxIIIBlock[] = [
   { firstId: 106,  instances: 4, name: 'Pan/Tremolo',          groupCode: 'PTR', confidence: 'spec-v1.4' },
   { firstId: 110,  instances: 4, name: 'Pitch',                groupCode: 'PIT', confidence: 'spec-v1.4' },
   { firstId: 114,  instances: 4, name: 'Filter',               groupCode: 'FIL', confidence: 'spec-v1.4' },
-  { firstId: 118,  instances: 4, name: 'Fuzz',                 groupCode: 'FUZ', confidence: 'spec-v1.4' },
+  // ID_FUZZ1..4 (118..121): the user-facing Drive / OD / Fuzz pedal block.
+  // FM9-hardware-confirmed via head itemCount 172=(42+1)*4 == FUZZ family
+  // max wire paramId. groupCode stays FUZ so the FUZ→FUZZ family map routes.
+  { firstId: 118,  instances: 4, name: 'Drive',                groupCode: 'FUZ', confidence: 'spec-v1.4' },
   { firstId: 122,  instances: 4, name: 'Enhancer',             groupCode: 'ENH', confidence: 'spec-v1.4' },
   { firstId: 126,  instances: 4, name: 'Mixer',                groupCode: 'MIX', confidence: 'spec-v1.4' },
   { firstId: 130,  instances: 4, name: 'Synth',                groupCode: 'SYN', confidence: 'spec-v1.4' },
@@ -126,12 +138,6 @@ export const AXE_FX_III_BLOCKS: readonly AxeFxIIIBlock[] = [
   { firstId: 200,  instances: 1, name: 'Preset FC',            groupCode: 'PFC', confidence: 'spec-v1.4', addressable: false },
 
   // ── Blocks NOT in v1.4 Appendix 1 ───────────────────────────────
-  // AMP is mysteriously absent from v1.4 — either in the 3..34
-  // reserved range or deliberately omitted from the 3rd-party MIDI
-  // surface. STATUS_DUMP against a preset containing AMP would
-  // decode the real ID.
-  { firstId: null, instances: 4, name: 'Amp',                  groupCode: 'AMP', confidence: 'pending-capture' },
-
   // Post-firmware-1.13 additions (PDF predates these by ~6 years)
   { firstId: null, instances: 4, name: 'Dynamic Distortion',   groupCode: 'DYD', availability: 'iii-only', confidence: 'pending-capture' },
   { firstId: null, instances: 4, name: 'NAM',                  groupCode: 'NAM', availability: 'iii-only', confidence: 'pending-capture' },
@@ -193,14 +199,14 @@ export function resolveEffectId(
     throw new Error(
       `Unknown Axe-Fx III block "${blockName}". Try a name like "Reverb 1", ` +
         '"Drive 2", or a 3-letter group code like "REV". Call ' +
-        '`axefx3_list_blocks` for the full catalog.',
+        '`describe_device` for the full block catalog.',
     );
   }
   if (block.firstId === null) {
     throw new Error(
       `Axe-Fx III "${block.name}" has no effect ID in the v1.4 spec ` +
         '(either reserved / unenumerated or added in firmware > 1.13). ' +
-        `${block.confidence === 'pending-capture' ? 'Run axefx3_status_dump against a preset that contains this block to decode its real effect ID.' : 'This block is shipping editor-only and may not be addressable via 3rd-party MIDI.'}`,
+        `${block.confidence === 'pending-capture' ? 'Place this block in a preset and read it with `get_preset` to decode its real effect ID.' : 'This block is shipping editor-only and may not be addressable via 3rd-party MIDI.'}`,
     );
   }
   if (block.addressable === false) {

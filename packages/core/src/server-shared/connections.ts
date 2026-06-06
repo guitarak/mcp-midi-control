@@ -26,6 +26,13 @@ export const WRITE_ECHO_TIMEOUT_MS = 300;
 export const AM4_LABEL = 'am4';
 export const AXEFX2_LABEL = 'axe-fx-ii';
 export const AXEFX3_LABEL = 'axe-fx-iii';
+// Modern Fractal family siblings of the III (same gen-3 codec, different
+// model byte). community-beta.
+export const FM3_LABEL = 'fm3';
+export const FM9_LABEL = 'fm9';
+// VP4 (gen-3 effects codec, AM4-shape serial chain). community-beta; reads +
+// mode switch only, device-state writes gated (placement wire shape undecoded).
+export const VP4_LABEL = 'vp4';
 
 /**
  * How many ack-less writes we tolerate before assuming the MIDI handle is

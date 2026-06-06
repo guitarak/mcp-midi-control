@@ -68,8 +68,9 @@ const REPO_ROOT = join(__dirname, '..', '..');
 const AM4_CACHE_PARAMS_PATH = join(
   REPO_ROOT,
   'packages',
-  'am4',
+  'fractal-midi',
   'src',
+  'am4',
   'cacheParams.ts',
 );
 // AM4's hand-authored `params.ts` carries the entries that don't live
@@ -88,8 +89,9 @@ const AM4_CACHE_PARAMS_PATH = join(
 const AM4_PARAMS_PATH = join(
   REPO_ROOT,
   'packages',
-  'am4',
+  'fractal-midi',
   'src',
+  'am4',
   'params.ts',
 );
 

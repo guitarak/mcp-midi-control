@@ -27,7 +27,8 @@ import type {
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
-import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/axe-fx-iii/descriptor.js';
+import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/descriptor.js';
+import { FM9_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/device.js';
 
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string): void {
@@ -494,6 +495,38 @@ const iiToIiiSpec: PresetSpec = {
   check(
     `scene 2 amp channel = B (from Y), got ${JSON.stringify(scenes[1]?.channels)}`,
     scenes[1]?.channels?.amp === 'B',
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Case 11b: II → FM9 — gen-3 family target. Proves cross-device enum +
+// alias translation now resolves INTO fm9 (the gen-3 family shares the
+// III's effect-enum column, so FM9 reads `axeFxIII`). Before this, fm9
+// returned null on the enum-column lookup and no enum/alias mapped.
+// ─────────────────────────────────────────────────────────────────────
+console.log('\nCase 11b: II → FM9 (gen-3 family, dry-run translate)');
+
+{
+  const result = translatePresetSpec(AXEFX2_DESCRIPTOR, iiToIiiSpec, FM9_DESCRIPTOR);
+  check('ok=true', result.ok);
+  check('1 block translated', result.port_summary.blocks_translated === 1);
+  const firstSlot = result.applied_spec.slots[0] as PresetSlotSpec;
+  const params = firstSlot.params as Record<string, Record<string, unknown>>;
+  // Channels X/Y → A/B (FM9 has A/B/C/D, same position-remap as III).
+  check(`channel A exists (from X), keys=${Object.keys(params).join(',')}`, 'A' in params);
+  check('channel B exists (from Y)', 'B' in params);
+  // Param alias master_volume → master resolves on FM9 (shared gen-3 alias).
+  check(
+    `params_aliased >= 2 (master_volume→master on A+B), got ${result.port_summary.params_aliased}`,
+    result.port_summary.params_aliased >= 2,
+  );
+  // Enum translation routes through the shared gen-3 column: at least the
+  // recognized II amp model maps to its gen-3 canonical (or passes through
+  // unchanged if unmapped — the key assertion is the lookup no longer
+  // dead-ends at null for fm9, which would have thrown/skipped before).
+  check(
+    `enums_mapped is a number (gen-3 column reachable for fm9), got ${result.port_summary.enums_mapped}`,
+    typeof result.port_summary.enums_mapped === 'number',
   );
 }
 

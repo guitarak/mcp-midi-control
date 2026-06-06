@@ -45,10 +45,11 @@ import {
   buildSwitchPreset,
   displayToWire,
 } from 'fractal-midi/axe-fx-ii';
-import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/axe-fx-iii/descriptor.js';
+import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/descriptor.js';
 import {
   FN_SET_GET_CHANNEL,
   FN_PARAMETER_SETGET,
+  unpackValue16,
 } from 'fractal-midi/axe-fx-iii';
 
 function hex(arr: number[]): string {
@@ -1873,14 +1874,23 @@ function buildMockIIICtx(): {
   };
 }
 
+// A true SET_PARAMETER frame is fn=0x01 with the typed-input sub-action 0x09
+// (sub-action byte at envelope offset 6). The gen-3 block insert (set_block)
+// also rides fn=0x01 but uses sub=0x32, so the function byte alone no longer
+// discriminates param writes from block placement; check the sub-action too.
+const SET_PARAM_SUB_ACTION = 0x09;
+function isSetParamFrame(f: CapturedFrame): boolean {
+  return f.fn === FN_PARAMETER_SETGET && f.bytes[6] === SET_PARAM_SUB_ACTION;
+}
+
 async function testIIIChannelNestedApply(): Promise<void> {
   // Spec: amp block with channel-nested params for A and B.
   // Expected outbound sequence:
-  //   1. set_block (fn 0x05 SET_GRID_CELL) — place amp at (r2,c3)
+  //   1. set_block (fn 0x01 sub=0x32 block insert): place amp at (r2,c3)
   //   2. set_channel A (fn 0x0A)
-  //   3. set_param drive (fn 0x01)
+  //   3. set_param drive (fn 0x01 sub=0x09)
   //   4. set_channel B (fn 0x0A)
-  //   5. set_param drive (fn 0x01)
+  //   5. set_param drive (fn 0x01 sub=0x09)
   const { ctx, captured } = buildMockIIICtx();
   const spec = {
     slots: [{
@@ -1899,7 +1909,7 @@ async function testIIIChannelNestedApply(): Promise<void> {
 
   // Verify the wire-frame sequence.
   const channelFrames = captured.filter((f) => f.fn === FN_SET_GET_CHANNEL);
-  const paramFrames = captured.filter((f) => f.fn === FN_PARAMETER_SETGET);
+  const paramFrames = captured.filter(isSetParamFrame);
   assert(
     'III channel-nested apply emits 2 SET_CHANNEL frames (one per channel A, B)',
     channelFrames.length === 2,
@@ -1915,7 +1925,7 @@ async function testIIIChannelNestedApply(): Promise<void> {
   // each SET_CHANNEL must be followed by its channel's SET_PARAMETER
   // before the next SET_CHANNEL appears.
   const fnSequenceAfterSetBlock = captured
-    .filter((f) => f.fn === FN_SET_GET_CHANNEL || f.fn === FN_PARAMETER_SETGET)
+    .filter((f) => f.fn === FN_SET_GET_CHANNEL || isSetParamFrame(f))
     .map((f) => f.fn);
   assert(
     'III channel-nested apply interleaves: [CHANNEL, PARAM, CHANNEL, PARAM]',
@@ -1997,7 +2007,7 @@ async function testIIIChannelNestedApplyMixedShape(): Promise<void> {
   );
   // Mixed shape should be caught before any wire writes for this slot.
   const channelFrames = captured.filter((f) => f.fn === FN_SET_GET_CHANNEL);
-  const paramFrames = captured.filter((f) => f.fn === FN_PARAMETER_SETGET);
+  const paramFrames = captured.filter(isSetParamFrame);
   assert(
     'III channel-nested apply rejects mixed flat+nested shape (no channel or param frames)',
     channelFrames.length === 0 && paramFrames.length === 0,
@@ -2026,7 +2036,7 @@ async function testIIIFlatParamsStillWork(): Promise<void> {
     spec as Parameters<NonNullable<typeof AXEFX3_DESCRIPTOR.writer.applyPreset>>[1],
   );
   const channelFrames = captured.filter((f) => f.fn === FN_SET_GET_CHANNEL);
-  const paramFrames = captured.filter((f) => f.fn === FN_PARAMETER_SETGET);
+  const paramFrames = captured.filter(isSetParamFrame);
   assert(
     'III flat-shape apply: no SET_CHANNEL emitted (writes go to current channel)',
     channelFrames.length === 0,
@@ -2044,10 +2054,54 @@ async function testIIIFlatParamsStillWork(): Promise<void> {
   );
 }
 
+// Display → wire coercion in apply_preset (regression: gen-3 apply_preset used
+// to pass spec values straight to the codec, so `treble: 5.5` reached
+// packValue16 raw — rejected as a non-integer — and integer knob values like
+// `drive: 5` were silently sent as wire 5 (~0.008%) instead of the calibrated
+// midpoint. apply_preset now coerces via the catalog schema, exactly as
+// set_param does at the dispatcher boundary.
+async function testIIIApplyCoercesDisplayToWire(): Promise<void> {
+  const { ctx, captured } = buildMockIIICtx();
+  const spec = {
+    slots: [{
+      slot: { row: 2, col: 2 },
+      block_type: 'amp',
+      // treble is knob_0_10 (calibrated): 5.5 must scale to ~36044 over the
+      // 0..65534 wire, NOT reach packValue16 as the literal 5.5.
+      params: { treble: 5.5 },
+    }],
+  };
+  const result = await AXEFX3_DESCRIPTOR.writer.applyPreset!(
+    ctx,
+    spec as Parameters<NonNullable<typeof AXEFX3_DESCRIPTOR.writer.applyPreset>>[1],
+  );
+  const paramFrames = captured.filter(isSetParamFrame);
+  assert(
+    'III apply_preset coercion: one SET_PARAMETER frame for treble',
+    paramFrames.length === 1,
+    `expected 1 param frame, got ${paramFrames.length}`,
+  );
+  // Value rides packValue16 at envelope bytes 15..17 (lo7, mid7, hi).
+  const f = paramFrames[0];
+  const wire = f !== undefined ? unpackValue16(f.bytes[15], f.bytes[16], f.bytes[17]) : -1;
+  const expected = Math.round((5.5 / 10) * 65534); // 36044
+  assert(
+    'III apply_preset coercion: treble 5.5 → calibrated wire (~36044), not raw 5.5',
+    Math.abs(wire - expected) <= 2,
+    `expected wire ≈ ${expected}, got ${wire}`,
+  );
+  assert(
+    'III apply_preset coercion: result.ok = true (no packValue16 rejection)',
+    result.ok === true,
+    `result.ok=${result.ok}, warning=${result.warning ?? '(none)'}`,
+  );
+}
+
 await testIIIChannelNestedApply();
 await testIIIChannelNestedApplyInvalidChannel();
 await testIIIChannelNestedApplyMixedShape();
 await testIIIFlatParamsStillWork();
+await testIIIApplyCoercesDisplayToWire();
 
 // ── Multi-instance scene slot-id resolution (2026-05-23) ────────────
 //

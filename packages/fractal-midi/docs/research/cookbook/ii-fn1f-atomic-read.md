@@ -72,11 +72,15 @@ high bits (`0x7c`) to preserve. See [[ii-state-broadcast-triple-write]].
 
 ## Where it's used
 
-The reply decodes as a monolithic positional ushort array (chunk
-position equals param position), the same shape the state-broadcast
-decoder handles ([[ii-state-broadcast-triple-write]]). The reply length
-varies with the preset's block composition; representative captures are
-2-4 KB.
+The reply decodes as a positional ushort array (chunk position equals
+param position), the same shape the state-broadcast decoder handles
+([[ii-state-broadcast-triple-write]]). For channel-bearing blocks the
+body is CHANNEL-BLOCKED x2: quarter 0 = X, quarter 1 = Y, at
+`channel * stride + paramId` with `stride = itemCount / 2` (e.g. block
+0x6a itemCount 236 = 118 params x 2). This is the same channel-blocked
+shape as the AM4 (x4 A-D, [[am4-fn1f-atomic-read]]) and gen-3 read; II
+differs only in channel count (x2 X/Y). The reply length varies with the
+preset's block composition; representative captures are 2-4 KB.
 
 The atomic-read should be the foundation of any future `get_preset`
 rewrite that needs per-scene state. The current scene-walk implementation
@@ -155,3 +159,12 @@ reply layout decode.
   AM4 probe. AM4 ships a sibling primitive with a different request
   contract (effectId payload, per-block granularity); see
   [[am4-fn1f-atomic-read]] for the AM4-specific shape.
+- 2026-06-04 (channel-blocked x2): the per-block reply body is
+  channel-blocked, not a single-channel array: quarter 0 = X, quarter 1
+  = Y, `stride = itemCount / 2` (block 0x6a 236 = 118 x 2). `getPreset`
+  now decodes BOTH channels from the one dump; the earlier per-param
+  fn 0x02 Y-walk (and its set-Y / restore-X channel mutation) is removed.
+  The earlier "monolithic / always-X" reading was the quarter-0 symptom
+  of a channel-blocked body indexed by paramId. (Arithmetic-confirmed
+  236 = 118 x 2 + structural transfer from the AM4 live x4 read; a paired
+  II X != Y hardware confirmation is still pending.)

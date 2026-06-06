@@ -74,9 +74,17 @@ export const CROSS_DEVICE_CASES: AgentRegressionCase[] = [
       tool_call_validators: [
         {
           tool: 'translate_preset',
+          // Validate the FINAL translate call: the agent may make an
+          // exploratory translate (e.g. to II) before the III answer; its
+          // last call is the real result for "translate it to the III".
+          call_index: 'last',
           check: (args, result) => {
             const tgt = String(args.target_port).toLowerCase();
-            if (!/axe-?fx ?(iii|3)/.test(tgt)) {
+            // Separator between "fx" and "iii" may be a hyphen (the real port
+            // id is "axe-fx-iii"), a space, or nothing — accept all three.
+            // The old `/axe-?fx ?(iii|3)/` only allowed an optional SPACE, so
+            // the correct id "axe-fx-iii" failed with "should be X, got X".
+            if (!/axe-?fx[- ]?(iii|3)/.test(tgt)) {
               return `translate_preset target_port should be axe-fx-iii, got ${String(args.target_port)}.`;
             }
             if (result === undefined) return true;
@@ -134,6 +142,12 @@ export const CROSS_DEVICE_CASES: AgentRegressionCase[] = [
       tool_call_validators: [
         {
           tool: 'apply_preset',
+          // Validate the agent's FINAL apply: on this heavy 4-scene build the
+          // agent sometimes fuzzes an enum on the first attempt (e.g. delay
+          // tempo "1/4 D" for "1/4 DOT"), gets ok:false, and self-corrects on
+          // a retry. The last apply is the real build; checking #0 would
+          // penalize the (healthy) self-correction.
+          call_index: 'last',
           check: (args, result) => {
             // Scene-pointer setup: apply must land on scene 1 so the drift
             // check below is meaningful. The agent might forget the

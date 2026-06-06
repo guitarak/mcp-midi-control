@@ -97,6 +97,16 @@ export const PARAM_ALIASES_AXEFX2: Readonly<Record<string, Readonly<Record<strin
   TRM: {
     speed: 'rate',
   },
+  CPR: {
+    // Back-compat: the compressor threshold knob was registered as the
+    // misspelled `treshold` before 0.1.1. Recipes, agent traces, and the
+    // concept-key map referenced that spelling. The canonical name is now
+    // `threshold` (matching every other device's threshold param); keep the
+    // old spelling resolvable. Fuzzy Layer 2 already catches it via the
+    // `wikiName: "TRESHOLD"` field, but this makes the intent explicit and
+    // survives a future wikiName cleanup.
+    treshold: 'threshold',
+  },
   // Reverb/Delay/Chorus canonical-name knobs (mix, level, time, etc.)
   // are already common English — fuzzy normalization handles capitalization
   // and separators ("Mix" → "mix", "PRE DELAY" → "pre_delay").

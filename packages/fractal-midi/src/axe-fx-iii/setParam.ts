@@ -33,6 +33,7 @@
  *   - SET_PRESET_NAME / SET_SCENE_NAME — names are query-only.
  */
 import { fractalChecksum } from '../shared/checksum.js';
+import { unpackValueChunked } from '../shared/packValue.js';
 
 /** Axe-Fx III model byte. From Fractal's published spec. */
 export const AXE_FX_III_MODEL_ID = 0x10;
@@ -80,9 +81,10 @@ export const FN_MULTIPURPOSE_RESPONSE = 0x64;
  * and two sub-action codes — see `docs/axefx3-set-parameter-captures.md`.
  *
  * Evidence chain (pivot 2026-05-18):
- *   • FC-12 footswitch captures (4 frames): Drive 1/2
- *     boost ON/OFF. Effect IDs 58/59 (`ID_DISTORT1` / `ID_DISTORT2`),
- *     paramId 40, sub-action `52 00` (mouse-drag). Already decoded
+ *   • FC-12 footswitch captures (4 frames): Amp 1/2
+ *     boost ON/OFF. Effect IDs 58/59 (`ID_DISTORT1` / `ID_DISTORT2`,
+ *     the gen-3 AMP block), paramId 40, sub-action `52 00` (mouse-drag).
+ *     Already decoded
  *     into the field-layout table in `docs/axefx3-fn01-decode.md`.
  *   • Mountain Utilities forum captures (6 frames, from a public
  *     forum capture 2019-03-13): AxeEdit III writing Delay 1 TIME. Effect ID 70
@@ -147,8 +149,12 @@ function decode14(lo: number, hi: number): number {
  * [checksum] F7`. Checksum covers everything from `F0` through the
  * last payload byte (XOR-7bit).
  */
-function buildEnvelope(fn: number, payload: readonly number[]): number[] {
-  const body = [SYSEX_START, ...FRACTAL_MFR_PREFIX, AXE_FX_III_MODEL_ID, fn, ...payload];
+function buildEnvelope(
+  fn: number,
+  payload: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  const body = [SYSEX_START, ...FRACTAL_MFR_PREFIX, modelByte, fn, ...payload];
   const checksum = fractalChecksum(body);
   return [...body, checksum, SYSEX_END];
 }
@@ -271,6 +277,57 @@ export function pack5Septet32(value: number): [number, number, number, number, n
   ];
 }
 
+/** Inverse of `pack5Septet32`: 5 LSB-first septets → unsigned 32-bit. */
+export function unpack5Septet32(s0: number, s1: number, s2: number, s3: number, s4: number): number {
+  return (
+    ((s0 & 0x7f)) | ((s1 & 0x7f) << 7) | ((s2 & 0x7f) << 14)
+    | ((s3 & 0x7f) << 21) | ((s4 & 0x7f) << 28)
+  ) >>> 0;
+}
+
+const _f32buf = new ArrayBuffer(4);
+const _f32 = new Float32Array(_f32buf);
+const _u32 = new Uint32Array(_f32buf);
+
+/**
+ * Decode a 5-septet-LE little-endian IEEE-754 float32. This is the
+ * NORMALIZED value space FM9-Edit uses for mouse-drag SETs (sub-action
+ * `52 00`) and for the 60-byte SET value-echo response — FM9-confirmed
+ * from a community hardware capture (2026-06-03). Continuous params normalize to
+ * `[0,1]` (wire16/65534); enum/type params report `index/(count-1)`
+ * (e.g. Reverb type Medium Spring = 16/78 = 0.205128).
+ */
+export function decode5SeptetFloat32(s0: number, s1: number, s2: number, s3: number, s4: number): number {
+  _u32[0] = unpack5Septet32(s0, s1, s2, s3, s4);
+  return _f32[0];
+}
+
+/**
+ * Parse the 60-byte gen-3 SET value-echo response (FM9-confirmed). The
+ * device answers a typed SET (`sub 09 00`) or a mouse-drag SET
+ * (`sub 52 00`) with this synchronous echo: it carries the effectId,
+ * paramId, and the device's quantized NORMALIZED value as a 5-septet
+ * float32 at bytes 12-16, followed by a descriptor/metadata block.
+ * Read-only decode of device-emitted bytes; emits nothing on the wire.
+ */
+export function parseGen3SetValueEcho(bytes: readonly number[]): {
+  effectId: number;
+  paramId: number;
+  normalizedValue: number;
+} {
+  if (
+    bytes.length < 22 || bytes[0] !== 0xf0 || bytes[1] !== 0x00
+    || bytes[2] !== 0x01 || bytes[3] !== 0x74 || bytes[5] !== 0x01
+  ) {
+    throw new Error('parseGen3SetValueEcho: not a fn=0x01 echo frame');
+  }
+  return {
+    effectId: decode14(bytes[8], bytes[9]),
+    paramId: decode14(bytes[10], bytes[11]),
+    normalizedValue: decode5SeptetFloat32(bytes[12], bytes[13], bytes[14], bytes[15], bytes[16]),
+  };
+}
+
 /**
  * SET PARAMETER (function 0x01, sub-action 0x09 0x00 — typed input).
  *
@@ -307,15 +364,20 @@ export function pack5Septet32(value: number): [number, number, number, number, n
  *
  * 🟢 Outbound wire shape verified across 10 public captures spanning
  * two effect blocks (Drive 1/2, Delay 1) and two paramIds (40 boost,
- * 2 TIME). The device's RESPONSE shape (sync echo or async
- * STATE_BROADCAST `04 01`) is not in any public capture — wrap with
- * `sendAndWatchForError` to surface 0x64 rejects, but don't expect a
- * synchronous SET echo.
+ * 2 TIME), AND byte-exact against a real FM9 (model 0x12) hardware
+ * capture of a Reverb TYPE change made in the editor. The device's
+ * RESPONSE is a synchronous 60-byte value-echo (effectId, paramId, a
+ * 5-septet float32 normalized value, then a descriptor block) — parse
+ * it with `parseGen3SetValueEcho`. The real device→host edit broadcast
+ * is the `0x74/0x75/0x76` burst, NOT `fn=0x01 04 01`. (The editor also
+ * uses a mouse-drag SET sub-action `52 00` carrying a 5-septet float32
+ * at pos 12-16; `buildSetParameter` emits the clean typed `09 00` form.)
  */
 export function buildSetParameter(
   effectId: number,
   paramId: number,
   value: number,
+  modelByte: number = AXE_FX_III_MODEL_ID,
 ): number[] {
   return buildEnvelope(FN_PARAMETER_SETGET, [
     ...SUB_ACTION_SET_TYPED,
@@ -324,7 +386,7 @@ export function buildSetParameter(
     0x00, 0x00, 0x00,
     ...packValue16(value),
     0x00, 0x00, 0x00,
-  ]);
+  ], modelByte);
 }
 
 /**
@@ -338,7 +400,11 @@ export function buildSetParameter(
  * not as a tool error, and fall back to 0x13 STATUS_DUMP or
  * STATE_BROADCAST listening.
  */
-export function buildGetParameter(effectId: number, paramId: number): number[] {
+export function buildGetParameter(
+  effectId: number,
+  paramId: number,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
   return buildEnvelope(FN_PARAMETER_SETGET, [
     ...SUB_ACTION_SET_TYPED,
     ...encode14(effectId),
@@ -346,7 +412,7 @@ export function buildGetParameter(effectId: number, paramId: number): number[] {
     0x00, 0x00, 0x00,
     0x00, 0x00, 0x00,
     0x00, 0x00, 0x00,
-  ]);
+  ], modelByte);
 }
 
 /**
@@ -369,8 +435,11 @@ export function buildSetParameterBypass(effectId: number, bypassed: boolean): nu
  * `04 01` (STATE_BROADCAST), or `09 00` (theoretically a host
  * typed-input echo). The parser disambiguates by sub-action.
  */
-export function isSetGetParameterResponse(bytes: readonly number[]): boolean {
-  return isAxeFxIIIFrame(bytes, FN_PARAMETER_SETGET);
+export function isSetGetParameterResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
+  return isAxeFxIIIFrame(bytes, FN_PARAMETER_SETGET, modelByte);
 }
 
 /**
@@ -405,14 +474,17 @@ export type AxeFxIIIParameterFrameKind = 'set_echo' | 'state_broadcast';
  * For consumers that prefer an explicit broadcast handler, see
  * `parseStateBroadcast`, which throws on non-broadcast frames.
  */
-export function parseSetGetParameterResponse(bytes: readonly number[]): {
+export function parseSetGetParameterResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): {
   kind: AxeFxIIIParameterFrameKind;
   effectId: number;
   paramId: number;
   value: number;
   subAction: number;
 } {
-  if (!isSetGetParameterResponse(bytes)) {
+  if (!isSetGetParameterResponse(bytes, modelByte)) {
     throw new Error(`parseSetGetParameterResponse: not a fn=0x01 frame (len=${bytes.length})`);
   }
   const payload = bytes.slice(6, -2);
@@ -467,37 +539,300 @@ export function parseStateBroadcast(bytes: readonly number[]): {
   return { effectId: parsed.effectId, value: parsed.value };
 }
 
-// ── 0x05 SET_GRID_CELL ─────────────────────────────────────────────
+// ── 0x74/0x75/0x76 gen-3 STATE-BROADCAST burst (device → host) ──────
 //
-// 🟡 NOT in v1.4 III spec. Wire shape ported from the Axe-Fx II's
-// hardware-verified encoder. The II uses 0x05 to place a block at a
-// grid cell (or clear it with blockId=0); whether III firmware honors
-// this opcode is unverified. Rejections arrive as 0x64
-// MULTIPURPOSE_RESPONSE with result_code 0x04 (msg not recognized).
+// The REAL gen-3 working-buffer-edit broadcast, byte-confirmed on FM9
+// hardware (firmware 11.00, community capture 2026-06-03). NOT the
+// `fn=0x01 04 01` form the III research notes assumed (which no editor was
+// observed to emit). The device emits this burst both on a front-panel edit and as the
+// response to an fn=0x1F bulk-read poll. The burst is four frames:
+//
+//   0x74 head  F0 00 01 74 [model] 74 [blockId:14b] [itemCount:14b] [flag] [cs] F7
+//   0x75 body  F0 00 01 74 [model] 75 [sectionId] [flag] [N × packValue16] [cs] F7
+//   0x75 tail  (a continuation section; sectionId differs)
+//   0x76 end   F0 00 01 74 [model] 76 [cs] F7
+//
+// The body carries one 3-septet packValue16 per parameter in device-true
+// paramId order (body index i == that block family's paramId i — validated
+// against the mined FM9 catalog). Read-only decode of device-emitted bytes;
+// emits nothing on the wire.
 
-const FN_SET_GRID_CELL = 0x05;
+/** Parse the 0x74 head of a gen-3 state-broadcast burst → which block + item count. */
+export function parseGen3StateBroadcastHead(bytes: readonly number[]): {
+  blockId: number;
+  itemCount: number;
+} {
+  if (
+    bytes.length < 11 || bytes[0] !== 0xf0 || bytes[1] !== 0x00
+    || bytes[2] !== 0x01 || bytes[3] !== 0x74 || bytes[5] !== 0x74
+  ) {
+    throw new Error('parseGen3StateBroadcastHead: not a fn=0x74 state-broadcast head frame');
+  }
+  return {
+    blockId: decode14(bytes[6], bytes[7]),
+    itemCount: decode14(bytes[8], bytes[9]),
+  };
+}
 
 /**
- * SET_GRID_CELL (function 0x05). Places `blockId` at cell (row, col).
+ * Parse the 0x75 body of a gen-3 state-broadcast burst into its
+ * per-parameter values (one 3-septet `packValue16` each, in paramId order).
+ */
+export function parseGen3StateBroadcastBody(bytes: readonly number[]): {
+  sectionId: number;
+  values: number[];
+} {
+  if (
+    bytes.length < 10 || bytes[0] !== 0xf0 || bytes[1] !== 0x00
+    || bytes[2] !== 0x01 || bytes[3] !== 0x74 || bytes[5] !== 0x75
+  ) {
+    throw new Error('parseGen3StateBroadcastBody: not a fn=0x75 state-broadcast body frame');
+  }
+  const sectionId = bytes[6];
+  // bytes[6]=sectionId, bytes[7]=reserved/flag; 3-septet triples from byte 8,
+  // trailing [cs][F7] stripped.
+  const end = bytes.length - 2;
+  const values: number[] = [];
+  for (let i = 8; i + 3 <= end; i += 3) {
+    values.push(unpackValue16(bytes[i], bytes[i + 1], bytes[i + 2]));
+  }
+  return { sectionId, values };
+}
+
+// ── 0x1F block bulk-read POLL (host → device) ──────────────────────
+//
+// Byte-confirmed on FM9 (firmware 11.00, community capture 2026-06-03):
+// a 10-byte poll whose reply IS the 0x74/0x75/0x76 state-broadcast burst
+// (~1 ms later; there is no separate fn=0x1F response body). This is the
+// gen-3 atomic whole-block read, structurally identical to the Axe-Fx II's
+// fn=0x1F SYSEX_GET_ALL_PARAMS (same opcode, same triple-frame answer): the
+// cross-device transfer is exact, differing only by model byte + the gen-3
+// 3-septet `packValue16` value encoding.
+//
+//   poll  F0 00 01 74 [model] 1F [effectId:14b septet-LE] [cs] F7   (10 B)
+//
+// The device rejects a poll for an UNPLACED block with an fn=0x64
+// MULTIPURPOSE_RESPONSE NACK rather than a burst (II-observed; assumed for
+// gen-3 pending tester confirmation).
+
+export const FN_BLOCK_BULK_READ = 0x1f;
+
+/**
+ * Build the fn=0x1F block bulk-read poll for `effectId`. The reply is the
+ * 0x74/0x75(xN)/0x76 burst; collect it with `assembleGen3BlockBulkRead`.
+ * Read-only: carries no value, mutates nothing.
+ */
+export function buildBlockBulkReadPoll(
+  effectId: number,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  if (!Number.isInteger(effectId) || effectId < 0 || effectId > 0x3fff) {
+    throw new Error(`buildBlockBulkReadPoll: effectId out of range (0..16383): ${effectId}`);
+  }
+  return buildEnvelope(FN_BLOCK_BULK_READ, encode14(effectId), modelByte);
+}
+
+// ── 0x03 REQUEST_PRESET_DUMP (host → device) ───────────────────────
+//
+// Byte-confirmed on FM9 (firmware 11.00, community "receive preset from
+// device" capture 2026-06-04, decoded in
+// `docs/_private/FM9-CAPTURE-RECEIVE+SWEEP-2026-06-04.md` and re-verified
+// by the `fm9-decode-verify` workflow). A 10-byte request that asks the
+// device to send a STORED preset back as the 0x77/0x78/0x79 dump chain
+// (head + N×body + tail), the same envelope `fractal-modern`'s
+// `presetDump.ts` already parses/serializes. This is the read/backup
+// trigger; it mutates nothing on the device.
+//
+//   request  F0 00 01 74 [model] 03 [preset_high7] [preset_low7] 00 [cs] F7   (11 B)
+//
+// The preset number is BIG-ENDIAN septet ([high, low]), matching the II /
+// gen-3 STORE / GET_TEMPO MSB-first convention — NOT the little-endian
+// `encode14` used for effect/param ids. Captured FM9 requests decoded to
+// 49, 129, 197, 273, 274, 355, 443, 444 (all valid 0..511 indices); the
+// little-endian misreading gives nonsense (e.g. 6272). The trailing 0x00
+// is a fixed third payload byte present in every captured request.
+//
+// Write-back (host → device 0x77/0x78/0x79) is NOT yet captured; do not
+// add a device-bound preset-write builder until that direction is verified.
+
+export const FN_REQUEST_PRESET_DUMP = 0x03;
+
+/**
+ * Build the fn=0x03 REQUEST_PRESET_DUMP for a STORED preset. The device
+ * replies with the 0x77 header + N×0x78 body + 0x79 footer dump; collect
+ * those frames and parse with `fractal-modern`'s `parsePresetDump`.
+ * Read-only: carries no value, mutates nothing on the device.
  *
- *   `F0 00 01 74 10 05 [blockId_lo blockId_hi] [cell_idx] [0x00] [cs] F7`
+ * `presetNumber` is the stored-location index (FM9: 0..511; the III banks
+ * 0..383). Big-endian septet encoding per the captured wire shape.
+ */
+export function buildRequestPresetDump(
+  presetNumber: number,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  if (!Number.isInteger(presetNumber) || presetNumber < 0 || presetNumber > 0x3fff) {
+    throw new Error(`buildRequestPresetDump: preset out of range (0..16383): ${presetNumber}`);
+  }
+  const high = (presetNumber >> 7) & 0x7f;
+  const low = presetNumber & 0x7f;
+  return buildEnvelope(FN_REQUEST_PRESET_DUMP, [high, low, 0x00], modelByte);
+}
+
+// ── EDIT-BUFFER DUMP (fn=0x43 request → 0x51 head + 0x52 body run) ──
+//
+// fn=0x43 (no args) asks the device to dump its ACTIVE working buffer (the
+// currently-edited preset). The reply is a 0x51 head + a homogeneous run of
+// 0x52 body frames, with NO tail frame (unlike the stored dump's 0x79).
+// Wire-confirmed on FM9 (FW 11.00, 2026-06-04 receive capture; request is
+// byte-exact `F0 00 01 74 12 43 54 F7`, no payload). The body uses the same
+// 3-septet word packing as the stored 0x78 chunk; the canonical body length is
+// 3082 B (off-lengths in the USBPcap capture were drop/coalesce artifacts).
+//
+// This is the active-buffer scope `export_preset` maps to; distinct from the
+// stored-preset dump (fn=0x03 → 0x77/0x78/0x79). The dump is READ-only and the
+// request carries no payload, so it mutates nothing on the device. For a
+// byte-exact backup the body frames are treated as opaque (concatenated
+// verbatim); the inner section layout is not yet decoded.
+
+export const FN_REQUEST_EDIT_BUFFER_DUMP = 0x43;
+export const FN_EDIT_BUFFER_DUMP_HEAD = 0x51;
+export const FN_EDIT_BUFFER_DUMP_BODY = 0x52;
+
+/**
+ * Build the fn=0x43 REQUEST_EDIT_BUFFER_DUMP (no args). The device replies with
+ * a 0x51 head + a run of 0x52 body frames (no tail). Collect them until the
+ * stream goes quiet; concatenate verbatim for a byte-exact `.syx` backup.
+ * Read-only: carries no value, mutates nothing on the device.
+ */
+export function buildRequestEditBufferDump(
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  return buildEnvelope(FN_REQUEST_EDIT_BUFFER_DUMP, [], modelByte);
+}
+
+/** Non-throwing predicate: is `bytes` the 0x51 edit-buffer dump HEAD for `modelByte`? */
+export function isEditBufferDumpHead(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
+  return isAxeFxIIIFrame(bytes, FN_EDIT_BUFFER_DUMP_HEAD, modelByte);
+}
+
+/** Non-throwing predicate: is `bytes` a 0x52 edit-buffer dump BODY frame for `modelByte`? */
+export function isEditBufferDumpBody(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
+  return isAxeFxIIIFrame(bytes, FN_EDIT_BUFFER_DUMP_BODY, modelByte);
+}
+
+/**
+ * Non-throwing predicate: is `bytes` a gen-3 state-broadcast frame of the
+ * given function byte (0x74 head / 0x75 body / 0x76 end) for `modelByte`?
+ * Used by the burst collector to classify inbound frames without throwing.
+ */
+export function isGen3BroadcastFrame(
+  bytes: readonly number[],
+  fn: 0x74 | 0x75 | 0x76,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
+  return (
+    bytes.length >= 7
+    && bytes[0] === 0xf0 && bytes[1] === 0x00 && bytes[2] === 0x01
+    && bytes[3] === 0x74 && bytes[4] === modelByte && bytes[5] === fn
+  );
+}
+
+/** A reassembled fn=0x1F whole-block read. `values[i]` is that block's paramId `i`. */
+export interface Gen3BlockBulkRead {
+  /** Block/effect id echoed in the 0x74 head. */
+  blockId: number;
+  /** Param count the head advertised (cross-check against `values.length`). */
+  itemCount: number;
+  /** Positional wire values; index i == device-true paramId i (paged 0x75 bodies concatenated in arrival order). */
+  values: number[];
+}
+
+/**
+ * Assemble a collected 0x74/0x75…/0x76 burst into positional values.
  *
- * cell_idx = (col - 1) * rows + (row - 1) — column-major. The II uses
- * 4-row grids so cell_idx = (col-1)*4 + (row-1). The III runs a 4×14
- * grid in Mark II firmware; the cell index shape is the same.
+ * The 0x75 body is POSITIONAL: record index i == that block's device-true
+ * paramId i (validated against the mined FM9 catalog, capture 2026-06-03).
+ * A whole-block dump pages across multiple 0x75 sections (e.g. Reverb = a
+ * 256-value section + a 36-value tail = itemCount 292); we concatenate them
+ * in arrival order, so the tail continues the paramId sequence. The 0x74
+ * head fixes the blockId + advertised itemCount; the 0x76 end is ignored.
+ */
+export function assembleGen3BlockBulkRead(
+  frames: readonly (readonly number[])[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): Gen3BlockBulkRead {
+  let head: { blockId: number; itemCount: number } | undefined;
+  const values: number[] = [];
+  for (const f of frames) {
+    if (isGen3BroadcastFrame(f, 0x74, modelByte)) {
+      if (head === undefined) head = parseGen3StateBroadcastHead(f);
+    } else if (isGen3BroadcastFrame(f, 0x75, modelByte)) {
+      for (const v of parseGen3StateBroadcastBody(f).values) values.push(v);
+    }
+    // 0x76 end: structural terminator, no payload.
+  }
+  if (head === undefined) {
+    throw new Error('assembleGen3BlockBulkRead: no 0x74 head frame in the burst');
+  }
+  return { blockId: head.blockId, itemCount: head.itemCount, values };
+}
+
+// ── SET_GRID_CELL / block INSERT (fn=0x01 sub=0x32) ────────────────
+//
+// The gen-3 editor places a block into a grid cell with fn=0x01
+// sub-action 0x32 (the editor names it `grid_set_position`). Captured
+// byte-exact from FM9-Edit (0x12), AxeEdit III (0x10), and FM3-Edit
+// (0x11) over loopMIDI; see the cookbook [[gen3-fn01-grid-set-position-insert]]
+// and the golden `scripts/cookbook-verify.ts#case-gen3-fn01-grid-set-position-insert`.
+//
+// This supersedes the earlier fn=0x05 guess (a II-ported opcode the III
+// firmware never confirmed). The editor pairs the insert with a cell-select
+// companion (sub=0x30, gridPos only) emitted first; the select is a cursor
+// move that does not change grid state (the codec-backed device simulator
+// models it as a no-op), so the insert alone is the state-changing write and
+// this builder emits just the insert.
+//
+// Wire envelope (23 bytes):
+//
+//   `F0 00 01 74 <model> 01 32 00 <effectId_lo effectId_hi> 00 00
+//    <gridPos_lo gridPos_hi> 00 00 00 00 00 00 00 <cks> F7`
+//
+// effectId is a septet 14-bit field at bytes 8-9; gridPos a septet 14-bit
+// field at bytes 12-13 (both LSB-first via [[septet-14bit]]). A high septet
+// of 0x08 on the effect id marks a shunt / routing element; real blocks have
+// it zero. Rejections arrive as 0x64 MULTIPURPOSE_RESPONSE.
+
+const FN_SET_GRID_CELL = FN_PARAMETER_SETGET; // 0x01
+const GRID_INSERT_SUB_ACTION = 0x32;
+
+/**
+ * SET_GRID_CELL / block INSERT (fn=0x01 sub=0x32). Places `blockId` at cell
+ * (row, col); `blockId=0` clears the cell.
  *
- * 🟡 III-untested. The 8-byte payload was rejected by II firmware as
- * "payload too short" — the II's encoder always sends 4 payload bytes
- * (blockId_lo, blockId_hi, cell_idx, reserved=0). We mirror that.
+ * gridPos = (col - 1) * rows + (row - 1), column-major. The row stride is the
+ * grid's row count, passed via `opts.rows`. The gen-3 grid is 6 rows on the
+ * Axe-Fx III and FM9 (wire-confirmed), 4 rows on the FM3; pass its row count.
+ * Default 6. Wire-confirmed across model 0x10/0x11/0x12; see the cookbook
+ * [[gen3-fn01-grid-set-position-insert]] entry.
  */
 export function buildSetGridCell(opts: {
   row: number;
   col: number;
   blockId: number;
-}): number[] {
-  const { row, col, blockId } = opts;
-  if (!Number.isInteger(row) || row < 1 || row > 4) {
-    throw new Error(`buildSetGridCell: row out of range (1..4): ${row}`);
+  rows?: number;
+}, modelByte: number = AXE_FX_III_MODEL_ID): number[] {
+  const { row, col, blockId, rows = 6 } = opts;
+  if (!Number.isInteger(rows) || rows < 1) {
+    throw new Error(`buildSetGridCell: rows must be a positive integer: ${rows}`);
+  }
+  if (!Number.isInteger(row) || row < 1 || row > rows) {
+    throw new Error(`buildSetGridCell: row out of range (1..${rows}): ${row}`);
   }
   if (!Number.isInteger(col) || col < 1 || col > 14) {
     throw new Error(`buildSetGridCell: col out of range (1..14): ${col}`);
@@ -505,13 +840,129 @@ export function buildSetGridCell(opts: {
   if (!Number.isInteger(blockId) || blockId < 0 || blockId > 0x3fff) {
     throw new Error(`buildSetGridCell: blockId out of range (0..16383): ${blockId}`);
   }
-  const cellIdx = (col - 1) * 4 + (row - 1);
+  const gridPos = (col - 1) * rows + (row - 1);
+  // Payload: [sub-action, pad, effectId@8-9, 2 pad, gridPos@12-13, 7 pad].
   return buildEnvelope(FN_SET_GRID_CELL, [
-    blockId & 0x7f,
-    (blockId >> 7) & 0x7f,
-    cellIdx & 0x7f,
-    0x00, // reserved per II convention
-  ]);
+    GRID_INSERT_SUB_ACTION,
+    0x00,
+    ...encode14(blockId),
+    0x00, 0x00,
+    ...encode14(gridPos),
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ], modelByte);
+}
+
+// ── SET_GRID_ROUTING (fn=0x01 sub=0x35) ────────────────────────────
+//
+// Draws or removes a cable between two adjacent-column cells in the gen-3
+// grid. Wire envelope (26 bytes):
+//
+//   F0 00 01 74 <model> 01 35 00 00 00 00 00 <OP> 00 00 00 00 00
+//   00 02 00 <b21> <b22> <b23> <cks> F7
+//
+// Two formulas, branched by grid row count:
+//
+// ── 6-row grids (III model=0x10, FM9 model=0x12) ─────────────────
+// Decoded via FM9-Edit loopMIDI (26 cables, 2026-06-05):
+//   srcGp    = (srcCol − 1) × 6 + (srcRow − 1)
+//   b21      = floor(srcGp / 2)
+//   colTerm  = floor(3·(srcCol−1)/2) + 1
+//   destSign = destRow >= 3 ? 1 : 0
+//   b22      = ((srcGp & 1) << 6) | (colTerm + destSign)
+//   b23      = ((|destRow−3| + (srcCol even ? 2 : 0)) % 4) << 5
+// Row-1 even srcCol refused — encoding not yet captured (6-row only).
+//
+// ── 4-row grids (FM3 model=0x11) ──────────────────────────────────
+// Decoded via FM3-Edit loopMIDI (10 cables, 2026-06-05):
+//   srcGp    = (srcCol − 1) × 4 + (srcRow − 1)
+//   b21      = floor(srcGp / 2)
+//   b22      = ((srcGp & 1) << 6) | srcCol       ← colTerm = srcCol; no destSign
+//   b23      = (destRow − 1) << 5                 ← linear 1-indexed encoding
+// All rows 1-4 and all srcCol parity (including row-1 even-col) work.
+
+const GRID_ROUTING_SUB_ACTION = 0x35;
+export const ROUTING_OP_CONNECT = 0x01;
+export const ROUTING_OP_DISCONNECT = 0x02;
+
+/**
+ * SET_GRID_ROUTING (fn=0x01 sub=0x35). Draws or removes a cable between
+ * `(srcRow, srcCol)` and `(destRow, srcCol + 1)`. Dest column is implicit.
+ *
+ * `op`: `ROUTING_OP_CONNECT` (0x01) or `ROUTING_OP_DISCONNECT` (0x02).
+ * Defaults to connect.
+ *
+ * `rows`: 6 for III/FM9 (default), 4 for FM3. The formulas for b22/b23
+ * differ between 6-row and 4-row grids (both byte-confirmed from
+ * FM9-Edit and FM3-Edit loopMIDI captures, 2026-06-05).
+ */
+export function buildSetGridRouting(opts: {
+  srcRow: number;
+  srcCol: number;
+  destRow: number;
+  rows?: number;
+  op?: number;
+}, modelByte: number = AXE_FX_III_MODEL_ID): number[] {
+  const { srcRow, srcCol, destRow, rows = 6, op = ROUTING_OP_CONNECT } = opts;
+
+  if (rows !== 6 && rows !== 4) {
+    throw new Error(
+      `buildSetGridRouting: rows must be 4 (FM3) or 6 (III/FM9). Got rows=${rows}.`,
+    );
+  }
+  if (!Number.isInteger(srcRow) || srcRow < 1 || srcRow > rows) {
+    throw new Error(`buildSetGridRouting: srcRow out of range (1..${rows}): ${srcRow}`);
+  }
+  if (!Number.isInteger(srcCol) || srcCol < 1 || srcCol > 13) {
+    throw new Error(`buildSetGridRouting: srcCol out of range (1..13): ${srcCol}`);
+  }
+  if (!Number.isInteger(destRow) || destRow < 1 || destRow > rows) {
+    throw new Error(`buildSetGridRouting: destRow out of range (1..${rows}): ${destRow}`);
+  }
+  if (op !== ROUTING_OP_CONNECT && op !== ROUTING_OP_DISCONNECT) {
+    throw new Error(`buildSetGridRouting: op must be ROUTING_OP_CONNECT (0x01) or ROUTING_OP_DISCONNECT (0x02): ${op}`);
+  }
+  // Row-1 even-col is only unresolved on 6-row grids. FM3 (4-row) encodes
+  // them correctly with the 4-row formula (confirmed cable r1c2→r1c3).
+  if (rows === 6 && srcRow === 1 && srcCol % 2 === 0) {
+    throw new Error(
+      `buildSetGridRouting: source row=1 even column (col ${srcCol}) is not yet decoded ` +
+        `for 6-row grids. Capture r1c${srcCol}→r1c${srcCol + 1}, r1c${srcCol}→r3c${srcCol + 1}, ` +
+        `r1c${srcCol}→r5c${srcCol + 1} with FM9-Edit or III-Edit to close this corner.`,
+    );
+  }
+
+  const srcGp = (srcCol - 1) * rows + (srcRow - 1);
+  const b21 = Math.floor(srcGp / 2);
+  let b22: number;
+  let b23: number;
+
+  if (rows === 4) {
+    // FM3 4-row formula (10/10 byte-confirmed, FM3-Edit loopMIDI, 2026-06-05):
+    //   colTerm = srcCol (linear, no 3/2 scaling); no destSign.
+    //   b23 = (destRow-1)*32 (simple 0-indexed row, no mod-4 wrap).
+    b22 = ((srcGp & 1) << 6) | srcCol;
+    b23 = (destRow - 1) << 5;
+  } else {
+    // 6-row formula (III/FM9, 26/26 byte-confirmed, FM9-Edit loopMIDI, 2026-06-05):
+    const colTerm = Math.floor((3 * (srcCol - 1)) / 2) + 1;
+    const destSign = destRow >= 3 ? 1 : 0;
+    b22 = ((srcGp & 1) << 6) | (colTerm + destSign);
+    b23 = ((Math.abs(destRow - 3) + (srcCol % 2 === 0 ? 2 : 0)) % 4) << 5;
+  }
+
+  // Payload layout (bytes after fn=0x01):
+  // [sub=0x35, 0, 0, 0, 0, 0, OP, 0, 0, 0, 0, 0, 0, 0x02, 0, b21, b22, b23]
+  // The constant 0x02 at payload[13] (wire byte 19) is the edge-record marker.
+  return buildEnvelope(FN_PARAMETER_SETGET, [
+    GRID_ROUTING_SUB_ACTION,
+    0x00,
+    0x00, 0x00, 0x00, 0x00,
+    op,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x02,
+    0x00,
+    b21, b22, b23,
+  ], modelByte);
 }
 
 // ── 0x09 SET_PRESET_NAME ───────────────────────────────────────────
@@ -527,12 +978,15 @@ const FN_SET_PRESET_NAME = 0x09;
 /**
  * SET_PRESET_NAME (function 0x09) — set the working-buffer preset name.
  * Name is padded to 32 ASCII-printable chars (space-padded). The II
- * uses this for the working buffer only; pairing with 0x1D STORE_PRESET
- * is what persists the rename to flash.
+ * uses this for the working buffer only; pairing with the store op
+ * (fn=0x01 sub=0x26) is what persists the rename to flash.
  *
  * 🟡 III-untested.
  */
-export function buildSetPresetName(name: string): number[] {
+export function buildSetPresetName(
+  name: string,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
   if (name.length > 32) {
     throw new Error(`buildSetPresetName: name too long (max 32): "${name}" (${name.length})`);
   }
@@ -545,41 +999,58 @@ export function buildSetPresetName(name: string): number[] {
   const padded = name.padEnd(32, ' ');
   return buildEnvelope(FN_SET_PRESET_NAME, [
     ...Array.from(padded, (c) => c.charCodeAt(0)),
-  ]);
+  ], modelByte);
 }
 
-// ── 0x1D STORE_PRESET ──────────────────────────────────────────────
+// ── STORE_PRESET (fn=0x01 sub=0x26) ────────────────────────────────
 //
-// 🟡 NOT in v1.4 III spec — Fractal's published III save envelope is
-// the multi-frame 0x77/0x78/0x79 chain (community RE, hypothesis-only;
-// requires Huffman-compressed preset content). The II's 0x1D STORE
-// command is a much simpler 10-byte envelope: "persist the current
-// working buffer to slot N" with no preset payload — the device just
-// commits whatever's in the working buffer.
+// The gen-3 editor saves the working buffer to a preset location with
+// fn=0x01 sub-action 0x26. This is the editor's own outbound store op,
+// captured byte-exact from FM9-Edit (model 0x12) AND AxeEdit III (model
+// 0x10) driven over loopMIDI (no hardware); the two captures produced
+// the byte-identical frame apart from the model byte. See the cookbook
+// entry [[gen3-fn01-store-preset]] and the golden
+// `scripts/cookbook-verify.ts#case-gen3-fn01-store-preset`.
 //
-// We try the 0x1D shape here because: (a) it's safe — wrong opcode
-// emits a 0x64 rejection, no flash impact; (b) the III's firmware
-// family probably still has the 0x1D code path; (c) if III honors it,
-// users get save-to-slot without the Huffman work.
+// This supersedes the earlier fn=0x1D guess (a II-ported opcode that was
+// never confirmed for gen-3 and kept gen-3 save in community-beta refusal).
 //
-// Wire envelope (matches II):
+// Wire envelope:
 //
-//   `F0 00 01 74 10 1D [preset_high] [preset_low] [cs] F7`
+//   `F0 00 01 74 <model> 01 26 00 00 00 00 00 <pn_lo> <pn_hi>
+//    00 00 00 00 00 00 00 <cks> F7`
 //
-// preset_high = (n >> 7) & 0x7F, preset_low = n & 0x7F. MSB-first
-// byte ordering per II convention (and per the III's own 0x14
-// GET_TEMPO response, which uses MSB-first).
+// presetNumber is a septet-encoded 14-bit field at payload positions
+// 12-13 (LSB-first: byte 12 = low septet) per [[septet-14bit]]. Saving
+// in place stores to the active preset number. The high septet (byte 13)
+// was zero in every fixture (in-place=0, 10, 5, all < 128); presets
+// >= 128 are the natural septet extension but not yet directly captured.
+// Note this LSB-first layout differs from the fn=0x03 preset-dump
+// REQUEST, whose preset number is big-endian.
 
-const FN_STORE_PRESET = 0x1d;
+const FN_STORE_PRESET = FN_PARAMETER_SETGET; // 0x01
+const STORE_SUB_ACTION = 0x26;
 
-/** STORE_PRESET (function 0x1D). 🟡 III-untested. */
-export function buildStorePreset(presetNumber: number): number[] {
+/**
+ * STORE_PRESET (fn=0x01 sub=0x26): persist the working buffer to preset
+ * location `presetNumber`. Wire-confirmed across model 0x10 and 0x12; see
+ * the cookbook [[gen3-fn01-store-preset]] entry.
+ */
+export function buildStorePreset(
+  presetNumber: number,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
   if (!Number.isInteger(presetNumber) || presetNumber < 0 || presetNumber > 0x3fff) {
     throw new Error(`buildStorePreset: preset out of range (0..16383): ${presetNumber}`);
   }
-  const high = (presetNumber >> 7) & 0x7f;
-  const low = presetNumber & 0x7f;
-  return buildEnvelope(FN_STORE_PRESET, [high, low]);
+  // Payload: [sub-action, 5 pad, pn_lo, pn_hi, 7 pad]. presetNumber sits
+  // at payload positions 6-7 (envelope bytes 12-13), septet-encoded.
+  return buildEnvelope(FN_STORE_PRESET, [
+    STORE_SUB_ACTION,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    ...encode14(presetNumber),
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ], modelByte);
 }
 
 // ── MIDI Program Change (preset switch via standard MIDI) ──────────
@@ -600,21 +1071,35 @@ export function buildStorePreset(presetNumber: number): number[] {
  *
  * Default MIDI channel is 1 (0x0 in the channel nibble). The III
  * listens on its globally-configured MIDI channel — users with a
- * non-default channel will need to call `axefx3_switch_preset` with
- * a `channel` arg (1..16) on a future iteration. For now we default
+ * non-default channel will need a `channel` arg (1..16) on the unified
+ * `switch_preset` on a future iteration. For now we default
  * to channel 1, which matches Fractal's factory setting.
  *
  * Per the III v1.4 PDF: 1024 presets are addressed across 8 banks of
  * 128 each. presetNumber 0..127 = bank 0 PC 0..127, presetNumber
- * 128..255 = bank 1 PC 0..127, etc. CC0 carries the bank's MSB and
- * CC32 carries the LSB; both are 7-bit values, so bank = (CC0 << 7)
- * | CC32. The III ignores CC0 when bank fits in CC32 (just CC32 + PC
- * is sufficient for presets 0..16383), but spec-correct usage sends
- * both — we do.
+ * 128..255 = bank 1 PC 0..127, etc.
+ *
+ * BANK-SELECT ENCODING DIVERGES BY DEVICE:
+ *   - `'standard'` (default; Axe-Fx III / FM3 per the v1.4 spec): the device
+ *     reads bank = (CC0 << 7) | CC32, so CC0 = bank>>7 (MSB) and CC32 =
+ *     bank&0x7f (LSB). For banks 0..7 CC0 is 0 and CC32 carries the bank.
+ *   - `'msb'` (FM9, hardware-confirmed on a real unit 2026-06-06 via the
+ *     community fm9-catalog probe): the FM9 reads the bank from CC0/MSB and
+ *     IGNORES CC32. With the standard encoding, any preset above 127 (bank
+ *     >0) lands in bank 0 because the bank sits in CC32, which the FM9 drops.
+ *     So the bank must go in CC0; CC32 is sent as 0 (the FM9 ignores it).
+ *
+ * This is a per-device read divergence with no single universal encoding
+ * (a CC0-only reader and a (CC0<<7)|CC32 reader cannot both be satisfied for
+ * bank>0), so the mode is selected per device via the codec config. AM4 and
+ * Axe-Fx II switch presets over SysEx, not PC+bank, and are unaffected.
  */
+export type Gen3BankSelectMode = 'standard' | 'msb';
+
 export function buildSwitchPresetPC(
   presetNumber: number,
   channel: number = 1,
+  bankSelect: Gen3BankSelectMode = 'standard',
 ): number[] {
   if (!Number.isInteger(presetNumber) || presetNumber < 0 || presetNumber > 1023) {
     throw new Error(
@@ -627,10 +1112,14 @@ export function buildSwitchPresetPC(
   const ch0 = (channel - 1) & 0x0f;
   const bank = Math.floor(presetNumber / 128);
   const pc = presetNumber % 128;
+  const [bankMsb, bankLsb] =
+    bankSelect === 'msb'
+      ? [bank & 0x7f, 0]                       // FM9: bank in CC0, CC32 ignored
+      : [(bank >> 7) & 0x7f, bank & 0x7f];     // standard: (CC0<<7)|CC32
   return [
-    0xb0 | ch0, 0x00, (bank >> 7) & 0x7f, // CC 0 = Bank MSB
-    0xb0 | ch0, 0x20, bank & 0x7f,        // CC 32 = Bank LSB
-    0xc0 | ch0, pc & 0x7f,                // Program Change
+    0xb0 | ch0, 0x00, bankMsb, // CC 0 = Bank MSB
+    0xb0 | ch0, 0x20, bankLsb, // CC 32 = Bank LSB
+    0xc0 | ch0, pc & 0x7f,     // Program Change
   ];
 }
 
@@ -644,11 +1133,15 @@ export function buildSwitchPresetPC(
  *
  * `dd=0` engaged, `dd=1` bypassed.
  */
-export function buildSetBypass(effectId: number, bypassed: boolean): number[] {
+export function buildSetBypass(
+  effectId: number,
+  bypassed: boolean,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
   return buildEnvelope(FN_SET_GET_BYPASS, [
     ...encode14(effectId),
     bypassed ? 1 : 0,
-  ]);
+  ], modelByte);
 }
 
 /** GET BYPASS (function 0x0A with `dd=0x7F`). Device responds with same envelope shape. */
@@ -670,6 +1163,7 @@ export function buildGetBypass(effectId: number): number[] {
 export function buildSetChannel(
   effectId: number,
   channel: 0 | 1 | 2 | 3,
+  modelByte: number = AXE_FX_III_MODEL_ID,
 ): number[] {
   if (!Number.isInteger(channel) || channel < 0 || channel > 3) {
     throw new Error(`buildSetChannel: channel ${channel} out of range (0..3 = A..D)`);
@@ -677,7 +1171,7 @@ export function buildSetChannel(
   return buildEnvelope(FN_SET_GET_CHANNEL, [
     ...encode14(effectId),
     channel,
-  ]);
+  ], modelByte);
 }
 
 /** GET CHANNEL (function 0x0B with `dd=0x7F`). */
@@ -694,16 +1188,19 @@ export function buildGetChannel(effectId: number): number[] {
  * SET SCENE (function 0x0C). `sceneIndex` is 0..7. Spec also says
  * "Returns: ... where dd is the current scene" — so SET also echoes.
  */
-export function buildSetScene(sceneIndex: number): number[] {
+export function buildSetScene(
+  sceneIndex: number,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
   if (!Number.isInteger(sceneIndex) || sceneIndex < 0 || sceneIndex > 7) {
     throw new Error(`buildSetScene: sceneIndex ${sceneIndex} out of range (0..7)`);
   }
-  return buildEnvelope(FN_SET_GET_SCENE, [sceneIndex & 0x7f]);
+  return buildEnvelope(FN_SET_GET_SCENE, [sceneIndex & 0x7f], modelByte);
 }
 
 /** GET SCENE (function 0x0C with `dd=0x7F`). */
-export function buildGetScene(): number[] {
-  return buildEnvelope(FN_SET_GET_SCENE, [QUERY_SENTINEL]);
+export function buildGetScene(modelByte: number = AXE_FX_III_MODEL_ID): number[] {
+  return buildEnvelope(FN_SET_GET_SCENE, [QUERY_SENTINEL], modelByte);
 }
 
 // ── 0x0D QUERY PATCH NAME ──────────────────────────────────────────
@@ -727,16 +1224,17 @@ export function buildGetScene(): number[] {
  */
 export function buildQueryPatchName(
   presetNumber: number | 'current',
+  modelByte: number = AXE_FX_III_MODEL_ID,
 ): number[] {
   if (presetNumber === 'current') {
-    return buildEnvelope(FN_QUERY_PATCH_NAME, [QUERY_SENTINEL, QUERY_SENTINEL]);
+    return buildEnvelope(FN_QUERY_PATCH_NAME, [QUERY_SENTINEL, QUERY_SENTINEL], modelByte);
   }
   if (!Number.isInteger(presetNumber) || presetNumber < 0 || presetNumber > 1023) {
     throw new Error(
       `buildQueryPatchName: presetNumber ${presetNumber} out of range (0..1023).`,
     );
   }
-  return buildEnvelope(FN_QUERY_PATCH_NAME, encode14(presetNumber));
+  return buildEnvelope(FN_QUERY_PATCH_NAME, encode14(presetNumber), modelByte);
 }
 
 // ── 0x0E QUERY SCENE NAME ──────────────────────────────────────────
@@ -827,8 +1325,8 @@ export function buildSetTuner(on: boolean): number[] {
  * scene's state across all effect blocks in the preset. Response is
  * a sequence of `id id dd` triples — see `parseStatusDumpResponse`.
  */
-export function buildStatusDump(): number[] {
-  return buildEnvelope(FN_STATUS_DUMP, []);
+export function buildStatusDump(modelByte: number = AXE_FX_III_MODEL_ID): number[] {
+  return buildEnvelope(FN_STATUS_DUMP, [], modelByte);
 }
 
 // ── 0x14 SET/GET TEMPO ─────────────────────────────────────────────
@@ -846,19 +1344,23 @@ export function buildSetTempo(bpm: number): number[] {
 }
 
 /** GET TEMPO (function 0x14 with `dd dd = 7F 7F`). */
-export function buildGetTempo(): number[] {
-  return buildEnvelope(FN_SET_GET_TEMPO, [QUERY_SENTINEL, QUERY_SENTINEL]);
+export function buildGetTempo(modelByte: number = AXE_FX_III_MODEL_ID): number[] {
+  return buildEnvelope(FN_SET_GET_TEMPO, [QUERY_SENTINEL, QUERY_SENTINEL], modelByte);
 }
 
 // ── Response predicates + parsers ──────────────────────────────────
 
-function isAxeFxIIIFrame(bytes: readonly number[], fn: number): boolean {
+function isAxeFxIIIFrame(
+  bytes: readonly number[],
+  fn: number,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
   if (bytes.length < 7) return false;
   if (bytes[0] !== SYSEX_START) return false;
   if (bytes[1] !== FRACTAL_MFR_PREFIX[0]) return false;
   if (bytes[2] !== FRACTAL_MFR_PREFIX[1]) return false;
   if (bytes[3] !== FRACTAL_MFR_PREFIX[2]) return false;
-  if (bytes[4] !== AXE_FX_III_MODEL_ID) return false;
+  if (bytes[4] !== modelByte) return false;
   if (bytes[5] !== fn) return false;
   if (bytes[bytes.length - 1] !== SYSEX_END) return false;
   return true;
@@ -887,8 +1389,11 @@ export function isSetGetChannelResponse(bytes: readonly number[]): boolean {
 export function isSetGetSceneResponse(bytes: readonly number[]): boolean {
   return isAxeFxIIIFrame(bytes, FN_SET_GET_SCENE);
 }
-export function isQueryPatchNameResponse(bytes: readonly number[]): boolean {
-  return isAxeFxIIIFrame(bytes, FN_QUERY_PATCH_NAME);
+export function isQueryPatchNameResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
+  return isAxeFxIIIFrame(bytes, FN_QUERY_PATCH_NAME, modelByte);
 }
 export function isQuerySceneNameResponse(bytes: readonly number[]): boolean {
   return isAxeFxIIIFrame(bytes, FN_QUERY_SCENE_NAME);
@@ -902,8 +1407,11 @@ export function isStatusDumpResponse(bytes: readonly number[]): boolean {
 export function isSetGetTempoResponse(bytes: readonly number[]): boolean {
   return isAxeFxIIIFrame(bytes, FN_SET_GET_TEMPO);
 }
-export function isMultipurposeResponse(bytes: readonly number[]): boolean {
-  return isAxeFxIIIFrame(bytes, FN_MULTIPURPOSE_RESPONSE);
+export function isMultipurposeResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
+  return isAxeFxIIIFrame(bytes, FN_MULTIPURPOSE_RESPONSE, modelByte);
 }
 
 /**
@@ -957,11 +1465,14 @@ export function parseSceneResponse(bytes: readonly number[]): { scene: number } 
  *
  * Returns both the preset number AND the 32-char name (trimmed).
  */
-export function parseQueryPatchNameResponse(bytes: readonly number[]): {
+export function parseQueryPatchNameResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): {
   presetNumber: number;
   name: string;
 } {
-  if (!isQueryPatchNameResponse(bytes)) {
+  if (!isQueryPatchNameResponse(bytes, modelByte)) {
     throw new Error(`parseQueryPatchNameResponse: not a 0x0D frame (len=${bytes.length})`);
   }
   const payload = bytes.slice(6, -2);
@@ -1047,11 +1558,14 @@ export function parseTempoResponse(bytes: readonly number[]): { bpm: number } {
  * Anything else surfaces as the raw byte. Callers convert this to a
  * warning string in their tool response.
  */
-export function parseMultipurposeResponse(bytes: readonly number[]): {
+export function parseMultipurposeResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): {
   echoedFn: number;
   resultCode: number;
 } {
-  if (!isMultipurposeResponse(bytes)) {
+  if (!isMultipurposeResponse(bytes, modelByte)) {
     throw new Error(`parseMultipurposeResponse: not a 0x64 frame (len=${bytes.length})`);
   }
   const payload = bytes.slice(6, -2);
@@ -1160,4 +1674,179 @@ export function parseStatusDumpResponse(bytes: readonly number[]): StatusDumpEnt
     });
   }
   return entries;
+}
+
+// ── Model-byte-bound codec factory ─────────────────────────────────
+//
+// The Axe-Fx III, FM3, FM9, and VP4 share this modern-family wire codec;
+// they differ only in the model byte (III 0x10, FM3 0x11, FM9 0x12, VP4
+// 0x14) and their per-device parameter catalogs (public-evidence chain:
+// FM3 byte-confirmed via tysonlt/AxeFxControl; VP4 byte-confirmed via
+// forum capture; FM9 wiki-sourced). createModernFractalCodec binds every
+// model-byte-bearing builder/parser to one device's model byte so a
+// descriptor can't accidentally emit the wrong model byte on any call.
+// The free functions above stay exported and default to the III model
+// byte (0x10), so existing III call sites are byte-identical.
+//
+// SCOPE: this binds the wire ENVELOPE (model byte + checksum + function
+// family), which is the part validated as shared across the family. The
+// parameter SET/GET path (fn=0x01) is reused from the III but remains
+// hardware-unverified on FM/VP4 — keep it behind the beta discipline
+// (preference_axefx3_no_untested_wire_paths) and do not treat a bound
+// codec as hardware confirmation.
+
+// ── fn=0x01 GET-RESPONSE (single-param read with the device's own label) ──
+//
+// First hardware-captured fn=0x01 GET response in the modern Fractal family,
+// from a real FM9 (community fm9-catalog branch, commit a2a4664, 2026-06-06).
+// Distinct from the 23-byte SET/GET echo (parseSetGetParameterResponse) and
+// the STATE_BROADCAST (04 01): the GET response is a long frame carrying the
+// param's internal IEEE-754 float (5 septets at payload[6..10]) AND the
+// device's own display string (8→7 septet-packed at payload[15+], length at
+// payload[13..14]). GET is non-destructive (read-only), so this is the
+// primitive for a "device names its own values" calibration sweep
+// (paramId name→id rebind). Goldens: GET_AMP / GET_DLY in the III setparam
+// test. NOTE: the gen-3 reader currently reads via the fn=0x1F bulk broadcast;
+// swapping single get_param to this GET path is a separate, hardware-gated
+// step — this is exposed as a codec primitive, not yet the live read path.
+
+/** Decode 5 MSB-first... no: 5 LSB-first 7-bit septets into a u32. */
+function decode5Septet32(b: readonly number[]): number {
+  return (
+    ((b[0] & 0x7f) >>> 0) |
+    ((b[1] & 0x7f) << 7) |
+    ((b[2] & 0x7f) << 14) |
+    ((b[3] & 0x7f) << 21) |
+    ((b[4] & 0x7f) << 28)
+  ) >>> 0;
+}
+
+/** Reinterpret a u32 bit pattern as a little-endian IEEE-754 float32. */
+function bitsToFloat32(bits: number): number {
+  const buf = new ArrayBuffer(4);
+  new DataView(buf).setUint32(0, bits, true);
+  return new DataView(buf).getFloat32(0, true);
+}
+
+export function isGetParameterResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): boolean {
+  if (!isSetGetParameterResponse(bytes, modelByte)) return false;
+  const payload = bytes.slice(6, -2);
+  if (payload.length < 17) return false;
+  // Not a STATE_BROADCAST (04 01), and the display-string length field is set.
+  if (payload[0] === 0x04 && payload[1] === 0x01) return false;
+  const strLen = (payload[13] & 0x7f) | ((payload[14] & 0x7f) << 7);
+  return strLen > 0 && payload.length >= 15 + strLen + Math.ceil(strLen / 7);
+}
+
+export function parseGetParameterResponse(
+  bytes: readonly number[],
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): {
+  effectId: number;
+  paramId: number;
+  /** Internal normalized value as an IEEE-754 float32. */
+  internalValue: number;
+  /** Raw u32 bit pattern of the float (for goldens / debugging). */
+  valueBits: number;
+  /** The device's own display text, trailing space / NUL trimmed. */
+  displayString: string;
+} {
+  if (!isGetParameterResponse(bytes, modelByte)) {
+    throw new Error(`parseGetParameterResponse: not an fn=0x01 GET response (len=${bytes.length})`);
+  }
+  const payload = bytes.slice(6, -2);
+  const strLen = (payload[13] & 0x7f) | ((payload[14] & 0x7f) << 7);
+  const raw = unpackValueChunked(Uint8Array.from(payload.slice(15)), strLen);
+  let end = raw.length;
+  while (end > 0 && (raw[end - 1] === 0 || raw[end - 1] === 0x20)) end--;
+  const valueBits = decode5Septet32(payload.slice(6, 11));
+  return {
+    effectId: decode14(payload[2], payload[3]),
+    paramId: decode14(payload[4], payload[5]),
+    internalValue: bitsToFloat32(valueBits),
+    valueBits,
+    displayString: String.fromCharCode(...Array.from(raw.slice(0, end))),
+  };
+}
+
+export interface ModernFractalCodec {
+  readonly modelByte: number;
+  buildSetParameter(effectId: number, paramId: number, value: number): number[];
+  buildGetParameter(effectId: number, paramId: number): number[];
+  isGetParameterResponse(bytes: readonly number[]): boolean;
+  parseGetParameterResponse(
+    bytes: readonly number[],
+  ): ReturnType<typeof parseGetParameterResponse>;
+  buildSetBypass(effectId: number, bypassed: boolean): number[];
+  buildSetChannel(effectId: number, channel: 0 | 1 | 2 | 3): number[];
+  buildSetScene(sceneIndex: number): number[];
+  buildSetGridCell(opts: { row: number; col: number; blockId: number; rows?: number }): number[];
+  buildSetGridRouting(opts: { srcRow: number; srcCol: number; destRow: number; rows?: number; op?: number }): number[];
+  buildSetPresetName(name: string): number[];
+  buildStorePreset(presetNumber: number): number[];
+  buildSwitchPresetPC(presetNumber: number, channel?: number): number[];
+  isSetGetParameterResponse(bytes: readonly number[]): boolean;
+  parseSetGetParameterResponse(
+    bytes: readonly number[],
+  ): ReturnType<typeof parseSetGetParameterResponse>;
+  isMultipurposeResponse(bytes: readonly number[]): boolean;
+  parseMultipurposeResponse(
+    bytes: readonly number[],
+  ): ReturnType<typeof parseMultipurposeResponse>;
+  describeMultipurposeResultCode(code: number): string | undefined;
+  buildQueryPatchName(presetNumber: number | 'current'): number[];
+  isQueryPatchNameResponse(bytes: readonly number[]): boolean;
+  parseQueryPatchNameResponse(
+    bytes: readonly number[],
+  ): ReturnType<typeof parseQueryPatchNameResponse>;
+  // fn=0x03 REQUEST_PRESET_DUMP (host → device) → 0x77/0x78/0x79 dump chain.
+  buildRequestPresetDump(presetNumber: number): number[];
+  // fn=0x43 REQUEST_EDIT_BUFFER_DUMP (no args) → 0x51 head + 0x52 body run (no tail).
+  buildRequestEditBufferDump(): number[];
+  isEditBufferDumpHead(bytes: readonly number[]): boolean;
+  isEditBufferDumpBody(bytes: readonly number[]): boolean;
+  // fn=0x1F block bulk-read (poll → 0x74/0x75/0x76 burst → positional values).
+  buildBlockBulkReadPoll(effectId: number): number[];
+  isGen3BroadcastFrame(bytes: readonly number[], fn: 0x74 | 0x75 | 0x76): boolean;
+  assembleGen3BlockBulkRead(frames: readonly (readonly number[])[]): Gen3BlockBulkRead;
+}
+
+export function createModernFractalCodec(
+  modelByte: number,
+  opts: { bankSelect?: Gen3BankSelectMode } = {},
+): ModernFractalCodec {
+  const bankSelect = opts.bankSelect ?? 'standard';
+  return {
+    modelByte,
+    buildSetParameter: (e, p, v) => buildSetParameter(e, p, v, modelByte),
+    buildGetParameter: (e, p) => buildGetParameter(e, p, modelByte),
+    buildSetBypass: (e, b) => buildSetBypass(e, b, modelByte),
+    buildSetChannel: (e, c) => buildSetChannel(e, c, modelByte),
+    buildSetScene: (s) => buildSetScene(s, modelByte),
+    buildSetGridCell: (opts) => buildSetGridCell(opts, modelByte),
+    buildSetGridRouting: (opts) => buildSetGridRouting(opts, modelByte),
+    buildSetPresetName: (n) => buildSetPresetName(n, modelByte),
+    buildStorePreset: (n) => buildStorePreset(n, modelByte),
+    buildSwitchPresetPC: (n, ch) => buildSwitchPresetPC(n, ch, bankSelect),
+    isSetGetParameterResponse: (b) => isSetGetParameterResponse(b, modelByte),
+    parseSetGetParameterResponse: (b) => parseSetGetParameterResponse(b, modelByte),
+    isGetParameterResponse: (b) => isGetParameterResponse(b, modelByte),
+    parseGetParameterResponse: (b) => parseGetParameterResponse(b, modelByte),
+    isMultipurposeResponse: (b) => isMultipurposeResponse(b, modelByte),
+    parseMultipurposeResponse: (b) => parseMultipurposeResponse(b, modelByte),
+    describeMultipurposeResultCode,
+    buildQueryPatchName: (n) => buildQueryPatchName(n, modelByte),
+    isQueryPatchNameResponse: (b) => isQueryPatchNameResponse(b, modelByte),
+    parseQueryPatchNameResponse: (b) => parseQueryPatchNameResponse(b, modelByte),
+    buildRequestPresetDump: (n) => buildRequestPresetDump(n, modelByte),
+    buildRequestEditBufferDump: () => buildRequestEditBufferDump(modelByte),
+    isEditBufferDumpHead: (b) => isEditBufferDumpHead(b, modelByte),
+    isEditBufferDumpBody: (b) => isEditBufferDumpBody(b, modelByte),
+    buildBlockBulkReadPoll: (e) => buildBlockBulkReadPoll(e, modelByte),
+    isGen3BroadcastFrame: (b, fn) => isGen3BroadcastFrame(b, fn, modelByte),
+    assembleGen3BlockBulkRead: (frames) => assembleGen3BlockBulkRead(frames, modelByte),
+  };
 }

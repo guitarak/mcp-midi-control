@@ -79,7 +79,7 @@ const EXPECT: Expect[] = [
   { key: 'cab.air_freq', paramId: 25, parameterName: 'CABINET_DIRECTFREQ', xmlLabel: 'Air Frequency', controlType: 'knob' },
   { key: 'cab.motor_time_constant', paramId: 38, parameterName: 'CABINET_TIMECONST', xmlLabel: 'Motor Time Const', controlType: 'knob' },
   { key: 'chorus.high_cut', paramId: 5, parameterName: 'CHORUS_HICUT', xmlLabel: 'Hi Cut', controlType: 'knob' },
-  { key: 'compressor.treshold', paramId: 0, parameterName: 'COMP_THRESH', xmlLabel: 'Threshold', controlType: 'knob' },
+  { key: 'compressor.threshold', paramId: 0, parameterName: 'COMP_THRESH', xmlLabel: 'Threshold', controlType: 'knob' },
   { key: 'delay.duck_attn', paramId: 42, parameterName: 'DELAY_ATTEN', xmlLabel: 'Ducker Atten', controlType: 'knob' },
   { key: 'delay.lfo1_depth_range', paramId: 67, parameterName: 'DELAY_MAXDEPTH', xmlLabel: 'Depth Range', controlType: 'select' },
   { key: 'delay.duck_thres', paramId: 43, parameterName: 'DELAY_THRESH', xmlLabel: 'Ducker Threshold', controlType: 'knob' },

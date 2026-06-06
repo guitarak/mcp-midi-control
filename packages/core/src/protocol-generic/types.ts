@@ -55,8 +55,43 @@ export interface CanonicalTermMap {
  * absence (e.g. `has_scenes=false` on Hydrasynth) is the difference
  * between an alias-resolvable input and a hard-fail error.
  */
+/**
+ * How hardware-verified a device's tool surface is. Surfaced once per
+ * device via `describe_device.capabilities.support_tier` so the agent
+ * can self-govern (read it once, calibrate caution) instead of every
+ * tool response carrying a beta-prefix string.
+ *
+ *   - 'verified'       Wire shapes hardware-confirmed end-to-end by the
+ *                      maintainer (AM4, Axe-Fx II XL+).
+ *   - 'community-beta' Codec reused from a verified family with the
+ *                      correct model byte + spec-documented envelopes,
+ *                      but not yet confirmed on this exact device's
+ *                      hardware (Axe-Fx III, FM3, FM9). Authoring works;
+ *                      every write is a hypothesis pending owner
+ *                      confirmation by ear / front panel.
+ *   - 'generic-only'   Only generic-MIDI primitives are safe (PC / CC /
+ *                      NRPN / tempo); no verified preset-authoring codec.
+ *
+ * Optional for back-compat: a missing tier reads as 'verified' (the
+ * pre-existing implicit contract for AM4 / II / Hydrasynth).
+ */
+export type SupportTier = 'verified' | 'community-beta' | 'generic-only';
+
 export interface DeviceCapabilities {
   slot_model: 'linear' | 'grid';
+  /**
+   * Hardware-verification tier for this device's tool surface. Read once
+   * per device; calibrates how much the agent should ask the user to
+   * confirm writes. Omit on fully-verified maintainer-owned devices
+   * (reads as 'verified'); set 'community-beta' on family-codec-reuse
+   * devices (III / FM3 / FM9). See `SupportTier`.
+   */
+  support_tier?: SupportTier;
+  /**
+   * One-line human note on what is hardware-confirmed vs spec-only for
+   * this device. Surfaced alongside `support_tier`. Optional.
+   */
+  verification?: string;
   slot_count?: number;                          // linear: 4 for AM4
   grid?: { rows: number; cols: number };        // grid: 4×8 for Axe-Fx II
   has_scenes: boolean;
@@ -64,6 +99,19 @@ export interface DeviceCapabilities {
   has_channels: boolean;
   channel_names?: readonly string[];            // ['A','B','C','D'] or ['X','Y']
   channel_blocks?: readonly string[];           // which blocks expose channels
+  /**
+   * Whether this device exposes MULTIPLE instances of the same block type
+   * (e.g. Amp 1 + Amp 2, Reverb 1..4) addressable via the `instance` arg on
+   * set_param / get_param / set_block / set_bypass (and per-slot `instance`
+   * in apply_preset). Grid Fractal devices (Axe-Fx II / III / FM3 / FM9)
+   * set this true; single-instance devices (AM4, Hydrasynth) omit it.
+   *
+   * The dispatcher GATES on this: when absent/false, any `instance > 1`
+   * request is refused with `capability_not_supported` rather than silently
+   * writing to instance 1. `instance` of 1 / undefined is always accepted,
+   * so single-instance devices keep their pre-existing contract unchanged.
+   */
+  has_block_instances?: boolean;
   preset_location_format?: RegExp;
   supports_save: boolean;
   /**
@@ -160,6 +208,46 @@ export interface ParamSchema {
   display_max?: number;
   /** For `unit: 'enum'` only — wire index → display name. */
   enum_values?: Readonly<Record<number, string>>;
+  /**
+   * Read-leg-only enum: `enum_values` labels are display/decode truth, but
+   * setting the param BY NAME is not supported because the device's
+   * name→wire mapping for this enum has not been captured/verified yet.
+   *
+   * Concretely (the modern Fractal gen-3 family, BK-093): the broadcast /
+   * GET wire carries an ORDINAL index that joins to `enum_values`, but a
+   * typed SET wants a different RAW enum id that is not yet known. Resolving
+   * a name to the ordinal and sending it would emit an untested wire value.
+   *
+   * When true, the dispatcher refuses a name-string value with a clear
+   * "labels are display-only, capture pending" message. A NUMERIC value is
+   * still passed through to `encode` (raw wire, caller's responsibility).
+   */
+  enum_display_only?: boolean;
+  /**
+   * Subset of `enum_values` labels that CAN be set by name despite
+   * `enum_display_only` — i.e. their device-true write-leg encoding HAS been
+   * captured/verified, so `encode(name)` produces a hardware-confirmed wire
+   * value. The dispatcher lets a name in this set through to `encode` and
+   * refuses any other name (the gate's capture-pending message). Absent ⇒ no
+   * label is settable by name (the full display-only refusal stands).
+   *
+   * Why a subset and not a flag flip: the gen-3 enum read ORDINAL ≠ write
+   * RAW-id (a permutation), and only a handful of types have a captured
+   * raw-id. Listing exactly those keeps the UX honest — set-by-name works for
+   * the confirmed types and refuses the rest by name (vs. implying all work).
+   */
+  enum_settable_names?: readonly string[];
+  /**
+   * The `enum_values` table is PARTIAL (not exhaustive): it labels the wire
+   * ordinals captured so far, but other valid ordinals exist that simply
+   * aren't named yet. When true, a NUMERIC value outside `enum_values` is NOT
+   * rejected as "out of range" — it passes through as a raw wire ordinal
+   * (decode falls back to the number). Used by per-device read-leg overrides
+   * (e.g. the FM9 amp roster, where only a few of ~150 models are captured).
+   * Absent/false ⇒ the table is treated as complete and an unknown numeric
+   * ordinal is a validation error.
+   */
+  enum_partial?: boolean;
   /**
    * Display → wire conversion. Throws on out-of-range or unresolvable enum.
    * The dispatcher invokes this in step 4 of the request lifecycle; the
@@ -265,6 +353,48 @@ export interface BatchReadResult {
   errors?: Readonly<Record<number, string>>;
 }
 
+/**
+ * Save receipt. After a save_preset persists, the writer reads back the
+ * persisted working buffer with TARGETED deterministic reads (block-slot
+ * reads + amp/drive type-param reads + preset-name read) and returns this
+ * so the agent — and the user — can confirm WHAT landed, not just THAT a
+ * save acked. The fn-0x1F bulk dump is non-deterministic and its
+ * chunk-to-paramId map is undecoded, so it is deliberately NOT used here.
+ *
+ * Every field except `block_chain` is best-effort: a failed targeted read
+ * omits its field (and the writer notes the omission in `info`) rather
+ * than failing the save, which already landed. AM4 populates this first;
+ * Axe-Fx II / Hydrasynth adopt later (cross-device-ready, not
+ * cross-device-yet).
+ */
+export interface SavedSnapshot {
+  /** The 4 signal-chain slot block types, slot 1 to 4. 'none' for empty slots. */
+  block_chain: readonly string[];
+  /** Amp model display name (e.g. "Brit 800"). Omitted if no amp placed / the read failed. */
+  amp_model?: string;
+  /** Drive model display name (e.g. "T808 OD"). Omitted if no drive placed / the read failed. */
+  drive_model?: string;
+  /** Persisted preset name at the target location. Omitted if the read failed or the location is empty. */
+  preset_name?: string;
+}
+
+/**
+ * Non-destructive overwrite pre-check for save_preset, returned by
+ * `DeviceReader.checkOverwriteTarget`. The dispatcher uses this to run the
+ * confirmable overwrite gate uniformly across every device that can read a
+ * stored location's name + the active location.
+ */
+export interface OverwriteTargetInfo {
+  /** Canonical display form of the target location (e.g. "A1"), for messages. */
+  target_display: string;
+  /** The occupying preset's display name when the target is non-empty;
+   *  undefined when the target slot is empty. */
+  occupant_name?: string;
+  /** True when the target IS the currently-active/edited location — saving
+   *  there is a refresh, not a clobber, so the gate stays silent. */
+  is_active_location: boolean;
+}
+
 export interface WriteResult {
   /** What operation produced this result — 'set_param', 'switch_preset', etc.
    *  Optional for back-compat with the param-only Session B chunk 1. */
@@ -302,6 +432,12 @@ export interface WriteResult {
    * warnings fired.
    */
   validation_info?: readonly ValidationInfo[];
+  /**
+   * save_preset receipt — what the device holds at the target after the
+   * save persisted. Populated by AM4 save_preset only; absent on every
+   * other op and device. See SavedSnapshot.
+   */
+  saved_snapshot?: SavedSnapshot;
 }
 
 export interface BatchWriteResult {
@@ -323,6 +459,13 @@ export interface BlockChange {
   block_type?: string;          // canonical block name, e.g. "amp", or "none" to clear
   bypassed?: boolean;
   channel?: string | number;    // 'A'..'D' / 'X'..'Y' / 0..3
+  /**
+   * 1-indexed block instance for grid devices that expose multiple blocks
+   * of the same type (e.g. instance=2 places/clears "Amp 2"). Defaults to 1.
+   * Devices without `capabilities.has_block_instances` reject anything > 1
+   * at the dispatcher gate; single-instance placements stay byte-identical.
+   */
+  instance?: number;
 }
 
 export interface PresetSpec {
@@ -949,8 +1092,82 @@ export interface BlockLayoutSnapshot {
   unroutedBlocks?: ReadonlySet<string>;
 }
 
+/**
+ * Raw, byte-exact dump of a device's ACTIVE working-buffer preset in its
+ * native SysEx wire form (concatenated F0..F7 frames). This is a
+ * backup / transport primitive, NOT a decoded snapshot: the bytes are not
+ * interpreted, they are exactly what the device emitted and what it will
+ * accept back. Suitable for writing verbatim to a `.syx` file the user can
+ * keep, share, or reload with the manufacturer's editor.
+ *
+ * Distinct from `PresetSnapshot` (which `getPreset` returns): a snapshot is
+ * a structured, display-shaped view for the agent to reason about; a
+ * `PresetBinaryDump` is opaque bytes for storage. Neither substitutes for
+ * the other.
+ */
+export interface PresetBinaryDump {
+  /** The device's native dump frames concatenated (each is a full F0..F7 SysEx message). */
+  bytes: Uint8Array;
+  /** Byte length of `bytes` (== bytes.length; echoed for response convenience). */
+  byte_length: number;
+  /** Number of SysEx frames concatenated in `bytes` (e.g. 66 on Axe-Fx II, 6 on AM4). */
+  frame_count: number;
+  /**
+   * Wire-shape identifier so a future restore path can validate the bytes
+   * before pushing. e.g. `'axe-fx-ii-patch-dump'`, `'am4-preset-dump'`.
+   */
+  format: string;
+  /** Preset name read from the device when cheaply available; best-effort, may be absent. */
+  name?: string;
+  /** Human-readable note on what was dumped (e.g. 'active working buffer'). */
+  source?: string;
+}
+
+/**
+ * Result of pushing a byte-exact preset dump back to a device (the restore
+ * counterpart of `PresetBinaryDump`). Backs the `import_preset` tool.
+ */
+export interface RestorePresetResult {
+  /** True when every frame acked and (if requested) the save committed. */
+  ok: boolean;
+  /** Number of SysEx frames sent to the device. */
+  frames_sent: number;
+  /** Number of ack/response frames received. */
+  acks_received: number;
+  /** Per-frame NACKs (device rejected the frame). Empty on success. */
+  nacks: readonly { frame_index: number; detail?: string }[];
+  /** Preset name decoded from the pushed bytes, when available. */
+  name?: string;
+  /** Set when the bytes were persisted to a stored location (save path). Absent for working-buffer-only push. */
+  saved_to_location?: string | number;
+  /** Wire-shape identifier (matches `PresetBinaryDump.format`). */
+  format: string;
+}
+
 export interface DeviceReader {
   getParam(ctx: DispatchCtx, block: string, name: string, channel?: string | number, instance?: number): Promise<ReadResult>;
+  /**
+   * Byte-exact dump of the ACTIVE working-buffer preset as raw device
+   * SysEx (concatenated frames). Backs the unified `export_preset` tool:
+   * the returned bytes write verbatim to a `.syx` backup file and can be
+   * re-sent to the device unchanged. A backup primitive, not a decode, so
+   * the non-deterministic-encoder caveat on some devices (AM4) does not
+   * block it: a blob round-trips regardless of whether we can interpret it.
+   *
+   * Optional. Implemented on the devices whose dump wire-shape is decoded
+   * and hardware-confirmed (Fractal AM4, Axe-Fx II). Devices without a
+   * decoded dump path (modern Fractal community-beta, Hydrasynth) omit it
+   * and the dispatcher errors with capability_not_supported.
+   */
+  dumpActivePresetBinary?(ctx: DispatchCtx): Promise<PresetBinaryDump>;
+  /**
+   * Optional. Byte-exact backup of a stored preset (by integer location index)
+   * via the gen-3 fn=0x03 REQUEST_PRESET_DUMP / 0x77/0x78/0x79 chain.
+   * Wire-confirmed on FM9 fw 11.00 (capture 2026-06-04). III/FM3/VP4 share
+   * the gen-3 codec (community beta). Devices without this path omit it and
+   * the dispatcher errors with capability_not_supported.
+   */
+  dumpStoredPresetBinary?(location: number, ctx: DispatchCtx): Promise<PresetBinaryDump>;
   getParams(ctx: DispatchCtx, queries: readonly ParamQuery[]): Promise<BatchReadResult>;
   /**
    * BK-075 phantom-param pre-flight read. Returns a snapshot of which
@@ -988,6 +1205,26 @@ export interface DeviceReader {
     scanned: readonly ScannedLocation[];
     failed_at?: string;
     failed_reason?: string;
+  }>;
+  /**
+   * Non-destructive overwrite pre-check for save_preset. Reads the target
+   * location's occupant name + whether it is the currently-active location,
+   * so the dispatcher can run the confirmable overwrite gate uniformly.
+   * Returns undefined when occupancy cannot be determined (a read failed) —
+   * the dispatcher then degrades (proceeds, but flags the unverified
+   * overwrite). Devices that omit this capability get no overwrite gate.
+   */
+  checkOverwriteTarget?(ctx: DispatchCtx, location: LocationRef): Promise<OverwriteTargetInfo | undefined>;
+  /**
+   * Read-after-save receipt: a targeted, deterministic read-back of what
+   * persisted at `location`, surfaced as save_preset's `saved_snapshot`.
+   * Best-effort (the dispatcher swallows failures). `missing` names the
+   * fields whose read failed so the dispatcher can surface an honest
+   * "could not confirm X" note. Devices that omit this get no receipt.
+   */
+  readSaveSnapshot?(ctx: DispatchCtx, location: LocationRef): Promise<{
+    snapshot: SavedSnapshot;
+    missing: readonly string[];
   }>;
   /** Educational/discovery lookup (Fractal lineage corpus, manufacturer
    *  catalog, etc.). Pure data lookup — no MIDI I/O. */
@@ -1083,6 +1320,13 @@ export interface DeviceWriter {
     options?: SetlistApplyOptions,
   ): Promise<ApplySetlistResult>;
   switchPreset?(ctx: DispatchCtx, location: LocationRef): Promise<WriteResult>;
+  /**
+   * Persist the working buffer to `location` (optionally renaming first).
+   * Just the persist — the confirmable overwrite gate and the read-back
+   * receipt are handled device-agnostically in the dispatcher
+   * (`executeSavePreset`) via the reader's `checkOverwriteTarget` +
+   * `readSaveSnapshot` capabilities.
+   */
   savePreset?(ctx: DispatchCtx, location: LocationRef, name?: string): Promise<WriteResult>;
   switchScene?(ctx: DispatchCtx, scene: number): Promise<WriteResult>;
   rename?(ctx: DispatchCtx, target: RenameTarget, name: string): Promise<WriteResult>;
@@ -1116,6 +1360,28 @@ export interface DeviceWriter {
     ctx: DispatchCtx,
     mode: 'warn' | 'discard' | 'save_active_first',
   ): Promise<GuardResult>;
+
+  /**
+   * Push a byte-exact preset dump (produced by `export_preset` /
+   * `reader.dumpActivePresetBinary`) back onto the device. The bytes are the
+   * device's own native dump frames, so this is the SAME-DEVICE-MODEL restore
+   * path: an Axe-Fx II dump only re-applies to an Axe-Fx II, an AM4 dump to an
+   * AM4. (Cross-device porting is the structured `spec` + `translate_preset`
+   * path, not this one.) Backs the `import_preset` tool.
+   *
+   * Default (no `target_location`): push to the WORKING BUFFER only, reversible
+   * by switching presets. With `target_location` AND `save_authorized: true`
+   * (the dispatcher enforces the gate), also persist to that stored location.
+   *
+   * Optional. Implemented on devices with a verified push path (AM4, Axe-Fx
+   * II). Devices without it omit the method and the dispatcher returns
+   * capability_not_supported for import_preset.
+   */
+  restorePresetBinary?(
+    ctx: DispatchCtx,
+    bytes: Uint8Array,
+    options?: { target_location?: LocationRef; save_authorized?: boolean },
+  ): Promise<RestorePresetResult>;
 }
 
 /**

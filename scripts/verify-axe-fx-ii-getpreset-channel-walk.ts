@@ -15,34 +15,30 @@
 //     returns a fixed value for every fn 0x02 GET and pretends every block
 //     is on channel X, so the inactive-Y walk branch never ran.
 //
-// So if the Y-walk silently breaks (Y dropped, Y mirrors X, Y partial,
+// So if the X/Y decode silently breaks (Y dropped, Y mirrors X, Y partial,
 // channel_status wrong), no test fails. This file closes that gap with a
-// purpose-built fake connection that returns DISTINCT X and Y values for
-// one channel-bearing block (Drive), then asserts:
+// purpose-built fake connection whose fn 0x1F dump is CHANNEL-BLOCKED x2 with
+// DISTINCT X (quarter 0) and Y (quarter 1) values for one channel-bearing
+// block (Drive), then asserts:
 //   1. default get_preset  → params_by_channel:{X} + channel_status:'active'
-//      (locks the parked-perf default contract; fails if someone silently
-//      flips the default back to the slow {X,Y} walk).
+//      (default stays X-only; fails if someone silently surfaces Y by default).
 //   2. get_preset({include_channel_state:true}) →
 //        - channel_status === 'all_channels'
 //        - params_by_channel has BOTH X and Y, same key set
 //        - at least the two knob params (gain calibrated, tone opaque)
-//          come back DISTINCT between X and Y (proves Y is a genuine
-//          inactive-channel read, not a copy of the fn 0x1F X dump).
+//          come back DISTINCT between X and Y (proves Y is read from quarter 1
+//          of the dump, not a copy of the X quarter).
 //
 // Wire model (matches packages/axe-fx-ii/src/descriptor/reader.ts getPreset):
 //   - fn 0x20 GET_GRID_LAYOUT → one Drive 1 (id 133) placed, routed.
 //   - fn 0x0E QUERY_STATES    → one engaged/X record (active channel = X
 //                                at zero round-trips, the default path).
 //   - fn 0x0F GET_PRESET_NAME → "Chan Walk Test".
-//   - fn 0x1F SYSEX_GET_ALL_PARAMS → 0x74/0x75/0x76 triple carrying the
-//                                X wire values (fn 0x1F is monolithic =
-//                                always X, hardware-verified 2026-05-25).
-//   - fn 0x11 SET/GET_BLOCK_CHANNEL → channel state machine; GET echoes
-//                                the last SET (so the Y-walk's verify of
-//                                "did we actually land on Y" passes).
-//   - fn 0x02 GET_BLOCK_PARAMETER → channel-aware: returns the Y wire
-//                                value while the block is on Y (the Y-walk
-//                                reads here), X wire otherwise.
+//   - fn 0x1F SYSEX_GET_ALL_PARAMS → 0x74/0x75/0x76 triple carrying a
+//                                CHANNEL-BLOCKED x2 body: quarter 0 = X,
+//                                quarter 1 = Y (itemCount = stride * 2). The
+//                                reader decodes BOTH channels from this one
+//                                dump; there is no per-param fn 0x02 Y-walk.
 //   - fn 0x29 SCENE_NUMBER     → scene 1.
 //
 // Run:
@@ -121,9 +117,17 @@ function yWire(paramId: number): number {
   return (xWire(paramId) + 20000) % 50000;
 }
 
-// fn 0x1F X dump: values[paramId] = X wire, 0 for gaps the reader skips.
-const xValues: number[] = new Array(maxParamId + 1).fill(0);
-for (const paramId of driveParams.keys()) xValues[paramId] = xWire(paramId);
+// fn 0x1F CHANNEL-BLOCKED x2 dump: quarter 0 = X, quarter 1 = Y, at
+// `channel * stride + paramId` with `stride = maxParamId + 1`. The reader
+// decodes X from quarter 0 and Y from quarter 1 of this ONE dump (no per-param
+// fn 0x02 Y-walk, no channel-state mutation). Gaps stay 0 and the reader
+// skips them (no registered paramId at that index).
+const STRIDE = maxParamId + 1;
+const dumpValues: number[] = new Array(STRIDE * 2).fill(0);
+for (const paramId of driveParams.keys()) {
+  dumpValues[paramId] = xWire(paramId);            // quarter 0 = X
+  dumpValues[STRIDE + paramId] = yWire(paramId);   // quarter 1 = Y
+}
 
 // ── Fake connection ──────────────────────────────────────────────────────
 // One handler set drives both onMessage subscribers (readAllParams) and
@@ -177,13 +181,14 @@ function makeFakeConn(): MidiConnection {
     }
 
     // fn 0x1F SYSEX_GET_ALL_PARAMS → 0x74 header + 0x75 chunk + 0x76 footer.
+    // Channel-blocked x2: itemCount = stride * 2 (X quarter then Y quarter).
     if (fn === 0x1f) {
       const effectId = (out[6] & 0x7f) | ((out[7] & 0x7f) << 7);
       if (effectId !== DRIVE_ID) return []; // unplaced block → device NACK (timeout)
-      const itemCount = xValues.length;
+      const itemCount = dumpValues.length;
       const header = frame([0x74, ...encode14(effectId), ...encode14(itemCount), 0x01]);
       const packed: number[] = [];
-      for (const v of xValues) packed.push(...pack16(v));
+      for (const v of dumpValues) packed.push(...pack16(v));
       const chunk = frame([0x75, ...encode14(itemCount), ...packed]);
       const footer = frame([0x76]);
       return [header, chunk, footer];

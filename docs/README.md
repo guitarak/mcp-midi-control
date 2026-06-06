@@ -88,8 +88,10 @@ and capture guides:
   checklist.
 - [`SAFETY-FOR-MUSICIANS.md`](./SAFETY-FOR-MUSICIANS.md): plain-language
   trust model for non-developer users.
-- [`AXEFX3-BETA-TESTING.md`](./AXEFX3-BETA-TESTING.md): five-minute
-  hardware-confirmation test menu for Axe-Fx III owners.
+- [`captures/`](./captures/README.md): community capture & probe guides for
+  gen-3 Fractal devices (FM9 / Axe-Fx III / FM3): per-device pages with a
+  one-command probe, a report-from-a-chat menu, and the captures still needed,
+  plus a shared [`SETUP.md`](./captures/SETUP.md) for Wireshark/USBPcap and Mac.
 
 ## Vendor manuals
 

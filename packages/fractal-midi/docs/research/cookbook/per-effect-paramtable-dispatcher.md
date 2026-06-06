@@ -6,13 +6,17 @@ discovered:  (initial III mining); 2026-05-22 (AM4 + III dispatcher cross-confir
 verified_on:
   - axe-edit-iii-binary
   - am4-edit-binary
+  - fm9-edit-binary
+  - fm3-edit-binary
+  - vp4-edit-binary
 firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-per-effect-paramtable-dispatcher
-relates_to: [param-descriptor-16byte, iii-multiproduct-editor-binary, vendor-envelope-descriptor-table]
+relates_to: [param-descriptor-16byte, iii-multiproduct-editor-binary, vendor-envelope-descriptor-table, gen3-paramid-reuse-across-model-bytes]
 consumed_in:
   - fractal-midi/samples/captured/decoded/ghidra-axeedit3-paramtables-v2.txt (49 cases, 2216 entries, dispatcher FUN_140397a40)
   - fractal-midi/samples/captured/decoded/ghidra-am4edit-paramtables.txt (47 tables / 2105 entries via SeekParamTables64.java; 50 dispatcher cases / 1732 catalog pairs after name filtering, dispatcher FUN_1402e3da0)
   - fractal-midi/scripts/ghidra/DumpAxeEditIIIParamTablesV2.java
+  - scripts/_research/scan-editor-param-tables.ts (direct PE pattern scan; reproduces III Ghidra paramIds 100% then mines FM9/FM3/VP4 binaries)
   - fractal-midi/docs/devices/am4/SYSEX-MAP.md (L2069-2090: cross-device dispatcher cmp table; L2079 explicit dispatcher fn-byte pair)
   - fractal-midi/docs/devices/axe-fx-iii/SYSEX-MAP.md (49-case enumeration with family names)
 ---
@@ -116,6 +120,11 @@ per-family paramId ranges.
   AM4's "paramIds 0..9 reserved" rule does NOT apply to III. Per-
   device discriminator logic must consult the device's own
   convention; see [[am4-pidlow-register-families]] for the AM4 case.
+- **paramId VALUES are not portable even within the same gen-3 codec
+  family.** III/FM3/FM9/VP4 share the wire codec, but their paramId
+  ordinals differ (FM9 18.6% / VP4 99.5% mis-address vs III). Mine each
+  device's OWN binary; never reuse the III's paramIds.
+  See [[gen3-paramid-reuse-across-model-bytes]].
 
 ## Where it does NOT apply
 
@@ -142,6 +151,27 @@ A future axis (II via `SeekParamTablesII.java`) would lift `verified_on`
 to a third device family; II is the natural next axis since II ships
 the same Fractal editor codebase.
 
+## Direct PE pattern-scan (no Ghidra)
+
+The same `{int32 paramId; int32 pad; char* nameStr}` rows can be
+recovered without a Ghidra project, by treating the binary as data:
+
+1. Parse the PE (imageBase + section table) so file-offset <-> virtual-
+   address maps both ways.
+2. Collect every param-symbol string (`[A-Z][A-Z0-9_]+` with a `_`,
+   NUL-terminated) and record its VA.
+3. Walk the file reading a u64 at each 4-aligned offset; when it equals
+   a known symbol VA, read the int32 at `(offset - 8)` as the paramId.
+
+`scripts/_research/scan-editor-param-tables.ts` implements this. It is
+self-validating: run against `Axe-Edit III.exe` and it reproduces the
+Ghidra `FUN_140397a40` paramIds at **100.00% (2216/2216)**. That control
+makes the identical scan trustworthy on FM9/FM3/VP4 binaries, where no
+Ghidra project exists. Cost: seconds per binary, no Ghidra setup. This
+is the gen-3 analog of the II `SeekParamTablesII.java` direct-pattern
+scan. Use it as the cheap first pass; reach for Ghidra only when the
+dispatcher's case->family mapping (not just the rows) is needed.
+
 ## Refinement history
 
 - 2026-05-22 (mining pass): Promoted to `matched` based on AM4 + III
@@ -150,7 +180,8 @@ the same Fractal editor codebase.
   documentation of the same mechanism; this entry promotes it to a
   cookbook primitive. Mining report:
   `synthesis-log/mine-ghidra-axeedit3-paramtables-v2-2026-05-22-1822.md`.
-- Path to additional verification: run an II Ghidra script with the
-  same case-walking shape against AxeEdit.exe; II is expected to
-  follow the same pattern given the shared codebase, but the
-  dispatcher fn-byte address differs and remains to be confirmed.
+- 2026-06-02: lifted `verified_on` to five axes (added FM9/FM3/VP4
+  editor binaries) via the direct PE pattern scan above. Surfaced the
+  measured finding that paramId VALUES are NOT portable across the gen-3
+  family even though the codec is shared, split out as the negative
+  primitive [[gen3-paramid-reuse-across-model-bytes]].

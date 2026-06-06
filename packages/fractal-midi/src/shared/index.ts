@@ -7,6 +7,7 @@
 // Pure code — no MIDI transport dependency. Bring your own.
 
 export { fractalChecksum } from './checksum.js';
+export { resolveEffectId, FRACTAL_MODEL_BYTES } from './effectId.js';
 export {
   packValue,
   unpackValue,

@@ -24,10 +24,12 @@
 //      response MUST declare, plus an EXPLICIT per-device allowlist of
 //      intentional omissions (documented inline with the reason).
 //
-// Both AM4 and Axe-Fx II get RUNTIME shape assertions (their mock
-// responders synthesize enough wire shapes to run getPreset on a
-// clean/empty grid and getParam on a known param). Hydrasynth and
-// Axe-Fx III do not implement the slot/scene getPreset contract and are
+// AM4, Axe-Fx II, and the gen-3 Axe-Fx III all get RUNTIME shape
+// assertions (their mock responders synthesize enough wire shapes to run
+// getPreset and getParam against the mock). The gen-3 mock synthesizes the
+// device's 0x74/0x75/0x76 state-broadcast burst in answer to the reader's
+// fn=0x1F bulk-read poll (see packages/fractal-modern/src/parityMock.ts).
+// Hydrasynth does not implement the slot/scene getPreset contract and is
 // reported as not-applicable, not silently skipped.
 //
 // Run:  npx tsx scripts/verify-response-shape-parity.ts
@@ -55,6 +57,8 @@ import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { connectAM4 } from '@mcp-midi-control/am4/midi.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
 import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
+import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/descriptor.js';
+import { connectAxeFxIIIParityMock, connectAxeFxIIIParityMockWith } from '@mcp-midi-control/fractal-modern/midi.js';
 
 let failures = 0;
 let passes = 0;
@@ -167,6 +171,38 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
     },
     readResult: {},
   },
+  'axe-fx-iii': {
+    presetSnapshot: {
+      // Gen-3 get_preset is a block INVENTORY, not a positioned grid read:
+      // no decoded grid-read exists, so there is no chain-integrity check.
+      chain_integrity: 'Gen-3 get_preset is a block inventory (no decoded grid read); no chain-integrity check applies.',
+      // The poll loop reads the active scene's placed blocks only; the
+      // per-scene channel/bypass table is not serialized.
+      scenes: 'Gen-3 get_preset is active-scene-only (block inventory); per-scene table not serialized.',
+      // Slot indices are sequential placeholders, not grid edges; routing is
+      // never read (routing_omitted: true in _meta).
+      routing: 'Gen-3 has no decoded grid/routing read; slot indices are sequential placeholders, not edges.',
+      // The poll loop does not query the preset name (0x0D QUERY_PATCH_NAME);
+      // the snapshot declares the key but leaves it undefined.
+      active_scene: 'Gen-3 get_preset does not read the active scene index in the v1 block-inventory snapshot.',
+      // read_warnings IS declared by the gen-3 reader (it always attaches the
+      // block-inventory caveat), so it is NOT allow-listed here.
+    },
+    presetSnapshotMeta: {
+      // The gen-3 reader has no second-channel read leg, so both_channels_read
+      // is never set (channel_state_omitted: true instead).
+      both_channels_read: 'Gen-3 reader has no second-channel read leg; channel state is omitted, never read for both channels.',
+      // channel_state_hint is an Axe-Fx II-specific nudge field; the gen-3
+      // reader does not emit it.
+      channel_state_hint: 'Gen-3 reader does not emit the Axe-Fx II include_channel_state nudge; channel state is uniformly omitted in the block-inventory snapshot.',
+    },
+    readResult: {
+      // The gen-3 reader projects a value out of the bulk-read burst and does
+      // not attach the raw device-response frame the AM4 / Axe-Fx II readers
+      // include. The wire value is already surfaced as `wire_value`.
+      raw_response: 'Gen-3 projectParam reports wire_value out of the bulk-read burst without attaching the raw device frame; the wire value is surfaced via wire_value.',
+    },
+  },
 };
 
 // ── Shape assertion engine ───────────────────────────────────────────
@@ -253,17 +289,32 @@ const RIGS: DeviceRig[] = [
     connect: connectAxeFxII,
     getParamProbe: { block: 'amp', name: 'bass' },
   },
+  {
+    // Gen-3 (Axe-Fx III): getPreset polls each block via fn=0x1F; the parity
+    // mock answers a placed block (Reverb 1 = effect ID 66) with the
+    // 0x74/0x75/0x76 state-broadcast burst and NACKs the rest. `reverb.mix`
+    // (REVERB_MIX, paramId 0) projects a real value. The 0x75 body is
+    // channel-blocked (index = channel × stride + paramId); the mock fills equal
+    // values across channels, so the reader's channel-invariant path returns it.
+    // The channel-varying projection (refuse-without-channel / read-with-channel)
+    // is exercised in the dedicated reader unit test, not here.
+    id: 'axe-fx-iii',
+    descriptor: AXEFX3_DESCRIPTOR,
+    connect: connectAxeFxIIIParityMock,
+    getParamProbe: { block: 'reverb', name: 'mix' },
+  },
 ];
 
 // Register descriptors so resolveDevice-style lookups (and the param-kind
 // resolvers imported above) are wired exactly as at server boot.
 registerDevice(AXEFX2_DESCRIPTOR);
 registerDevice(AM4_DESCRIPTOR);
+registerDevice(AXEFX3_DESCRIPTOR);
 
 const registeredIds = new Set(listRegisteredDevices().map((d) => d.id));
 check(
-  'both AM4 and Axe-Fx II descriptors registered',
-  registeredIds.has('am4') && registeredIds.has('axe-fx-ii'),
+  'AM4, Axe-Fx II, and Axe-Fx III descriptors registered',
+  registeredIds.has('am4') && registeredIds.has('axe-fx-ii') && registeredIds.has('axe-fx-iii'),
   `registered: [${[...registeredIds].join(', ')}]`,
 );
 
@@ -410,10 +461,11 @@ async function driveDevice(rig: DeviceRig): Promise<void> {
 
 // ── Not-applicable devices: report, do not silently skip ─────────────
 //
-// Hydrasynth (patch model, no slot/scene get_preset) and Axe-Fx III
-// (refuses reads/writes by design) do not implement the PresetSnapshot
-// contract. We surface them explicitly so a future reader addition is a
-// reminder to extend this gate, not an undetected gap.
+// Hydrasynth (patch model, no slot/scene get_preset) does not implement the
+// PresetSnapshot contract. We surface it explicitly so a future reader
+// addition is a reminder to extend this gate, not an undetected gap. (FM3 /
+// FM9 share the gen-3 codec + reader with the Axe-Fx III rig; the III rig
+// holds that shared shape to the contract.)
 
 function reportNotApplicable(): void {
   console.log('\n[not-applicable] devices outside the PresetSnapshot/ReadResult parity contract:');
@@ -446,19 +498,81 @@ function reportNotApplicable(): void {
 // asserted on live data, and previously that silently degraded to a NOTE
 // while the sibling carried the gate. The per-device responders exist
 // precisely so neither half is exercised only-by-proxy.
+const PRESET_MOCK_HINT: Record<string, string> = {
+  am4: 'am4MockResponder fn 0x1F triple',
+  'axe-fx-ii': 'mockAxeFxIIConnection fn 0x20/0x0f',
+  'axe-fx-iii': 'parityMock fn 0x1F → 0x74/0x75/0x76 broadcast burst',
+};
+const READ_MOCK_HINT: Record<string, string> = {
+  am4: 'am4MockResponder fn 0x01 short-read',
+  'axe-fx-ii': 'mockAxeFxIIConnection fn 0x02 GET',
+  'axe-fx-iii': 'parityMock fn 0x1F → 0x74/0x75/0x76 broadcast burst',
+};
+
 function assertRuntimeFloor(): void {
   const expected = RIGS.map((r) => r.id);
   for (const id of expected) {
     check(
       `${id} produced a runtime PresetSnapshot for shape assertion`,
       runtimeCoverage.presetSnapshot.includes(id),
-      `runtime PresetSnapshot coverage: [${runtimeCoverage.presetSnapshot.join(', ') || 'none'}]. ${id} did not produce a snapshot — its getPreset mock responder regressed (see ${id === 'am4' ? 'am4MockResponder fn 0x1F triple' : 'mockAxeFxIIConnection fn 0x20/0x0f'}); the shape contract is no longer exercised on ${id} live data.`,
+      `runtime PresetSnapshot coverage: [${runtimeCoverage.presetSnapshot.join(', ') || 'none'}]. ${id} did not produce a snapshot — its getPreset mock responder regressed (see ${PRESET_MOCK_HINT[id] ?? `${id} mock responder`}); the shape contract is no longer exercised on ${id} live data.`,
     );
     check(
       `${id} produced a runtime ReadResult for shape assertion`,
       runtimeCoverage.readResult.includes(id),
-      `runtime ReadResult coverage: [${runtimeCoverage.readResult.join(', ') || 'none'}]. ${id} did not produce a ReadResult — its getParam mock responder regressed (see ${id === 'am4' ? 'am4MockResponder fn 0x01 short-read' : 'mockAxeFxIIConnection fn 0x02 GET'}); the shape contract is no longer exercised on ${id} live data.`,
+      `runtime ReadResult coverage: [${runtimeCoverage.readResult.join(', ') || 'none'}]. ${id} did not produce a ReadResult — its getParam mock responder regressed (see ${READ_MOCK_HINT[id] ?? `${id} mock responder`}); the shape contract is no longer exercised on ${id} live data.`,
     );
+  }
+}
+
+// ── Gen-3 channel-blocked projection ─────────────────────────────────
+//
+// The 0x75 body packs four channel copies of every paramId (index = channel ×
+// stride + paramId, stride = itemCount/4). This drives the reader with a mock
+// whose value is distinct per channel (1000 + channelIndex), so:
+//   - get_param without a channel must REFUSE (the copies differ), and
+//   - get_param WITH a channel must return exactly that channel's copy.
+// The mock itemCount is 256 → stride 64; channel c copy of any paramId P sits at
+// index c×64 + P and carries wire value 1000 + c.
+async function assertGen3ChannelStride(): Promise<void> {
+  console.log('\n[axe-fx-iii] gen-3 channel-blocked read projection');
+  const MOCK_STRIDE = 64;
+  const conn = connectAxeFxIIIParityMockWith((_eff, index) => 1000 + Math.floor(index / MOCK_STRIDE));
+  const ctx: DispatchCtx = { conn, descriptor: AXEFX3_DESCRIPTOR };
+  const reader = AXEFX3_DESCRIPTOR.reader;
+  try {
+    if (reader.getParam === undefined) {
+      check('axe-fx-iii: reader implements getParam', false, 'no getParam');
+      return;
+    }
+    // 1) No channel + per-channel difference → refuse (not a silent guess).
+    let refused = false;
+    let detail = 'getParam returned a value instead of refusing';
+    try {
+      await reader.getParam(ctx, 'amp', 'drive');
+    } catch (err) {
+      detail = err instanceof Error ? err.message : String(err);
+      refused = /differs across channels/.test(detail);
+    }
+    check('axe-fx-iii: get_param(amp.drive) without a channel refuses when channels differ', refused, detail);
+
+    // 2) Explicit channel → that channel's copy (channel c carries wire 1000+c).
+    for (const c of [0, 2]) {
+      let wire: number | undefined;
+      let err2 = '';
+      try {
+        wire = (await reader.getParam(ctx, 'amp', 'drive', c)).wire_value;
+      } catch (e) {
+        err2 = e instanceof Error ? e.message : String(e);
+      }
+      check(
+        `axe-fx-iii: get_param(amp.drive, channel ${c}) reads channel ${c}'s copy (wire ${1000 + c})`,
+        wire === 1000 + c,
+        err2 || `got wire ${wire}, expected ${1000 + c}`,
+      );
+    }
+  } finally {
+    conn.close();
   }
 }
 
@@ -475,16 +589,12 @@ async function main(): Promise<void> {
   } catch (err) {
     note('hydrasynth', `descriptor not registered: ${err instanceof Error ? err.message : String(err)}`);
   }
-  try {
-    const { AXEFX3_DESCRIPTOR } = await import('@mcp-midi-control/axe-fx-iii/descriptor.js');
-    registerDevice(AXEFX3_DESCRIPTOR);
-  } catch (err) {
-    note('axe-fx-iii', `descriptor not registered: ${err instanceof Error ? err.message : String(err)}`);
-  }
 
   for (const rig of RIGS) {
     await driveDevice(rig);
   }
+
+  await assertGen3ChannelStride();
 
   console.log('\n[coverage floor]');
   assertRuntimeFloor();

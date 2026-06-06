@@ -275,9 +275,9 @@ export function connectAxeFxII(): AxeFxIIConnection {
     receiveSysExMatching: (predicate, timeoutMs = 1000) => {
       if (!inputOpen) {
         return Promise.reject(new Error(
-          'No Axe-Fx II input port available. GET tools (axefx2_get_param, ' +
-          'axefx2_get_grid_layout, axefx2_get_preset_name) require a bidirectional ' +
-          'MIDI connection. Confirm the OS exposes both Axe-Fx II input and output ' +
+          'No Axe-Fx II input port available. GET tools (get_param, get_params, ' +
+          'get_preset) require a bidirectional MIDI connection. Confirm the OS ' +
+          'exposes both Axe-Fx II input and output ' +
           'ports via list_midi_ports — some USB-MIDI driver configurations expose ' +
           'output only.',
         ));
@@ -362,6 +362,8 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
   const FUNC_BLOCK_PARAM = 0x02;
   const FUNC_GET_GRID_LAYOUT = 0x20;
   const FUNC_GET_PRESET_NAME = 0x0f;
+  const FUNC_SCENE_NUMBER = 0x29;
+  const SCENE_QUERY = 0x7f;
   const SYSEX_START_BYTE = 0xf0;
   const SYSEX_END_BYTE = 0xf7;
   // fn 0x02 action byte (offset 13): 0x00 = GET/query, 0x01 = SET.
@@ -436,6 +438,9 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
   // Track the last-SET channel per effectId so GET returns the right
   // value after a SET+GET verify sequence (channel-Y write fix).
   const channelState = new Map<number, number>();
+  // Tracks the device scene pointer (wire 0..7) for the SCENE_NUMBER (fn
+  // 0x29) responder below. Default 0 = display scene 1.
+  let sceneState = 0;
 
   const buildGetBlockChannelMockResponse = (outgoing: number[]): number[] | undefined => {
     if (outgoing.length < 10) return undefined;
@@ -510,6 +515,34 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
     const cs = head.slice(1).reduce((a, b) => a ^ b, 0) & 0x7f;
     return [...head, cs, SYSEX_END_BYTE];
   };
+  // SCENE_NUMBER (fn 0x29) responder. Models the device scene pointer so
+  // get_preset's active_scene read is runtime-drivable under the mock (the
+  // reader does buildGetSceneNumber → parseSceneNumberResponse). SET (body
+  // byte = scene 0..7) records the pointer with no reply, matching the live
+  // device; GET (body byte = SCENE_QUERY 0x7F) returns the tracked scene.
+  // Without this, active_scene was always undefined under the mock, which
+  // made cross-axefx2-apply-response-no-drops impossible to pass.
+  const buildSceneNumberMockResponse = (outgoing: number[]): number[] | undefined => {
+    if (outgoing.length < 9) return undefined;
+    if (outgoing[0] !== SYSEX_START_BYTE) return undefined;
+    if (outgoing[1] !== 0x00 || outgoing[2] !== 0x01 || outgoing[3] !== 0x74) return undefined;
+    if (outgoing[5] !== FUNC_SCENE_NUMBER) return undefined;
+    const modelId = outgoing[4];
+    const arg = outgoing[6] ?? 0;
+    if (arg !== SCENE_QUERY) {
+      // SET: record the scene pointer, no reply (matches live protocol).
+      sceneState = arg & 0x07;
+      return undefined;
+    }
+    // GET (query sentinel): reply with the tracked scene.
+    const head = [
+      SYSEX_START_BYTE, 0x00, 0x01, 0x74,
+      modelId, FUNC_SCENE_NUMBER, sceneState & 0x7f,
+    ];
+    const cs = head.slice(1).reduce((a, b) => a ^ b, 0) & 0x7f;
+    return [...head, cs, SYSEX_END_BYTE];
+  };
+
   return {
     send: (bytes) => {
       // Synthesize an inbound response when the outgoing frame matches a
@@ -522,6 +555,7 @@ function mockAxeFxIIConnection(): AxeFxIIConnection {
       const response =
         buildGetBlockChannelMockResponse(bytes)
         ?? buildGetBlockParameterMockResponse(bytes)
+        ?? buildSceneNumberMockResponse(bytes)
         ?? buildEmptyGridResponse(bytes)
         ?? buildPresetNameResponse(bytes);
       if (response !== undefined) {

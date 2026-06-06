@@ -56,6 +56,7 @@ against real hardware captures. That tier today is:
 - **Fractal Axe-Fx II XL+**
 - **ASM Hydrasynth Explorer**
 - **Fractal Axe-Fx III** in community beta
+- **Fractal Axe-Fx Standard/Ultra (gen-1)** in community beta (parameter set + read, decoded from the published gen-1 SysEx spec)
 
 These are named second on purpose. They are the current depth frontier,
 not the identity of the project.
@@ -127,7 +128,8 @@ Claude: Reduces Filter sensitivity, re-sends, asks how it sounds now.
 ## Target User
 - Musicians who own at least one USB MIDI device. Any MIDI device works
   through generic-MIDI primitives; the first-class depth tier today is the
-  Fractal AM4, Axe-Fx II XL+, and Hydrasynth Explorer, with the Axe-Fx III
+  Fractal AM4, Axe-Fx II XL+, and Hydrasynth Explorer, with the modern Fractal
+  family (Axe-Fx III / FM3 / FM9) and the original Axe-Fx Standard/Ultra
   in community beta.
 - Comfortable with an MCP host such as Claude Desktop (free tier
   acceptable).
@@ -155,7 +157,8 @@ Claude: Reduces Filter sensitivity, re-sends, asks how it sounds now.
    see [`docs/SAFE-EDIT-WORKFLOW.md`](SAFE-EDIT-WORKFLOW.md)).
 5. The same UX and the same guarantees work across multiple devices via
    the unified tool surface (shipping: AM4, Axe-Fx II XL+, Hydrasynth
-   Explorer; Axe-Fx III in community beta). See
+   Explorer; Axe-Fx III / FM3 / FM9 and the gen-1 Axe-Fx Standard/Ultra in
+   community beta). See
    [`docs/TOOLS.md`](TOOLS.md) for the full tool list.
 
 ---

@@ -38,6 +38,8 @@ import {
     WRITE_ECHO_TIMEOUT_MS,
     recordAckOutcome,
 } from '@mcp-midi-control/core/server-shared/connections.js';
+import { markClean, markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
+import { AM4_DIRTY_LABEL } from './safeEdit.js';
 import {
     channelLetter,
     invalidateChannelCache,
@@ -379,10 +381,26 @@ export function prepareApplyPresetWrites(
                     a === 'type' ? -1 : b === 'type' ? 1 : 0,
                 );
                 for (const [paramName, value] of orderedChannelEntries) {
+                    // Channel LED color is per-preset metadata keyed by the
+                    // channel LETTER (amp.channel_a_color..channel_d_color), not
+                    // a channel-register value, so it has no `amp.color` param.
+                    // Accept `color` (or `led_color`) inside a channel map and
+                    // route it to the letter-specific color param, so a full
+                    // preset including footswitch colors applies in ONE call
+                    // instead of a trailing set_params. Amp-only.
+                    let effName = paramName;
+                    if (paramName === 'color' || paramName === 'led_color' || paramName === 'channel_color') {
+                        if (canonicalBlock !== 'amp') {
+                            throw new Error(
+                                `${at} channels.${letter}.${paramName}: channel LED color exists only on the amp block. Drop it from ${canonicalBlock}.`,
+                            );
+                        }
+                        effName = `channel_${letter.toLowerCase()}_color`;
+                    }
                     const write = buildParamWrite(
                         `${at} channels.${letter}.${paramName}`,
                         canonicalBlock,
-                        paramName,
+                        effName,
                         value,
                     );
                     if (write !== null) prepared.push(write);
@@ -591,6 +609,22 @@ export function prepareApplyPresetWrites(
  */
 export const APPLY_PRESET_COMMAND_ACK_KINDS = new Set<ApplyPresetPreparedWrite['kind']>(['scene_name']);
 
+/**
+ * Hard ceiling on total wall-clock for one apply-preset wire burst. When the
+ * AM4 goes silent mid-burst, each write waits the full WRITE_ECHO_TIMEOUT_MS
+ * (300 ms); ~80 silent writes would otherwise grind ~25-30 s per pass and,
+ * with client retries, present as a multi-minute hang (the v0.1.0 incident).
+ * The loop checks this budget before each write and aborts with a structured
+ * partial result rather than walking every remaining write. Overridable via
+ * MCP_APPLY_BUDGET_MS (tests set a tiny value). Default 50 s sits well above a
+ * legitimately slow-but-alive device (80 × ~285 ms ≈ 23 s + overhead) and far
+ * below the catastrophe.
+ */
+const APPLY_BUDGET_MS = (() => {
+    const env = Number(process.env.MCP_APPLY_BUDGET_MS);
+    return Number.isFinite(env) && env > 0 ? env : 50_000;
+})();
+
 export interface ApplyPresetWireResult {
     lines: string[];
     acked: number;
@@ -598,6 +632,8 @@ export interface ApplyPresetWireResult {
     totalWrites: number;
     /** Final scene index reported in user-facing summary (0..3); undefined when no scene was touched. */
     lastActiveScene: number | undefined;
+    /** True when the burst aborted because APPLY_BUDGET_MS elapsed (device went silent mid-burst). */
+    budgetExceeded: boolean;
 }
 
 /**
@@ -621,8 +657,24 @@ export async function runApplyPresetWires(
     let unacked = 0;
     let lastActiveScene: number | undefined;
     let totalWrites = prepared.length;
+    let budgetExceeded = false;
+    const startMs = Date.now();
+    let sent = 0;
 
     for (const w of prepared) {
+        // Total-operation budget (FIX B): if the device went silent and the
+        // per-write ack-waits piled up past the ceiling, stop walking the
+        // remaining writes and return a partial result. Without this, ~80
+        // silent writes grind ~25-30 s and present as a multi-minute hang.
+        if (Date.now() - startMs > APPLY_BUDGET_MS) {
+            budgetExceeded = true;
+            const remaining = prepared.length - sent;
+            const elapsed = Date.now() - startMs;
+            lines.push(`  ⚠ apply budget (${APPLY_BUDGET_MS} ms) exceeded after ${elapsed} ms; ${remaining} write(s) not sent — device went silent.`);
+            console.error(`apply_preset ABORTED: budget ${APPLY_BUDGET_MS} ms exceeded after ${sent}/${prepared.length} writes (acked=${acked} unacked=${unacked}), elapsed=${elapsed} ms`);
+            break;
+        }
+        sent++;
         const predicate = APPLY_PRESET_COMMAND_ACK_KINDS.has(w.kind) ? isCommandAck : isWriteEcho;
         const echoPromise = conn.receiveSysExMatching(
             (resp) => predicate(w.bytes, resp),
@@ -640,6 +692,7 @@ export async function runApplyPresetWires(
         try {
             await echoPromise;
             acked++;
+            markDirty(AM4_DIRTY_LABEL);
             recordAckOutcome(true);
             if (w.kind === 'channel' || w.kind === 'scene_channel') {
                 lastKnownChannel[w.block] = w.index;
@@ -659,6 +712,10 @@ export async function runApplyPresetWires(
             unacked++;
             recordAckOutcome(false);
             lines.push(`  ? ${label}, no ack within ${WRITE_ECHO_TIMEOUT_MS} ms`);
+            // FIX F: per-miss tally to stderr (the MCP log panel) so a reader
+            // can watch the device go dark in real time instead of seeing a
+            // silent hang with no output at all (the incident's worst part).
+            console.error(`apply_preset: no ack (${label}) — unacked=${unacked}/${sent} sent, elapsed=${Date.now() - startMs} ms`);
         }
     }
     if (nameWriteBytes !== undefined) {
@@ -667,6 +724,7 @@ export async function runApplyPresetWires(
         const label = `rename working buffer → "${workingBufferName}"`;
         if (result.acked) {
             acked++;
+            markDirty(AM4_DIRTY_LABEL);
             lines.push(`  ✓ ${label}`);
         } else {
             unacked++;
@@ -674,7 +732,7 @@ export async function runApplyPresetWires(
         }
     }
 
-    return { lines, acked, unacked, totalWrites, lastActiveScene };
+    return { lines, acked, unacked, totalWrites, lastActiveScene, budgetExceeded };
 }
 
 /**
@@ -796,10 +854,13 @@ export async function runApplyPresetAt(
         };
     }
 
+    console.error(`apply_preset start: location=${shortLocation}, prepared=${prepared.length} writes, save=${shouldSave}`);
+
     const switchBytes = buildSwitchPreset(locationIndex);
     const switchResult = await sendAndAwaitAck(conn, switchBytes, isWriteEcho);
     invalidateChannelCache();
     if (!switchResult.acked) {
+        console.error(`apply_preset done: location=${shortLocation} FAILED step=switch (no ack), elapsed=${Date.now() - startMs} ms`);
         return {
             ok: false,
             location: shortLocation,
@@ -809,8 +870,9 @@ export async function runApplyPresetAt(
         };
     }
 
+    let wireResult: ApplyPresetWireResult;
     try {
-        await runApplyPresetWires(conn, prepared, nameWriteBytes, preset.name);
+        wireResult = await runApplyPresetWires(conn, prepared, nameWriteBytes, preset.name);
     } catch (err) {
         return {
             ok: false,
@@ -820,12 +882,24 @@ export async function runApplyPresetAt(
             wallTimeMs: Date.now() - startMs,
         };
     }
+    if (wireResult.budgetExceeded) {
+        const wallTimeMs = Date.now() - startMs;
+        console.error(`apply_preset done: location=${shortLocation} ABORTED acked=${wireResult.acked} unacked=${wireResult.unacked} elapsed=${wallTimeMs} ms step=apply`);
+        return {
+            ok: false,
+            location: shortLocation,
+            step: 'apply',
+            error: `apply budget exceeded: sent ${wireResult.acked + wireResult.unacked} of ${wireResult.totalWrites} writes in ${wallTimeMs} ms before the device went silent. Reconnect (reconnect_midi) and retry — the same spec completes the unfinished writes idempotently.`,
+            wallTimeMs,
+        };
+    }
 
     if (!shouldSave) {
         // Audition-at-target: leave the working buffer at the target,
         // unsaved. Reversible by switching presets. The save step is
         // skipped entirely, caller invokes save_preset when the user
         // explicitly asks to persist.
+        console.error(`apply_preset done: location=${shortLocation} acked=${wireResult.acked} unacked=${wireResult.unacked} elapsed=${Date.now() - startMs} ms step=audition`);
         return {
             ok: true,
             location: shortLocation,
@@ -843,6 +917,7 @@ export async function runApplyPresetAt(
     const saveBytes = buildSaveToLocation(locationIndex);
     const saveResult = await sendAndAwaitAck(conn, saveBytes, isCommandAck);
     if (!saveResult.acked) {
+        console.error(`apply_preset done: location=${shortLocation} FAILED step=save (no ack), elapsed=${Date.now() - startMs} ms`);
         return {
             ok: false,
             location: shortLocation,
@@ -851,6 +926,14 @@ export async function runApplyPresetAt(
             wallTimeMs: Date.now() - startMs,
         };
     }
+
+    // Save persisted the re-applied buffer to flash → clean. Only the
+    // save clears the flag (NOT the earlier switch): if runApplyPresetWires
+    // had thrown mid-setup, a switch-time markClean would leave the flag
+    // clean over a partially-mutated buffer.
+    markClean(AM4_DIRTY_LABEL);
+
+    console.error(`apply_preset done: location=${shortLocation} acked=${wireResult.acked} unacked=${wireResult.unacked} elapsed=${Date.now() - startMs} ms step=saved`);
 
     return {
         ok: true,

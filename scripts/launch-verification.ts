@@ -43,6 +43,7 @@
  */
 
 import path from 'node:path';
+import { tmpdir } from 'node:os';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
@@ -55,7 +56,7 @@ interface CliOpts {
 }
 
 function parseCli(argv: string[]): CliOpts {
-  const opts: CliOpts = { ports: ['am4', 'axefx2', 'hydrasynth'] };
+  const opts: CliOpts = { ports: ['am4', 'axefx2', 'axefx-gen1', 'hydrasynth'] };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--port') opts.ports = [argv[++i]];
@@ -480,6 +481,34 @@ async function verifyAm4(client: Client): Promise<void> {
       t.slice(0, 300),
     );
   }
+
+  // export_preset → import_preset round trip on the working buffer.
+  // AM4 PRESET_DUMP is a 6-message stream totaling 12,352 bytes. Export is
+  // read-only; import pushes the same bytes back to the working buffer
+  // (non-destructive, reverts on the next preset switch).
+  {
+    const dir = path.join(tmpdir(), 'mcp-midi-launch-verify');
+    const r = await client.callTool({ name: 'export_preset', arguments: { port: 'am4', directory: dir } });
+    const t = extractText(r);
+    let parsed: { ok?: boolean; byte_length?: number; file_path?: string } | undefined;
+    try { parsed = JSON.parse(t); } catch { parsed = undefined; }
+    record(
+      'export_preset writes a 12,352-byte AM4 .syx backup',
+      !isError(r) && parsed?.ok === true && parsed?.byte_length === 12352 && typeof parsed?.file_path === 'string',
+      t.slice(0, 300),
+    );
+    if (parsed?.file_path) {
+      const ir = await client.callTool({ name: 'import_preset', arguments: { port: 'am4', file_path: parsed.file_path } });
+      const it = extractText(ir);
+      let ip: { ok?: boolean; frames_sent?: number; nacks?: unknown[] } | undefined;
+      try { ip = JSON.parse(it); } catch { ip = undefined; }
+      record(
+        'import_preset re-applies the AM4 backup (6 frames, 0 NACKs)',
+        !isError(ir) && ip?.ok === true && ip?.frames_sent === 6 && Array.isArray(ip?.nacks) && ip.nacks.length === 0,
+        it.slice(0, 300),
+      );
+    }
+  }
 }
 
 async function verifyAxefx2(client: Client): Promise<void> {
@@ -690,6 +719,129 @@ async function verifyAxefx2(client: Client): Promise<void> {
       arguments: { port: 'axefx2', location: 600, on_active_preset_edited: 'discard' },
     });
   }
+
+  // export_preset → import_preset round trip on the working buffer.
+  // Axe-Fx II PATCH_DUMP is a 66-message stream totaling 12,951 bytes. Import
+  // pushes the same bytes back (non-destructive, self-verifying via ACK count).
+  {
+    const dir = path.join(tmpdir(), 'mcp-midi-launch-verify');
+    const r = await client.callTool({ name: 'export_preset', arguments: { port: 'axefx2', directory: dir } });
+    const t = extractText(r);
+    let parsed: { ok?: boolean; byte_length?: number; file_path?: string } | undefined;
+    try { parsed = JSON.parse(t); } catch { parsed = undefined; }
+    record(
+      'export_preset writes a 12,951-byte Axe-Fx II .syx backup',
+      !isError(r) && parsed?.ok === true && parsed?.byte_length === 12951 && typeof parsed?.file_path === 'string',
+      t.slice(0, 300),
+    );
+    if (parsed?.file_path) {
+      const ir = await client.callTool({ name: 'import_preset', arguments: { port: 'axefx2', file_path: parsed.file_path } });
+      const it = extractText(ir);
+      let ip: { ok?: boolean; frames_sent?: number; nacks?: unknown[] } | undefined;
+      try { ip = JSON.parse(it); } catch { ip = undefined; }
+      record(
+        'import_preset re-applies the Axe-Fx II backup (66 frames, 0 NACKs)',
+        !isError(ir) && ip?.ok === true && ip?.frames_sent === 66 && Array.isArray(ip?.nacks) && ip.nacks.length === 0,
+        it.slice(0, 300),
+      );
+    }
+  }
+}
+
+async function verifyAxefxGen1(client: Client): Promise<void> {
+  console.log('\n── Axe-Fx Standard/Ultra (gen-1) ────────────────────────────');
+
+  // describe_device — capabilities, support_tier, read-back guidance.
+  {
+    const r = await client.callTool({ name: 'describe_device', arguments: { port: 'axe-fx-gen1' } });
+    const t = extractText(r);
+    let parsed: unknown;
+    try { parsed = JSON.parse(t); } catch { parsed = undefined; }
+    const caps = (parsed as { capabilities?: Record<string, unknown> })?.capabilities;
+    const guidance = (parsed as { agent_guidance?: Record<string, string> })?.agent_guidance;
+    record('gen1 describe_device returns capabilities', !isError(r) && !!caps, t.slice(0, 200));
+    record(
+      'gen1 support_tier is community-beta',
+      (caps as { support_tier?: string } | undefined)?.support_tier === 'community-beta',
+      `support_tier=${String((caps as Record<string, unknown> | undefined)?.support_tier)}`,
+    );
+    record(
+      'gen1 agent_guidance carries read_back key (reads supported, community-beta)',
+      !!guidance?.read_back && /read-back|get_param/i.test(guidance.read_back) && /community-beta|unconfirmed/i.test(guidance.read_back),
+      `read_back present=${!!guidance?.read_back}`,
+    );
+    record(
+      'gen1 agent_guidance carries capabilities key',
+      !!guidance?.capabilities && /set_param|get_param/i.test(guidance.capabilities),
+      `capabilities present=${!!guidance?.capabilities}`,
+    );
+  }
+
+  // list_params — confirm amp block is present in the catalog.
+  {
+    const r = await client.callTool({
+      name: 'list_params',
+      arguments: { port: 'axe-fx-gen1', block: 'amp' },
+    });
+    const t = extractText(r);
+    record('gen1 list_params amp returns catalog', !isError(r) && /type|gain|level/i.test(t), t.slice(0, 200));
+  }
+
+  // set_param — a simple linear dB knob (compressor.threshold).
+  // This verifies the SET wire path builds without error (the read path is
+  // exercised separately below).
+  //
+  // COVERAGE BOUNDARY: this exercises a LINEAR param only. The gen-1 non-linear
+  // params (scaling:"pending" in fractal-midi/axe-fx-gen1/params.ts — e.g.
+  // compressor.sustain, parametric_eq.freq_*) have a known display range but an
+  // UNKNOWN display→wire curve, so their display-first coercion is unverified by
+  // design and is NOT asserted here. There is nothing to golden-test until a
+  // hardware capture pins the curve; treat their display values as pass-through
+  // until then. Tracked by the scaling:"pending" marker, not a skipped test.
+  {
+    const r = await client.callTool({
+      name: 'set_param',
+      arguments: { port: 'axe-fx-gen1', block: 'compressor', name: 'threshold', value: -20 },
+    });
+    const t = extractText(r);
+    record('gen1 set_param compressor.threshold succeeds', !isError(r), t.slice(0, 200));
+    record(
+      'gen1 set_param response does NOT claim read-back confirmation',
+      !isError(r) && !/confirmed|read back|verified.*device|device.*verified/i.test(t),
+      t.slice(0, 400),
+    );
+  }
+
+  // get_param is now WIRED on gen-1 (fn 0x02 query -> MIDI_PARAM_VALUE,
+  // community-beta). Without a responding gen-1 unit in the harness the read
+  // times out and returns `no_ack`; the key assertion is that it no longer
+  // refuses with capability_not_supported (the read path exists).
+  {
+    const r = await client.callTool({
+      name: 'get_param',
+      arguments: { port: 'axe-fx-gen1', block: 'compressor', name: 'threshold' },
+    });
+    const t = extractText(r);
+    record(
+      'gen1 get_param is wired (not capability_not_supported)',
+      !/capability_not_supported/i.test(t),
+      t.slice(0, 200),
+    );
+  }
+
+  // save_preset must refuse (no save on gen-1).
+  {
+    const r = await client.callTool({
+      name: 'save_preset',
+      arguments: { port: 'axe-fx-gen1', location: 'A01' },
+    });
+    const t = extractText(r);
+    record(
+      'gen1 save_preset refuses with capability_not_supported',
+      isError(r) || /capability_not_supported|not.*support/i.test(t),
+      t.slice(0, 200),
+    );
+  }
 }
 
 async function verifyHydrasynth(client: Client): Promise<void> {
@@ -787,6 +939,7 @@ async function main(): Promise<void> {
 
     const hasAm4 = /am4/i.test(portsText);
     const hasAxefx = /axe[- ]fx/i.test(portsText);
+    const hasAxefxGen1 = /axe[- ]fx.*(ultra|standard)/i.test(portsText);
     const hasHydra = /hydrasynth|hydra/i.test(portsText);
 
     if (opts.ports.includes('am4')) {
@@ -803,6 +956,16 @@ async function main(): Promise<void> {
         console.log('  ⊘ Axe-Fx II not visible in list_midi_ports — skipping checks.');
       } else {
         await verifyAxefx2(client);
+      }
+    }
+    if (opts.ports.includes('axefx-gen1')) {
+      if (!hasAxefxGen1) {
+        console.log('\n── Axe-Fx Standard/Ultra (gen-1) ────────────────────────────');
+        console.log('  ⊘ Axe-Fx Ultra/Standard not visible in list_midi_ports — skipping checks.');
+        console.log('  Note: gen-1 verification runs against a real port matching /axe-?fx.*(ultra|standard)/i.');
+        console.log('  For offline verification, run with a virtual port named "Axe-Fx Ultra".');
+      } else {
+        await verifyAxefxGen1(client);
       }
     }
     if (opts.ports.includes('hydrasynth')) {

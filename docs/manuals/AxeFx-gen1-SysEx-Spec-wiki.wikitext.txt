@@ -1,0 +1,848 @@
+=Axe-Fx System Exclusive Message Spec=
+
+This is a user-driven project to document the SysEx messages used by the Axe-Fx. For a list of controllers capable of sending (and possible receiving) SysEx information to your Axe-Fx please see [[SysEx Capable Controllers]].
+
+==Disclaimer==
+
+'''Use of the SysEx messages to access your Axe-Fx is not supported by Fractal Audio. You use these messages at your own risk.'''
+
+'''The SysEx messages are copyright Fractal Audio and are printed here with the permission of Fractal Audio.'''
+
+When in doubt: ask questions in [http://www.fractalaudio.com/forum/ the forum] before using this stuff.
+
+==General SysEx Message Overview==
+
+(Attempting to describe the general format of the SysEx messages used by the Axe-Fx here. Please expand this!)
+
+A sample Axe-Fx SysEx message (10.3 firmware):
+
+<pre>
+Message: F0  00  01  74  01  02 0A 06 00 00 01 00 01  F7
+Block:   1   2   3   4   5  (--------- data --------) 7</pre>
+
+{| border="1" cellpadding="20" cellspacing="0" width="500"
+|+ align="bottom" style="color:#e76700;" |''SysEx Message Blocks Described''
+|-
+! Block
+! Description
+|-
+|1
+|SysEx Start byte. From the GM spec. Indicates the start of a MIDI SysEx message.
+|-
+|2
+|Manufacturer sysex ID byte 0. As of firmware 8.02 this is always 00.
+|-
+|3
+|Manufacturer sysex ID byte 1. As of firmware 10.02, this is always 01 (in previous firmware versions this was 00).
+|-
+|4
+|Manufacture sysex ID byte 2. As of firmware 10.02, this is 74 (in previous firmware versions this was 7D).  If you're sending messages this should be set to the SysEx ID of your Axe-Fx. Failing to set this to the SysEx ID of the target unit will see all your SysEx messages ignored by the unit. This is true for patch dumps as well.
+|-
+|5
+|Model number.  Axe-Fx Standard = 0x00 (assumed), Ultra = 0x01.
+|-
+|data
+|The data portion of the SysEx message. You construct this portion using the tables below.
+|-
+|7
+|SysEx End byte.
+|}
+
+=Axe-Fx Sysex Message Formats=
+:reformatted from ''Axe-Fx MIDI Remote Programming'', courtesy of Cliff Chase/Fractal Audio
+:warning: this document was from an early stage in the Axe's development, so some things may have changed
+:<nowiki>***</nowiki>'''REMINDER: THIS IS NOT SUPPORTED BY FRACTAL AUDIO - DO NOT ASK THEM FOR HELP, AND USE AT YOUR OWN RISK'''<nowiki>***</nowiki>
+
+==Introduction==
+
+The Axe-Fx allows remote programming via it's MIDI interface. To utilize this
+feature the remote programmer (PC) is connected to the Axe-Fx MIDI in and out
+jacks. Commands are sent to the MIDI in and replies are returned from MIDI out.
+
+There are only two basic objects in the Axe-Fx: effects and modifiers. Effects
+include all effect objects and modifiers are the transform between an internal
+or external controller and an effect parameter. All effects have a unique
+effect ID and all modifiers have a unique ID.
+
+All parameters in the Axe-Fx are stored as 8-bit values with a range of 0 to
+254 (255 not used). Axe-Fx parameters fall into 3 different types: integer,
+linear and log. Integer parameters have a direct correspondence between the
+parameter value and the parameter itself.  Linear parameters have a linear
+relationship between the parameter value and the parameter itself. Log
+parameters have an exponential relationship between the parameter value and the
+parameter itself. Integer parameters typically have a limited range of
+allowable values.
+
+
+All MIDI functions have the same header as follows:
+
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x00   Manf. ID byte1
+:0x7d   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model # (Axe-Fx Standard = 0x00, Axe-Fx Ultra = 0x01)
+:0xdd   Function ID</tt>
+
+Byte2 of the manufacturers ID is configurable in the Axe-Fx on the MIDI menu.
+This value should match or the Axe-Fx may reject the message.  The function ID
+indicates the type of function and sets the formatting of the data to follow.
+
+Note from iaresee: When they say "this value is configurable on the Axe-Fx" they're talking about the SysEx ID. This byte in the message is the SysEx ID of your unit. If it doesn't match with what you've set on your unit the message is ignored by it.
+
+{| border="1" cellpadding="20" cellspacing="0" width="500"
+|+ align="bottom" style="color:#e76700;" |''Function IDs''
+|-
+! Function ID
+! Function Name
+|-
+|0x01
+|(no response when sent)
+|-
+|0x02
+|[[#MIDI_SET_PARAMETER|MIDI_SET_PARAMETER]], [[#MIDI_PARAM_VALUE|MIDI_PARAM_VALUE]]
+|-
+|0x03
+|[[#MIDI_GET_PATCH|MIDI_GET_PATCH]]
+|-
+|0x04
+|[[#MIDI_PATCH_DUMP|MIDI_PATCH_DUMP]]
+|-
+|0x05
+|[[#MIDI_PLACE_EFFECT|MIDI_PLACE_EFFECT]]
+|-
+|0x06
+|[[#MIDI_CONNECT_EFFECT|MIDI_CONNECT_EFFECT]]
+|-
+|0x07
+|[[#MIDI_SET_MODIFIER|MIDI_SET_MODIFIER]], [[#MIDI_MODIFIER_VALUE|MIDI_MODIFIER_VALUE]]
+|-
+|0x08
+|[[#MIDI_GET_FIRMWARE_VERSION|MIDI_GET_FIRMWARE_VERSION]]
+|-
+|0x09
+|[[#MIDI_SET_PRESET_NAME|MIDI_SET_PRESET_NAME]]
+|-
+|0x0a
+|[[#MIDI_SET_IMPULSE_RESPONSE|MIDI_SET_IMPULSE_RESPONSE]]
+|-
+|0x0b
+|(no response when sent)
+|-
+|0x0c
+|bad checksum message - firmware or other upload?
+|-
+|0x0d
+|[[#MIDI_TUNER_INFO|MIDI_TUNER_INFO]]
+|-
+|0x0e
+|MIDI_GET_PRESET_EFFECT_BLOCKS_AND_CC_AND_BYPASS_STATE
+|-
+|0x0f
+|[[#MIDI_GET_PRESET_NAME|MIDI_GET_PRESET_NAME]]
+|-
+|0x10
+|[[#MIDI_TEMPO_BEAT|MIDI_TEMPO_BEAT]]
+|-
+|}
+
+==MIDI Send Messages==
+
+These messages are sent to the Axe-Fx to carry out an action.
+
+The following functions are available:
+
+
+===MIDI_SET_PARAMETER===
+
+This function sets or queries an effect parameter.
+
+Format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x00   Manf. ID byte1
+:0x7d   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x02   Function ID
+:0xdd   effect ID LS nibble
+:0xdd   effect ID MS nibble
+:0xdd   parameter ID LS nibble
+:0xdd   parameter ID MS nibble
+:0xdd   parameter value LS nibble
+:0xdd   parameter value MS nibble
+:0xdd   query(0) or set(1) value
+:0xF7   sysex end</tt>
+
+The effect identified by the effect ID has its parameter identified by the
+parameter ID set to a value of between 0 and 254. You can query the current
+value by setting or clearing the set byte.
+
+Rather than trying to keep track of the range of all parameters and their types
+this MIDI function operates as a virtual interface. After calling
+MIDI_SET_PARAM the Axe-Fx responds with the actual parameter value and a string
+representation of the parameter.
+
+For example, if setting a rate parameter the Axe-Fx will respond with the
+parameter value (0 - 254) and a string representing the actual value of the
+rate, i.e. "1.234 Hz".
+
+The value response allows querying a parameter and also does range checking on
+integer types. If one attempts to set an integer type outside of its range the
+Axe-Fx will set the value to the minimum or maximum value allowable and respond
+with the actual value set.
+
+Values can be queried by simply setting the set/query byte to 0. The parameter
+value is irrelevant. The Axe-Fx will then respond with the current value and
+string representation.
+
+When first editing an effect all the parameters should be queried to determine
+their current values. To then edit a parameter simply send the new parameter
+value and await the response.
+
+===MIDI_GET_PATCH===
+
+This function requests a dump of either a specific patch or the edit buffer.
+
+Format to request a specific patch:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x01   Manf. ID byte1
+:0x74   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x03   Function ID
+:0x00   
+:0x?d   preset LS nibble or'd with unknown value when requesting presets from bank 2
+:0xdd   preset MS nibble
+:0xF7   sysex end</tt>
+
+The Axe-Fx responds with Function ID <tt>0x04</tt> (<tt>F0 00 01 74 01 04 00 ...</tt>, see [[#MIDI_PATCH_DUMP|MIDI_PATCH_DUMP]]).
+
+
+Format to request the edit buffer:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x01   Manf. ID byte1
+:0x74   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x03   Function ID
+:0x01   Edit buffer query
+:0x00
+:0x00
+:0xF7   sysex end</tt>
+
+The Axe-Fx responds with Function ID <tt>0x04</tt> (<tt>F0 00 01 74 01 04 01 ...</tt>, see [[#MIDI_PATCH_DUMP|MIDI_PATCH_DUMP]]).
+
+
+Example requests by preset:
+:A000   <tt>F0 00 01 74 01 03 00 00 00 F7</tt>
+:A127   <tt>F0 00 01 74 01 03 00 0F 07 F7</tt>
+:B128   <tt>F0 00 01 74 01 03 00 00 08 F7</tt>
+:B255   <tt>F0 00 01 74 01 03 00 0F 0F F7</tt>
+:C256   <tt>F0 00 01 74 01 03 00 00 10 F7</tt>
+:C383   <tt>F0 00 01 74 01 03 00 7F 17 F7</tt>
+
+===MIDI_SET_MODIFIER===
+
+This function sets or queries a modifier parameter.
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x00   Manf. ID byte1
+:0x7d   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x07   Function ID
+:0xdd   effect ID LS nibble
+:0xdd   effect ID MS nibble
+:0xdd   parameter ID LS nibble
+:0xdd   parameter ID MS nibble
+:0xdd   modifier parameter ID LS nibble
+:0xdd   modifier parameter ID MS nibble
+:0xdd   modifier value LS nibble
+:0xdd   modifier value MS nibble
+:0xdd   query(0) or set(1) value
+:0xF7   sysex end</tt>
+
+
+This function sets the value of a modifier parameter. The modifier parameter
+identified by its ID has its value set to the modifier value. The effect being
+controlled and the parameter being controlled are indicated by the effect and
+parameter ID's. Note that the effect parameter ID will be different than the
+basic parameter ID. For example, a rate control may have a parameter ID = 3. To
+control it in real-time via a modifier the corresponding parameter ID will be
+different. Modifiable parameters have a corresponding parameter with an ID
+greater than or equal to 100.
+
+There are 16 modifiers available in the Axe-Fx, meaning that up to 16
+parameters can be controlled at one time. A modifier is connected to a
+parameter when the modifier control ID is nonzero.  To connect a modifier to a
+parameter call this function with the desired effect ID and parameter ID with
+the modifier parameter equal to MOD_CTRTLID and a modifier value equal to the
+desired controller. A non-zero value will automatically connect the modifier. A
+value of zero will disconnect the modifier.
+
+Once a modifier is connected the other parameters can be set or queried
+accordingly. Like the MIDI_SET_PARAMETER function this function responds with
+the value set and a text string representation of the actual value.
+
+===MIDI_PLACE_EFFECT===
+
+Places an effect at a position in the effects grid.
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x00   Manf. ID byte1
+:0x7d   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x05   Function ID
+:0xdd   effect ID LS nibble
+:0xdd   effect ID MS nibble
+:0xdd   grid position
+:0xdd   query(0) or set(1) value
+:0xF7   sysex end</tt>
+
+
+The effect identified by its ID is placed at a position in the grid. The grid
+is 4 rows by 12 columns. A grid position is given by position = 4 *
+column_number + row_number. Rows and columns are enumerated starting with zero.
+
+If another effect is at the position it is removed.
+
+===MIDI_CONNECT_EFFECT===
+
+Connects two effects.
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x00   Manf. ID byte1
+:0x7d   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x06   Function ID
+:0xdd   source position
+:0xdd   destination position
+:0xdd   connect (1) | disconnect (0)</tt>
+
+The effect at the source position is connected or disconnected to/from the
+effect at the destination position. The position is as described above. A null
+block cannot be one of the two effects being connected and will result in the
+function failing.
+
+===MIDI_GET_FIRMWARE_VERSION===
+
+Query installed version of firmware.
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x01   Manf. ID byte1
+:0x74   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x08   Function ID
+:0x00
+:0x00
+:0xF7   sysex end
+</tt>
+
+The device will respond with the firmware version.  For example, 10.3 is reported as:
+<tt>F0 00 01 74 01 08 0A 03 F7</tt>
+
+The Ultra will respond with the correct model number even if incorrect model number is sent in the request (so this message can be used to properly form subsequent messages).
+
+===MIDI_SET_PRESET_NAME===
+
+Sets the name of the active preset.
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x01   Manf. ID byte1
+:0x74   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x09   Function ID
+:0xdd   byte 0 of 20 byte name string
+:0xdd   byte 1
+:...
+:0xdd   byte 19
+:0x00   null character
+:0x00
+:0x00
+:0xF7   sysex end
+</tt>
+
+===MIDI_SET_IMPULSE_RESPONSE===
+
+Sends an impulse response to the currently selected impulse response slot.
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x01   Manf. ID byte1
+:0x74   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x0a   Function ID (low nibble)
+:0x00   Function ID (high nibble)
+:0x00   Unused in current firmware
+:0x00   Unused in current firmware
+:0xdd   First of 1024 8 byte samples, each a 32 bit little endian signed integer converted to nibbles
+:0xdd   (high nibble of first byte)
+:0xdd   (low nibble of second byte)
+:0xdd   (high nibble of second byte)
+:0xdd   ...etc....
+:0xdd
+:0xdd
+:0xdd
+:--- more samples ---
+:0xcc   Checksum byte (low nibble)
+:0xcc   Checksum byte (high nibble)
+:0xF7   sysex end
+</tt>
+
+
+==MIDI Return Messages==
+
+Upon sending a message to the Axe-Fx it will return a message. The following
+return messages are implemented:
+
+
+===MIDI_PARAM_VALUE===
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x00   Manf. ID byte1
+:0x7d   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x02   Function ID (2)
+:0xdd   effect ID LS nibble
+:0xdd   effect ID MS nibble
+:0xdd   parameter ID LS nibble
+:0xdd   parameter ID MS nibble
+:0xdd   parameter value LS nibble
+:0xdd   parameter value MS nibble
+:0xdd   null-terminated string byte0
+:0xdd   byte1
+:...
+:0x00   null character
+:0xF7   sysex end</tt>
+
+
+This message is returned after sending the MIDI_SET_PARAMETER message.
+
+===MIDI_PATCH_DUMP===
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x00   Manf. ID byte1
+:0x7d   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x04   Function ID (4)
+:0xdd   0x01 indicates this is a dump of the edit buffer, otherwise value is 0x00
+:...    patch data described below
+:0xF7   sysex end</tt>
+
+
+This message is returned after sending the MIDI_GET_PATCH message.
+
+Patch dumps appear to be 2060 bytes laid out as:
+:- Patch dump header, 7 bytes (<tt>F0 00 01 74 dd 04 dd</tt>)
+:- Undetermined 6 bytes (patch number?)
+:- 20 character patch name in ls/ms nibble pairs - 42 bytes total including null termination
+:- Undetermined 22 bytes
+:- Effect Ids / layout info - 4 bytes per block (2 bytes for effect id, 2 bytes for undetermined state) in 4 x 12 grid starting at offset 77 for a total of 192 bytes in ls/ms nibble pairs.
+:- Undetermined (assume parameter and modifier state)
+:- EOX (<tt>F7</tt>)
+
+===MIDI_MODIFIER_VALUE===
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x00   Manf. ID byte1
+:0x7d   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x07   Function ID (7)
+:0xdd   effect ID LS nibble
+:0xdd   effect ID MS nibble
+:0xdd   parameter ID LS nibble
+:0xdd   parameter ID MS nibble
+:0xdd   modifier parameter ID LS nibble
+:0xdd   modifier parameter ID MS nibble
+:0xdd   modifier value LS nibble
+:0xdd   modifier value MS nibble
+:0xdd   null-terminated string byte0
+:0xdd   byte1
+:...
+:0x00   null character
+:0xF7   sysex end</tt>
+
+
+This message is returned after sending the MIDI_SET_MODIFIER message.
+
+===MIDI_STATUS===
+
+Reports success or failure.
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x00   Manf. ID byte1
+:0x7d   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0xdd   Calling Function ID
+:0xdd   status
+:0xF7   sysex end</tt>
+
+All other function calls respond with this message.  The calling function ID is
+indicated and success (1) or failure (0) indicated in the status byte.
+
+===MIDI_GET_PRESET_NAME===
+
+Gets the current preset name.
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x01   Manf. ID byte1
+:0x74   Manf. ID byte2
+:0x01   Model #
+:0x0f   Get Preset Name ID
+:0xF7   sysex end</tt>
+
+The response back from the axefx will be in the form of:
+
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x01   Manf. ID byte1
+:0x74   Manf. ID byte2
+:0x01   Model #
+:0x0f   Get Preset Name ID
+:0xaa   First byte of name
+:0xaa   Second byte of name
+:....more characters......
+:0x00   NULL terminator
+:0xF7   sysex end</tt>
+
+==MIDI Realtime Sysex Messages==
+
+Realtime sysex messages for tempo and tuner info are sent by default.  They can be disabled in the <tt>IO / MIDI / SEND REALTIME SYSEX</tt> menu.
+
+===MIDI_TUNER_INFO===
+
+When the tuner is active this message is streamed to the MIDI out port.
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x00   Manf. ID byte1
+:0x7d   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x0d   Calling Function ID
+:0x??   Note value (0 = A, 1 = A#, 2 = B, 3 = C etc)
+:0x??   Note octave
+:0x??   Fine tune (0 = very flat, 0x7f - very sharp, 0x3f/0x40? - in tune)
+:0xF7   sysex end</tt>
+
+===MIDI_TEMPO_BEAT===
+
+Tempo beats (corresponding to the blinking tempo LED) are streamed to the MIDI out port.
+
+Message format:
+<tt>
+:0xF0   sysex start
+:0x00   Manf. ID byte0
+:0x01   Manf. ID byte1
+:0x74   Manf. ID byte2 (this value is configurable within the Axe-Fx)
+:0xdd   Model #
+:0x10   Tempo function ID
+:0xF7   sysex end</tt>
+
+=Parameter Numbers=
+:IDs listed below are as of firmware revision 8.02
+:For firmware 10.3, see the ''default.axeml'' file included with ''Axe-Edit'' for a complete list of Effect Block and Parameter IDs as described [http://forum.fractalaudio.com/threads/20917-SysEx-Explorations/page5#50 in this forum post].
+
+==Effect Block IDs==
+
+===Common===
+
+<tt>
+:00 06 = 
+:01 06 = 
+:02 06 = 
+:03 06 = 
+:04 06 = Comp1
+:05 06 = Comp2
+:06 06 = GEQ1
+:07 06 = GEQ2
+:08 06 = PEQ1
+:09 06 = PEQ2
+:0A 06 = Amp1
+:0B 06 = Amp2
+:0C 06 = Cab1
+:0D 06 = Cab2
+:0E 06 = Reverb1
+:0F 06 = Reverb2
+:00 07 = Delay1
+:01 07 = Delay2
+:02 07 = Multi-Delay1
+:03 07 = Multi-Delay2
+:04 07 = Chorus1
+:05 07 = Chorus2
+:06 07 = Flanger1
+:07 07 = Flanger2
+:08 07 = Rotary1
+:09 07 = Rotary2
+:0A 07 = Phaser1
+:0B 07 = Phaser2
+:0C 07 = Wah1
+:0D 07 = Wah2
+:0E 07 = Formant
+:0F 07 = Volume/Pan
+:00 08 = Tremolo/Pan1
+:01 08 = Tremolo/Pan2
+:02 08 = Pitch
+:03 08 = Filter1
+:04 08 = Filter2
+:05 08 = Drive1
+:06 08 = Drive2
+:07 08 = Enhancer
+:08 08 = FX Loop
+:09 08 = Mixer1
+:0A 08 = Mixer2
+:0B 08 =
+:0C 08 =
+:0D 08 =
+:0E 08 = Feedback Send
+:0F 08 = Feedback Return</tt>
+
+===Ultra-Only===
+
+<tt>
+:00 09 = Synth1
+:01 09 = Synth2
+:02 09 = Vocoder
+:03 09 = MegaTap Delay
+:04 09 = Crossover1
+:05 09 = Crossover2
+:06 09 = Gate/Exp1
+:07 09 = Gate/Exp2
+:08 09 = Ring Mod
+:09 09 = Pitch2
+:0A 09 = MBC1
+:0B 09 = MBC2
+:0C 09 = QuadCho1
+:0D 09 = QuadCho2
+:0E 09 = Resonator1
+:0F 09 = Resonator2
+:00 0A = GEQ3
+:01 0A = GEQ4
+:02 0A = PEQ3
+:03 0A = PEQ4
+:04 0A = Filter3
+:05 0A = Filter4
+:06 0A = Vol/Pan2
+:07 0A = Vol/Pan3
+:08 0A = Vol/Pan4
+</tt>
+==Amp Block Parameters==
+
+<tt>
+:00 00 = Type
+:01 00 = Drive
+:02 00 = Bass
+:03 00 = Mids
+:04 00 = Treble
+:05 00 = Master Volume
+:06 00 = Low Cut
+:07 00 = Hi Cut
+:08 00 = Tonestack Frequency
+:09 00 = 
+:0A 00 = Bright Cap
+:0B 00 = 
+:0C 00 = Xformer LF
+:0D 00 = Xformer HF
+:0E 00 = Tonestack Location
+:0F 00 = Input Select
+:00 01 = Deep
+:01 01 = 
+:02 01 = 
+:03 01 = Sag
+:04 01 = Presence
+:05 01 = Level
+:06 01 = Balance
+:07 01 = Bypass Mode
+:08 01 = Damping
+:09 01 = Presence Frequency
+:0A 01 = Speaker Resonance Freq
+:0B 01 = Transformer Match (Depth)
+:0C 01 = Bright Switch & Boost Switch
+:0D 01 = Warmth
+:0E 01 = Thump
+:0F 01 = Global Amp
+:00 02 = 
+:01 02 = Stabilizer
+:02 02 = Tonestack Type
+:03 02 = B+ Capacitance
+:04 02 = Bias
+</tt>
+
+==Cab Block Parameters==
+
+<tt>
+:00 00 = Cab (L)
+:01 00 = Mic (L)
+:02 00 = Cab R
+:03 00 = Mic R
+:04 00 = Link off/on
+:05 00 = Level L
+:06 00 = Level R
+:07 00 = Pan L
+:08 00 = Pan R
+:09 00 = Level
+:0A 00 = Balance
+:0B 00 = Bypass Mode
+:0C 00 = Type
+:::00 00 = Mono HiRes
+:::01 00 = Mono LoRes
+:::02 00 = Stereo
+:0D 00 = 
+:0E 00 = Drive (L)
+:0F 00 = Drive R
+</tt>
+
+==Chorus Block Parameters==
+
+<tt>
+:04 07 = Chorus1
+:05 07 = Chorus2
+:00 00 = Voices
+:01 00 = Rate
+:02 00 = Tempo
+:03 00 = Depth
+:04 00 = Bass
+:05 00 = Treble
+:06 00 = Bass Freq
+:07 00 = Treble Freq
+:08 00 = Delay Time
+:09 00 = LFO Phase
+:0A 00 = LFO Type
+:0B 00 = Auto Depth off/on
+:0C 00 = Mix
+:0D 00 = Level
+:0E 00 = Balance
+:0F 00 = Bypass Mode
+:00 01 = Global Mix
+:01 01 = Phase Reverse
+:02 01 = 
+:03 01 = Width
+:04 01 = LFO2 Rate
+:05 01 = LFO2 Depth
+</tt>
+
+==Comp Block Parameters==
+
+<tt>
+:04 06 = Comp1
+:05 06 = Comp2
+:00 00 = Threshold
+:01 00 = Compression
+:02 00 = Attack
+:03 00 = Release
+:04 00 = Level
+:05 00 = Knee
+:06 00 = Makeup Switch
+:07 00 = Detect
+:08 00 = Filter
+:09 00 = 
+:0A 00 = SCSEL
+:0B 00 = Mix
+:0C 00 = Type (Studio/Pedal)
+</tt>
+
+==Delay Block Parameters==
+
+<tt>
+:00 07 = Delay1
+:01 07 = Delay2
+:00 00 = Type
+:01 00 = Time MSB?
+:02 00 = Time LSB?
+:03 00 = Ratio (Stereo)
+:04 00 = Feedback (Mono)
+:05 00 = Feedback L
+:06 00 = Feedback R
+:07 00 = Echo Pan
+:08 00 = Spread
+:09 00 = Tempo
+:0A 00 = Lowcut
+:0B 00 = High cut
+:0C 00 = LFO1 Rate
+:0D 00 = LFO2 Rate
+:0E 00 = LFO1 Depth
+:0F 00 = LFO2 Depth
+:00 01 = Drive
+:01 01 = Mix
+:02 01 = Level
+:03 01 = Pan
+:04 01 = Bypass Mode
+:05 01 = Global Mix
+:06 01 = 
+:07 01 = In Gain
+:08 01 = LFO1 Type
+:09 01 = LFO2 Type
+:0A 01 = Time R (Dual) MSB?
+:0B 01 = Time R (Dual) LSB?
+:0C 01 = Master Feedback
+:0D 01 = Tempo R (Dual)
+:0E 01 = Feedback LR (Dual)
+:0F 01 = Feedback RL (Dual)
+:00 02 = Level L (Dual)
+:01 02 = Level R (Dual)
+:02 02 = Pan L (Dual)
+:03 02 = Pan R (Dual)
+:04 02 = LFO1 Phase
+:05 02 = LFO2 Phase
+:06 02 = XFade Time (Rev)
+:07 02 = Run (Reverse)
+:08 02 = Trig Restart (Reverse)
+:09 02 = Filter Slope
+:0A 02 = Ducker Att
+:0B 02 = Threshold
+:0C 02 = Release Rate
+:0D 02 = Depth Range
+:0E 02 = Diffusion
+:0F 02 = Diff Time
+:00 03 = Phase Rev
+:01 03 = LFO1 Target
+:02 03 = LFO2 Target
+:03 03 = LFO1 Tempo
+:04 03 = LFO2 Tempo
+</tt>
+
+==Drive Block Parameters==
+
+'''Please note: this does not match with firmware 8.02 and all of this section needs updating.'''
+
+<tt>
+:05 08 = Drive1
+:06 08 = Drive2
+:00 00 = Type?
+:01 00 = Drive

@@ -389,6 +389,22 @@ function validateParamMap(
       });
       continue;
     }
+    // Read-leg-only enum gate (mirrors encodeValue in resolvers.ts so
+    // apply_preset refuses set-by-name the same way set_param does): the
+    // labels decode the device, but the name->wire mapping is uncaptured, so a
+    // non-numeric string value is refused here. A numeric value still passes.
+    if (
+      schema.enum_display_only === true
+      && typeof value === 'string'
+      && (value.trim() === '' || !Number.isFinite(Number(value)))
+    ) {
+      errors.push({
+        slot_index: slotIndex,
+        path,
+        error: `${blockKey}.${canonical}: enum labels are display-only on this device; setting it by name ("${value}") is not supported yet (the name-to-wire mapping has not been captured). Change it on the device, or pass the numeric wire value.`,
+      });
+      continue;
+    }
     // Track the value that lands in the normalized map. Enum tolerance
     // may rewrite a string `value` to its canonical casing before the
     // writer consumes it.
@@ -475,7 +491,10 @@ function validateParamMap(
           }
         }
       } else if (typeof value === 'number') {
-        if (schema.enum_values[value] === undefined) {
+        // A partial enum (per-device read-leg override) names only some
+        // ordinals; an unnamed numeric ordinal is a valid raw wire passthrough,
+        // not an error. Only a COMPLETE table range-checks numeric values.
+        if (!schema.enum_partial && schema.enum_values[value] === undefined) {
           errors.push({
             slot_index: slotIndex,
             path,

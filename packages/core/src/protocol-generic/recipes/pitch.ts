@@ -40,7 +40,7 @@
  * expression-pedal modifier onto pitch.control / PITCH_CTRL.
  */
 
-export type RecipePort = 'am4' | 'axe-fx-ii' | 'axe-fx-iii';
+export type RecipePort = 'am4' | 'axe-fx-ii' | 'axe-fx-iii' | 'fm3' | 'fm9';
 
 export interface PitchRecipeSpec {
   /** Stable recipe key (snake_case). */

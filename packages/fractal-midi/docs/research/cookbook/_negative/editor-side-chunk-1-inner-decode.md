@@ -11,7 +11,7 @@ golden: scripts/cookbook-verify.ts#case-editor-side-chunk-1-inner-decode
 relates_to: [iii-async-workflow-fn-registry, iii-workflow-state-machine-executor, iii-fn-byte-switch-as-inbound-dispatcher, vendor-envelope-descriptor-table, iii-multiproduct-editor-binary]
 consumed_in:
   - packages/fractal-midi/docs/devices/am4/preset-binary-format-research.md (§13)
-  - packages/axe-fx-iii/src/presetDump.ts (L47 - "treats chunk payloads as opaque blobs")
+  - packages/fractal-modern/src/presetDump.ts (L47 - "treats chunk payloads as opaque blobs")
   - samples/captured/decoded/ghidra-am4-edit-inbound-stream-path.txt
   - samples/captured/decoded/ghidra-am4-edit-classify-dmsm-slots.txt
 ---
@@ -24,7 +24,7 @@ packed at fixed byte positions inside the bulk chunk payloads. The
 hypothesis ruled out here: **that those per-param byte positions are
 known to the editor binary** and recoverable via Ghidra mining.
 Verified false on AM4-Edit (3 HOPs of mining, 2026-05-28) and
-cross-cited on AxeEdit III (`packages/axe-fx-iii/src/presetDump.ts`
+cross-cited on AxeEdit III (`packages/fractal-modern/src/presetDump.ts`
 L47 — committed comment "treats chunk payloads as opaque blobs").
 
 ## Hypothesis ruled out
@@ -115,7 +115,7 @@ field.
 
 ### AxeEdit III (cross-cited, committed in production code)
 
-`packages/axe-fx-iii/src/presetDump.ts` L47 (committed):
+`packages/fractal-modern/src/presetDump.ts` L47 (committed):
 
 ```
 * Total preset body across 16 chunks: 49,152 bytes of packed-ushort

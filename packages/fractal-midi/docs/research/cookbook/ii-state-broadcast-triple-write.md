@@ -9,6 +9,10 @@ verified_on:
     point: "Axe-Fx II XL+ Q8.02"
     date: 2026-05-25
     evidence: "probe-axefx2-state-write.ts Test A: Amp 1 pos[2] round-trip byte-exact"
+  - axis: device-family
+    point: "FM9 (gen-3, model 0x12, FW 11.00) — device→host broadcast direction"
+    date: 2026-06-03
+    evidence: "community FM9 capture: fn=0x74/0x75/0x76 burst as the fn=0x1F poll response; Reverb block 66, body index 0 = Mix = 65534. parseGen3StateBroadcastBody golden in test/axe-fx-iii/setparam.test.ts"
 ---
 
 # State-Broadcast Triple Write (fn 0x74/0x75/0x76, Host → Device)
@@ -44,10 +48,15 @@ FOOTER  F0 00 01 74 [model] 76 [cs] F7
 
 ## Applicability
 
-Axe-Fx II XL+ Q8.02. No second axis exists (only one firmware tested). The
-underlying envelope shape (0x74/0x75/0x76) is shared with the device-emitted
-broadcast, which is firmware-universal, but the HOST-TO-DEVICE write acceptance
-is confirmed on Q8.02 only.
+The **device-emitted broadcast** direction (device → host) is now confirmed on a
+**second device family**: the gen-3 FM9 (model `0x12`, FW 11.00) emits the same
+`0x74/0x75/0x76` triple as its `fn=0x1F` poll response and on front-panel edits.
+The triple ENVELOPE SHAPE thus generalizes across gen-2 (II) and gen-3 (III/FM3/FM9).
+
+The **HOST-TO-DEVICE write acceptance** (this entry's headline claim) remains
+confirmed on Axe-Fx II XL+ Q8.02 ONLY — gen-3 write-acceptance is untested (the
+FM9 capture was a panel edit + reads, no synthesized write). Status stays
+`matched-singleton` for the write claim until a gen-3 write round-trip lands.
 
 ## Fixtures
 
@@ -69,9 +78,15 @@ is confirmed on Q8.02 only.
 
 - [[ii-fn1f-atomic-read]] — the READ primitive that returns this same shape
 - [[septet-14bit]] — targetId and itemCount encoding
-- `docs/_private/HW-125-FINDINGS-2026-05-25.md` — full session findings
 
 ## Refinement history
 
 - 2026-05-25: Initial registration. Status `matched-singleton` (Q8.02 XL+).
   Proved bidirectional + per-position encoding + NOT channel-aware.
+- 2026-06-03: Cross-family confirmation of the device→host envelope. First gen-3
+  hardware capture (FM9 model `0x12`, FW 11.00, community-contributed) shows the
+  identical `0x74/0x75/0x76` triple as the `fn=0x1F` poll response; body is positional
+  in device-true paramId order (Reverb idx 0 = Mix = 65534 = 100%). Parsed by
+  `parseGen3StateBroadcastHead/Body` (`src/axe-fx-iii/setParam.ts`), golden in
+  `test/axe-fx-iii/setparam.test.ts`, consumed by gen-3 dirty-state in the MCP-server
+  layer. Write-acceptance NOT generalized (read direction only).

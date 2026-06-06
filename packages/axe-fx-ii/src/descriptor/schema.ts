@@ -59,7 +59,10 @@ export function makeEncode(param: AxeFxIIParam): ParamSchema['encode'] {
     }
     if (!Number.isInteger(num) || num < 0 || num > 65534) {
       throw new Error(
-        `${param.block}.${param.name} expects wire 0..65534 (uncalibrated): ${num}`,
+        `${param.block}.${param.name} is an uncalibrated Axe-Fx II parameter (no display ` +
+          `calibration mined yet), so it takes a raw value 0..65534, not a display unit. ` +
+          `Got ${num}. Most II knobs are display-first; this one is a known calibration gap, ` +
+          `so read it back after writing to confirm.`,
       );
     }
     return num;

@@ -22,7 +22,7 @@ import {
 } from '../types.js';
 
 import { getCachedBlockLayout } from './blockLayoutCache.js';
-import { openCtx, requireDevice } from './core.js';
+import { assertInstanceSupported, openCtx, requireDevice } from './core.js';
 import {
   encodeValue,
   resolveBlockName,
@@ -127,9 +127,8 @@ export async function collectRoutingMaskWarnings(
       `on ${descriptor.display_name}. No previous-column cell feeds its input, ` +
       `so audio bypasses the block entirely; param-register writes have no audible effect.`,
     retry_action:
-      `Call axefx2_set_cell_routing to connect a previous-column cell into '${canonicalBlock}'s ` +
-      `input, OR use apply_preset with a routing[] array to place + cable the block in one call. ` +
-      `Then retry the set_param.`,
+      `Use apply_preset with a routing[] array to place and cable '${canonicalBlock}' into a ` +
+      `previous-column cell in one call, then retry the set_param.`,
   }];
 }
 
@@ -147,6 +146,7 @@ export async function executeSetParam(args: {
   instance?: number;
 }): Promise<WriteResult & { device: string; aliased_param_from?: string }> {
   const descriptor = requireDevice(args.port);
+  assertInstanceSupported(descriptor, args.instance, `${args.block}.${args.name}`);
   const canonical_block = resolveBlockName(descriptor, args.block);
   const { name: canonical_name, aliased_from } = resolveParamName(descriptor, canonical_block, args.name);
   const channel = resolveChannel(descriptor, canonical_block, args.channel);
@@ -213,6 +213,7 @@ export async function executeGetParam(args: {
   include_description?: boolean;
 }): Promise<ReadResult & { device: string; aliased_param_from?: string; description?: string }> {
   const descriptor = requireDevice(args.port);
+  assertInstanceSupported(descriptor, args.instance, `${args.block}.${args.name}`);
   const canonical_block = resolveBlockName(descriptor, args.block);
   const { name: canonical_name, aliased_from } = resolveParamName(descriptor, canonical_block, args.name);
   const channel = resolveChannel(descriptor, canonical_block, args.channel);
@@ -255,6 +256,7 @@ export async function executeSetParams(args: {
   for (let i = 0; i < args.ops.length; i++) {
     const op = args.ops[i];
     try {
+      assertInstanceSupported(descriptor, op.instance, `ops[${i}] (${op.block}.${op.name})`);
       const block = resolveBlockName(descriptor, op.block);
       const { name } = resolveParamName(descriptor, block, op.name);
       const channel = resolveChannel(descriptor, block, op.channel);
@@ -300,6 +302,7 @@ export async function executeGetParams(args: {
   for (let i = 0; i < args.queries.length; i++) {
     const q = args.queries[i];
     try {
+      assertInstanceSupported(descriptor, q.instance, `queries[${i}] (${q.block}.${q.name})`);
       const block = resolveBlockName(descriptor, q.block);
       const { name } = resolveParamName(descriptor, block, q.name);
       const channel = resolveChannel(descriptor, block, q.channel);

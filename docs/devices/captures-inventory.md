@@ -101,16 +101,102 @@ the 0x74 triple: different envelope, same per-block-edit signal.
 | `session-86-scene-midi-disambiguate.pcapng` | scene disambiguation captures |
 | `session-87-scene-midi-test-buttons.pcapng` | test-button scene captures |
 
-### Axe-Fx III (model byte `0x10`)
+### Modern Fractal family (gen-3): Axe-Fx III `0x10` / FM3 `0x11` / FM9 `0x12`
+
+One shared codec; a capture from any member helps the others. The III is the
+byte-identity anchor; the first real gen-3 hardware captures are FM9 (community,
+2026-06-03).
+
+**Axe-Fx III:**
 
 | File | Content |
 |---|---|
-| `samples/factory/Axe-Fx-III-Factory-Preset-Banks-28p06/Axe-Fx_III_BANK_{A,B,C}-*.syx` | 3 factory banks Ã— 128 presets each = 384 III presets in 18-message envelope. Used for envelope-shape confirmation. Body is Huffman-compressed per Fractal Forum #159885. |
+| `samples/factory/Axe-Fx-III-Factory-Preset-Banks-28p06/Axe-Fx_III_BANK_{A,B,C}-*.syx` | 3 factory banks Ã— 128 presets each = 384 III presets in 18-message envelope. Envelope-shape confirmation. Body is Huffman-compressed per Fractal Forum #159885. |
 | `samples/factory/Axe-Fx-III-Factory-Preset-Banks-28p06/Axe-Fx_III_ALL-BANKS-*.syx` | Same 384 presets in one file. |
 
-The III community RE work (Fractal Forum thread #159885, archived in
-the maintainer's private notes (gitignored), 1304 lines) is the primary
-external decode source. See [`fractal-midi/docs/devices/axe-fx-iii/preset-format-research.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/axe-fx-iii/preset-format-research.md).
+No III *hardware* captures exist yet: everything III-side is byte-anchored from the
+v1.4 spec, the factory banks, Axe-Edit III binary mining, and public II-sourced
+SET captures. The III community RE work (Fractal Forum thread #159885, archived in
+the maintainer's private notes (gitignored), 1304 lines) is the primary external
+decode source. See [`fractal-midi/docs/devices/axe-fx-iii/preset-format-research.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/devices/axe-fx-iii/preset-format-research.md).
+
+**FM9 (FW 11.00, community captures 2026-06-03):**
+
+| File | Content |
+|---|---|
+| `samples/captured/fm9-reverb-mix-readback-community-2026-06-03.pcapng` | Panel-driven readback. Decoded the gen-3 READ path: `fn=0x1F` poll → `0x74/0x75/0x76` positional whole-block broadcast (record index i == device-true paramId i). Shipped as gen-3 `get_param`. |
+| `samples/captured/fm9-reverb-type-medroom-to-medspring-2026-06-03.pcapng` | Single reverb-type change. Byte-anchored the WRITE leg: typed `fn=0x01 sub=0x09` SET carries the **raw enum id** (524 = "Medium Spring"), distinct from the read ordinal (16); enum count 79 via the 60B echo. |
+| `samples/captured/fm9-capture3-enum-sweep-2026-06-03.pcapng` (37,947 frames) | Attempted enum-label sweep + 6 typed SETs (reverb/amp/drive). Confirmed the write envelope on hardware, but **proved the dropdown-open does NOT make the editor fetch labels over the wire** (zero enum strings in the whole capture). Retires the "open each block" sweep plan. |
+| `samples/captured/fm9-152-super-duos2-exported-2026-06-03.syx` (24,680 B) | Exported preset. Decoded the gen-3 whole-preset binary: `0x77` head + 8× `0x78` body + `0x79` tail, plaintext 16-bit words (0xaa55 magic, ASCII name from word4), NOT compressed. Written from editor memory, so it proves FORMAT only. |
+| `samples/captured/fm9-fw/` | FM9 DSP firmware image. Re-decoded with the correct MSB-first septet unpack: entropy 6.5, sectioned/compressed, no plain strings. Enum labels live here but behind an unidentified decompressor (S4 fallback lane). |
+| `samples/captured/fm9-amp-balance-0-to-neg100-*-2026-06-04.pcapng` (66 MB, 27,772 FM9 frames) | Controlled single-edit: amp block Balance dragged 0 → −100 in the editor (Preset 433, Scene S03). Byte-anchored the **continuous-param SET** (`fn=0x01 sub=0x52`, eff 58 = ID_DISTORT1, paramId 2 = `DISTORT_PAN`, 5-septet LE float32 normalized, 0.5 = center) + the 60-byte value-echo. Adversarially validated (5 refuters + synth, all confirmed). **Headline:** decoded the `0x75` broadcast as **channel-blocked** — `index = channel × stride + paramId`, `stride = itemCount/4` (DISTORT 588 = 147×4). Balance changed only index 149 = 1×147+2 (channel B); A/C/D copies constant. The old `values[paramId]` read was silently channel-A-only; gen-3 `get_param` now projects the correct channel (channel-aware read shipped). See the maintainer's private session notes + SYSEX-MAP. |
+
+No FM3 captures exist (model `0x11`, implemented but unconfirmed on hardware).
+
+### Still needed (gen-3) — what to ask III / FM9 / FM3 owners for
+
+Priority order (re-swept 2026-06-04 against current state). Full contributor-facing
+instructions in [`packages/fractal-midi/docs/capture-guides/`](../../packages/fractal-midi/docs/capture-guides/); the detailed tester protocol lives in the maintainer's private session notes.
+
+1. **III / FM3 hardware confirmation (probe + chat report). TOP — genuinely open.** Any
+   III or FM3 owner running the probe + a `get_param`/`set_param` round-trip on real
+   hardware. Both have ZERO hardware captures; the shared gen-3 codec (and the server
+   poll→burst read) is only inferred to apply to them. Highest value because it is the
+   one thing nothing else can substitute for, and it's the easiest contributor action.
+2. **Set-by-name — three number spaces, and the AMP is the exception that still NEEDS a
+   capture.** Per a multi-agent converged enum-mine analysis: **ordinal**
+   (read index, from the `0x75` broadcast / XML value-lists), **name** (AM4 `cacheEnums.ts`
+   arrays indexed by ordinal, joined in `enumOverlay.ts`), and **raw-id** (write value).
+   - For **most blocks** (reverb/delay/chorus/flanger/phaser/wah/comp/geq/filter/tremolo/
+     enhancer/gate) the read `{ordinal→name}` join is **already offline** (AM4 effectType
+     overlays are valid), so reads label correctly; only the write `{ordinal→raw-id}` is
+     missing (it is NOT in the XML — a non-constant permutation — so it needs wire captures;
+     partial table `GEN3_ENUM_ORDINAL_TO_RAW_ID` holds reverb {16:524, 45:529}).
+   - For the **AMP (`DISTORT_TYPE`) and drive (`FUZZ_TYPE`)** the AM4 name table is INVALID
+     (`enumOverlay.ts:262`: FM9 amp ordinals 65/179/264 exceed AM4's list, names disagree),
+     so the model selector ships UNLABELED — names are NOT offline. Only 3 FM9 amp ordinals
+     have names (264=SV Bass 1, 65=SV Bass 2, 179=Texas Star Clean). **The amp model roster
+     therefore needs a real capture** — the "getBlockString amp-roster sweep" the code waits
+     on. This is the single highest-value gen-3 capture: it binds device-true amp names AND
+     captures the write raw-ids, closing set-amp-by-name.
+   - **Method (corrected — the NAME does NOT cross the wire).** SELECT each model one at a
+     time in the editor (NOT just open the dropdown — opening is INERT). Each SELECT puts the
+     **raw-id (SET)** on the wire and triggers a `0x75` broadcast (ordinal), but the editor
+     holds names locally and never sends them: `getBlockString` never fires; capture3
+     (37,947 frames) had **zero** label strings. The name comes from the human — but via a
+     **SCREENSHOT, not transcription**: screenshot the full model list (in order), then select
+     each option top-to-bottom in that same order. Wire gives raw-ids in selection order;
+     screenshot gives names in list order; same order ⇒ positional join `name[i] ↔ raw-id[i]`
+     (the per-select `0x75` ordinal is an independent cross-check). We read the screenshots, so
+     the tester types nothing. Read↔write is a non-constant permutation, so partial captures
+     only pin the models actually selected (no transform), but partial is useful per-model. Amp
+     roster ~280 (the selecting is the work; screenshots cover names cheaply). **Drive/FUZZ is
+     the quick win:** if FM9 ordinals match AM4 `DRIVE_TYPES` (names offline) it needs no
+     screenshot — just the raw-ids. The full tester protocol lives in the maintainer's
+     private session notes.
+3. **Receive-preset-from-device — FM9 DONE; III/FM3 still open.** FM9 closed 2026-06-04
+   (harp `fm9-receive-preset-from-device-*`, live `0x77/0x78/0x79` dump captured). For
+   III/FM3 it's still open: a Fractal-Bot "Receive" of one preset, to confirm the shared
+   dump on those devices. Medium value (the format is decoded from the FM9 stream).
+4. **Amp param-value calibration (display ranges).** Not a capture — derived in software
+   by AM4 symbol-name join. Listed here only so it isn't confused with a hardware ask.
+5. **Second exported preset** (different preset) to diff the `0x77` head version field.
+   Low priority; only ask if already in hand. We already have one FM9 export.
+6. **Amp knob sweep → confirm the channel-blocked read model. OPTIONAL CONFIRMATION.**
+   The `0x75` broadcast layout is now SOLVED from data in hand: it is channel-blocked,
+   `index = channel × stride + paramId`, `stride = itemCount/4` (validated N=2: DISTORT
+   588 = 147×4, REVERB 292 = 73×4; balance changed only index 149 = 1×147+2). The
+   channel-aware `get_param` read is shipped, so this capture is **no longer required**:
+   it would only raise confidence from N=2 params to N=8 (each knob's channel copies land
+   at `channel × stride + paramId`). Downgraded to optional belt-and-suspenders (six
+   isolated single-knob amp drags: Drive `DISTORT_DRIVE` 11, Bass 12, Mid 13, Treble 14,
+   Master 15, Presence 30). See SYSEX-MAP + the maintainer's private session notes.
+
+> Already answered, do NOT re-ask: gen-3 READ path, the typed-SET write envelope
+> (now also the **continuous mouse-drag SET** via the 2026-06-04 balance capture), and
+> the exported-preset file format are all decoded (above). The old "single knob turn"
+> and "open the dropdowns" asks are retired (the latter re-proven inert by the
+> 2026-06-04 enum-label-sweep capture: 7,352 frames, zero SET writes, zero names).
 
 ### AM4 (model byte `0x15`)
 

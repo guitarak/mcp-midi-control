@@ -22,8 +22,18 @@ export type { Unit, Param } from './params.js';
 // Enum vocabulary overlay — universal Fractal conventions + AM4-
 // verified shared symbols + III-specific direct overrides. See
 // `enumOverlay.ts` for evidence chain and provenance tagging.
-export { resolveEnumValues, enumOverlayStats } from './enumOverlay.js';
+export { resolveEnumValues, resolveEffectTypeEnum, enumOverlayStats } from './enumOverlay.js';
 export type { EnumOverlayEntry, EnumProvenance } from './enumOverlay.js';
+
+// Gen-3 enum set-by-name resolver (BK-093 write leg), capture-pending
+// scaffold. name → ordinal (offline) → raw-id (empty table until the FM9
+// getBlockString sweep lands). See `enumRawId.ts`.
+export {
+  resolveGen3EnumOrdinal,
+  resolveGen3EnumNameToRawId,
+  GEN3_ENUM_ORDINAL_TO_RAW_ID,
+} from './enumRawId.js';
+export type { Gen3EnumRawIdTable, Gen3EnumRawIdResolution } from './enumRawId.js';
 
 // Codec — wire-byte builders + parsers. Function-code constants
 // re-exported for callers building custom envelopes.
@@ -44,12 +54,21 @@ export {
   QUERY_SENTINEL,
   packValue16,
   unpackValue16,
+  pack5Septet32,
+  unpack5Septet32,
+  decode5SeptetFloat32,
+  parseGen3SetValueEcho,
   buildSetParameter,
   buildGetParameter,
   buildSetParameterBypass,
   isSetGetParameterResponse,
   parseSetGetParameterResponse,
+  isGetParameterResponse,
+  parseGetParameterResponse,
   buildSetGridCell,
+  buildSetGridRouting,
+  ROUTING_OP_CONNECT,
+  ROUTING_OP_DISCONNECT,
   buildSetPresetName,
   buildStorePreset,
   buildSwitchPresetPC,
@@ -88,10 +107,22 @@ export {
   describeMultipurposeResultCode,
   parseStatusDumpResponse,
   parseStateBroadcast,
+  parseGen3StateBroadcastHead,
+  parseGen3StateBroadcastBody,
+  buildBlockBulkReadPoll,
+  buildRequestPresetDump,
+  isGen3BroadcastFrame,
+  assembleGen3BlockBulkRead,
+  FN_BLOCK_BULK_READ,
+  FN_REQUEST_PRESET_DUMP,
+  createModernFractalCodec,
 } from './setParam.js';
 export type {
   LooperAction,
   LooperState,
   StatusDumpEntry,
   AxeFxIIIParameterFrameKind,
+  Gen3BlockBulkRead,
+  ModernFractalCodec,
+  Gen3BankSelectMode,
 } from './setParam.js';

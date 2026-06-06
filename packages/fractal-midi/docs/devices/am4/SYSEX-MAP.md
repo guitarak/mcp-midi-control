@@ -588,6 +588,44 @@ The Ghidra catalog already carries all 99 paramId+name pairs. Generating
 `params.ts` GLOBAL entries from this finding is mechanical (the next
 follow-up after this decode).
 
+### 2026-06-05 — Enum tables confirmed via interactive hardware probe
+
+**23 global params upgraded from `unit:'count'` placeholders to `unit:'enum'`** via
+interactive hardware probe (`scripts/_research/probe-am4-setup-enums.ts`) covering
+all SETUP menu pages. Key confirmed mappings (full tables in `params.ts`):
+
+| Param | pidHigh | Confirmed enum |
+|---|---|---|
+| `global.in1_source` | 0x0034 | 0=Analog, 1=SPDIF, 2=USB (Channels 3/4) |
+| `global.out1_config` | 0x0030 | 0=Stereo, 1=Sum L+R, 2=Copy L->R, 3=Split, 4=Mute |
+| `global.out1_phase` | 0x0031 | 0=Normal, 1=Invert |
+| `global.gap_fill` | 0x008f | 0=Off, 1=On |
+| `global.delayspill` | 0x000f | 0=Off, 1=Delay, 2=Reverb, 3=Delay & Rev |
+| `global.startup_mode` | 0x0089 | 0=Preset, 1=Scene, 2=Effects, 3=Amp |
+| `global.tap_tempo_mode` | 0x002e | 0=Average, 1=Last Two |
+| `global.linefreq` | 0x005a | **0=50 Hz, 1=60 Hz** (50 Hz is index 0) |
+| `global.cabinetbyp` | 0x0095 | 0=Active, 1=Bypassed |
+| `global.pwrampbyp` | 0x0096 | 0=On, 1=Off |
+| `global.select_fade` | 0x0091 | 0=Off, 1–10=seconds (max confirmed 10) |
+| `global.midi_thru` | 0x006d | 0=Off, 1=On |
+| `global.send_midipc` | 0x003f | 0=Off, 1–16=Chan 1–16, 17=Omni |
+| `global.scenesync_ch` | 0x009c | 0=Off, 1–16=Chan 1–16, 17=Omni |
+| `global.presshold_mode` | 0x0092 | 0=Disabled, 1=Gig Mode, 2=Custom Mode |
+| `global.tap_amp_fx_mode` | 0x0093 | 0=Nothing, 1=Bypass, 2=Boost |
+| `global.tap_amp_ch_amp_mode` | 0x0094 | 0=Nothing, 1=Boost |
+| `global.tuneraccidentals` | 0x0068 | 0=Flats, 1=Both, 2=Sharps |
+| `global.auto_truebypass` | 0x0081 | 0=Off, 1=On |
+| `global.dynacab_sync` | 0x009e | 0=Off, 1=On; front panel label "DynaCab Auto-Match" in Amp Expert→IMPEDANCE (not Setup) |
+
+**Not visible on front-panel Setup menu** (still `unit:'count'` placeholders):
+`global.tunermute`, `global.scene_revert`, `global.usetuneoffsets`,
+`global.tuner_source`. These write via MIDI and persist, but have no front-panel
+UI and are cleared by SETUP → Reset → Reset System Parameters.
+
+**`global.sprk_model`** (Speaker Imp. Curve, pidHigh=0x0097): partial — indices 0-8
+confirmed (Default + named cabs starting with Resistive Load); more entries likely exist.
+See BK-AM4-GLOBAL-REMAINING.
+
 ---
 
 ## 6c. Block Slot Placement Register 🟢
@@ -2284,13 +2322,19 @@ scene-level config that isn't tied to a single block:
 - `PATCH_SCENE_N_MIDI_MSG_M / _CH_M / _VAL_M / _EXEC_M`, per-scene
   MIDI sends (4 messages × 4 scenes, sends external MIDI when a
   scene activates)
-- `PATCH_AMP_CHA_COLOR..CHD_COLOR`, per-amp-channel color tags (UI)
+- `PATCH_AMP_CHA_COLOR..CHD_COLOR`, per-amp-channel footswitch LED color
+  (UI: Amp Type page Knob C). 🟢 **CONFIRMED 2026-06-05** via
+  `probe-am4-channel-color.ts` hardware sweep + device front-panel scroll.
+  pidLow=0x00CE, pidHighs 0x71/0x72/0x73/0x74 (channels A/B/C/D).
+  Value: float32(colorIndex), 7 named colors in wire-index order:
+  `{ 0:'Red', 1:'Orange', 2:'Yellow', 3:'Green', 4:'Cyan', 5:'Blue', 6:'Purple' }`.
+  Write with standard action=0x0001. Exposed as `amp.channel_a_color` etc.
+  in params.ts (block:'amp' for agent discoverability).
 - `PATCH_SCENE_N_MIDI_MENU`, `PATCH_SCENE_MIDI_CLEAR`, MIDI menu / clear
 
-PATCH's pidLow has not yet been captured on hardware (no USB capture
-of AM4-Edit firing routing/4CM/scene-MIDI changes). Likely
-candidates: pidLow=0 (system-wide) or a dedicated patch-config
-pidLow. **Future capture (HW-NNN) needed to confirm.**
+PATCH's pidLow=0x00CE is confirmed across routing (§6n-patch), scene-MIDI
+(§6n-scene-midi), and channel colors (2026-06-05). The stale note below
+about "not yet captured" no longer applies to these families.
 
 Similarly, the GLOBAL family (case 0x1, 99 params in AM4 catalog)
 covers system-wide settings (tuner mode, USB levels, output config,

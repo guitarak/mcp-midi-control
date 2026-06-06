@@ -216,9 +216,12 @@ on shapes `amp1`, `scene1`, `slot1_amp`.
     - `samples/captured/decoded/am4-fn1f-all-blocks-position-map.json`
   - Caveats:
     - The 4 `*.channel` selectors (amp/drive/reverb/delay,
-      pidHigh=0x7d2) live OUTSIDE the chunk. `getPreset` reads
-      them via per-paramId GET only when
-      `include_channel_state: true`, mirroring II's pattern.
+      pidHigh=0x7d2) live OUTSIDE the chunk (pidHigh far beyond
+      stride). The default `getPreset` path reads the active
+      selector via a per-paramId GET to label the single returned
+      channel; `include_channel_state: true` reads all four
+      channels A/B/C/D straight from the channel-blocked chunk and
+      needs no selector read (FIXED order, quarter 0 = A).
     - The probe surfaced a catalog mislabel (orthogonal to the
       rule): several params with `unit: percent` actually store
       bipolar at the wire (filter.pan_*, enhancer.pan_*, etc.).
@@ -238,8 +241,39 @@ on shapes `amp1`, `scene1`, `slot1_amp`.
   observations (state-broadcast triple, 100-byte chunk, valid
   effectId) are correct regardless of label.
 
+- 2026-06-04 (live AM4 — chunk is CHANNEL-BLOCKED ×4): the prior
+  "chunk position = pidHigh" rule is the **channel-A slice** of a
+  channel-blocked layout. The 0x75 body packs four contiguous copies of
+  the block's slots, one per channel A-D: `index = channel × stride +
+  pidHigh`, `stride = itemCount / 4`, quarter 0 = channel A. Confirmed
+  READ-ONLY on connected hardware (`scripts/_research/probe-am4-channel-
+  blocked.ts`): channel-bearing blocks all have `itemCount % 4 == 0` with
+  DISTINCT quarters — eff 58 (amp tone) 608=152×4, eff 62 (amp cab)
+  312=78×4, eff 66 292=73×4 (A/B/C/D all differ), eff 70 360=90×4. Same
+  primitive as gen-3 `[[gen3-fn1f-poll-block-bulk-read]]` (×4 A-D) and II
+  (×2 X/Y, block 0x6a 236≈118×2): ONE cross-Fractal atomic-read that
+  differs only by model byte, value count, and channel count.
+  **Consequence:** `getPreset(include_channel_state)` now reads all four
+  channels A/B/C/D from the single dump at `channel × stride + pidHigh`
+  (no per-param-per-channel GET loop, no channel-state mutation). Quarter
+  order is FIXED A/B/C/D (quarter 0 = A), confirmed live via a reversible
+  A→B→A switch that left the quarters invariant
+  (`probe-am4-channel-orientation.ts` / `probe-am4-channel-switch-test.ts`).
+  **Open:** the amp (eff 58) chunk was 256 ushorts in 2026-05-22 but 608
+  now — amp chunk size looks type/firmware-dependent; reconcile before
+  relying on amp specifically. The amp channel SELECTOR register reads back
+  derived/cached firmware state (not a clean 0..3 index), so `get_param(amp,
+  channel)` decodes it via a best-effort float32-packed-enum fallback;
+  reverb/delay/drive selectors read clean.
+
+- 2026-06-04 (SHIPPED): the channel-stride projection above is live in the
+  consumer's `packages/am4/` reader. `getPreset(include_channel_state:true)`
+  returns A/B/C/D from one fn 0x1F dump per block; the default path returns
+  the active channel's quarter. No channel-state mutation on either path.
+
 Promotion path: entry promotes from `matched-singleton` →
 `cross-device-pattern` once a comparable per-block-atomic-read
-ships for a non-Fractal device. Within Fractal, AM4 and II are
-distinct atomic-read shapes that share the fn byte; treat them as
-related but not interchangeable.
+ships for a non-Fractal device. Within Fractal, AM4 / II / gen-3 share the
+fn byte AND the channel-blocked layout (differing in channel count + value
+encoding) — a confirmed cross-Fractal pattern, distinct only in model byte
++ catalog.

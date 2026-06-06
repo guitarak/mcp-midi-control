@@ -1,9 +1,9 @@
 # Multi-device roadmap
 
 > **Status:** the single-repo workspace split has shipped. The codebase
-> is a single npm-workspaces monorepo with one package per device
-> (`@mcp-midi-control/am4`, `axe-fx-ii`, `axe-fx-iii`, `hydrasynth`)
-> plus shared `@mcp-midi-control/core` and an
+> is a single npm-workspaces monorepo with one package per CODEC family
+> (`@mcp-midi-control/am4`, `axe-fx-ii`, `fractal-modern` (gen-3: Axe-Fx
+> III / FM3 / FM9), `hydrasynth`) plus shared `@mcp-midi-control/core` and an
 > `@mcp-midi-control/server-all` entry point. The split into a framework
 > repo plus per-vendor protocol-package repos (`fractal-midi`,
 > `asm-midi`, and so on) is planned for later, after AM4 hardens and the
@@ -277,8 +277,8 @@ enough samples):
 | **First** | Fractal AM4 | `@mcp-midi-control/am4` | First-class, hardware-verified | Maintainer owns it, deepest RE done, MVP-shape proven |
 | **Second** | Fractal Axe-Fx II XL+ | `@mcp-midi-control/axe-fx-ii` | First-class, hardware-verified | Maintainer owns it, same SysEx envelope as AM4 (large reuse, validates the `fractal-shared/` boundary), wiki and Blocks Guide published. First boundary-validation device: confirmed the vendor-package shape works |
 | **Second** | ASM Hydrasynth (line) | `@mcp-midi-control/hydrasynth` | First-class, hardware-verified | Maintainer owns the Explorer model; same SysEx/NRPN engine ships across Keyboard / Deluxe / Desktop / Explorer per ASM. CC chart fully published, zero capture-RE for the engine. The non-Fractal vendor validation point: confirmed the unified surface absorbs a different protocol family |
-| **Second** | Fractal Axe-Fx III | `@mcp-midi-control/axe-fx-iii` | Community beta: byte-verified against the published spec and public captures, not yet confirmed on real hardware | Maintainer does not own a III. Same SysEx envelope as II. Promotion to first-class waits on community fixes and captures |
-| **Third** | Fractal FM9 / FM3 / VP4 | future `@mcp-midi-control/<device>` | Community beta | Need community-owned hardware for capture. Same vendor package, sibling subdirs |
+| **Second** | Fractal Axe-Fx III | `@mcp-midi-control/fractal-modern` | Community beta: byte-verified against the published spec and public captures, not yet confirmed on real hardware | Maintainer does not own a III. Same SysEx envelope as II. Anchors the gen-3 codec factory. Promotion to first-class waits on community fixes and captures |
+| **Third** | Fractal FM3 / FM9 | `@mcp-midi-control/fractal-modern` | Community beta | Gen-3 siblings of the III: same codec factory, different model byte (FM3 0x11, FM9 0x12) + grid/scene shape. Registered as per-device configs, not new packages. Block catalog reuses the III's pending FM-Edit mining. VP4 (0x14, serial-chain) is the next config once VP4-Edit is mined |
 | **Third** | Roland / Boss family (RC-505 MKII, VE-500, SPD-SX, JD-Xi) | future `@mcp-midi-control/<device>` | Queued | Roland publishes MIDI Implementation PDFs, so zero capture-RE. Different SysEx family from Fractal but structurally simpler. Single vendor package across the family |
 | **Beyond Fractal** | Line 6 Helix, then others | (TBD) | Candidate | Helix has a documented MIDI implementation and a large user base; it is the leading candidate to prove the architecture generalizes beyond guitar gear to any modeler that publishes a usable MIDI spec. Quad Cortex is closed-protocol and hardest |
 

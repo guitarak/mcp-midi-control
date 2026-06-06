@@ -44,7 +44,7 @@ import { fileURLToPath } from 'node:url';
 
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
-import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/axe-fx-iii/device.js';
+import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/device.js';
 import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
 import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
 

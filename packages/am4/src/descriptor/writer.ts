@@ -33,6 +33,7 @@ import type {
   RestoreDefaultsRangeOptions,
   RestoreDefaultsRangeResult,
   RestoreDefaultsResult,
+  SavedSnapshot,
   SceneSpec,
   SetlistApplyOptions,
   SetlistEntrySpec,
@@ -78,12 +79,10 @@ import {
   type ApplyPresetSlotInput,
 } from '../tools/applyExecutor.js';
 import { sendReadAndParse } from '../shared/readOps.js';
+import { readSaveSnapshot } from './reader.js';
 import { loadFactoryBank, sendFactoryRestore } from '../factoryBank.js';
-import {
-  guardActiveAM4BufferOrSave,
-  refreshAM4Fingerprint,
-  warmupAM4BaselineIfNeeded,
-} from '../tools/safeEdit.js';
+import { guardActiveAM4BufferOrSave, AM4_DIRTY_LABEL } from '../tools/safeEdit.js';
+import { markClean, markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
 import { readPresetName } from '../shared/readOps.js';
 import { recordInbound, sendAndAwaitAck } from '../shared/wireOps.js';
 import {
@@ -96,6 +95,13 @@ import {
 } from '../shared/channels.js';
 import { checkApplicability } from 'fractal-midi/am4';
 import type { ApplyPresetSkippedParam } from '../tools/applyExecutor.js';
+
+// Active-location state register (mirrors safeEdit.ts / reader.ts). Reads the
+// index of the location currently loaded into the working buffer. The save
+// overwrite gate compares this against the save target to tell a refresh
+// (target == active) from an overwrite of a different stored preset.
+const LOCATION_STATE_PID_LOW = 0x00ce;
+const LOCATION_STATE_PID_HIGH = 0x000a;
 
 /**
  * Decode the current wire value from a 64-byte structured ack response
@@ -175,6 +181,7 @@ import {
 } from 'fractal-midi/am4';
 
 import { parseAm4Location } from './schema.js';
+import { restorePresetBinaryAm4 } from './presetRestore.js';
 
 /**
  * Translate the generic-surface PresetSpec into the AM4-native
@@ -325,10 +332,9 @@ async function runPostSaveSwitch(
       `to ${formatLocationDisplay(locationIndex)} manually on the AM4 to load it.`
     );
   }
-  // Save committed the working buffer to flash at this location; the
-  // buffer now matches the stored preset. Refresh the fingerprint
-  // cache so the next dirty-gate check has a clean baseline.
-  await refreshAM4Fingerprint(ctx.conn, locationIndex);
+  // Save committed the working buffer to flash at this location. The
+  // dirty flag was already cleared on the save ack (see savePreset);
+  // this convenience post-save switch does not touch it.
   return undefined;
 }
 
@@ -370,7 +376,6 @@ export const writer: DeviceWriter = {
     value: number,
     channel?: string | number,
   ): Promise<WriteResult> {
-    await warmupAM4BaselineIfNeeded(ctx.conn);
     const key = `${block}.${name}` as ParamKey;
     const param: Param = KNOWN_PARAMS[key];
     const bytes = buildSetParam(key, value);
@@ -381,6 +386,7 @@ export const writer: DeviceWriter = {
     }
     const result = await sendAndAwaitAck(ctx.conn, bytes, isWriteEcho);
     if (result.acked) {
+      markDirty(AM4_DIRTY_LABEL);
       // Keep lastKnownType / lastKnownChannel current so cross-call
       // applicability checks (set_param after a separate amp.type write)
       // and channel tracking see fresh values. Type-gated refusal logic
@@ -414,7 +420,6 @@ export const writer: DeviceWriter = {
   },
 
   async setParams(ctx, ops): Promise<BatchWriteResult> {
-    await warmupAM4BaselineIfNeeded(ctx.conn);
     const writes: WriteResult[] = [];
     let acked_count = 0;
     let unacked_count = 0;
@@ -499,21 +504,15 @@ export const writer: DeviceWriter = {
   },
 
   async switchPreset(ctx, location): Promise<WriteResult> {
-    await warmupAM4BaselineIfNeeded(ctx.conn);
     const locationIndex = parseAm4Location(location);
     const bytes = buildSwitchPreset(locationIndex);
     const result = await sendAndAwaitAck(ctx.conn, bytes, isWriteEcho);
     // New preset = new channel layout; existing cache is stale.
     invalidateChannelCache();
     if (result.acked) {
-      // Switching presets loads a stored preset into the working
-      // buffer — the buffer matches flash. Refresh the fingerprint
-      // cache so the next dirty-gate check has a clean baseline
-      // (and can detect front-panel edits made before the next
-      // navigation). Best-effort: failures are swallowed so the
-      // switch's success isn't penalized by a non-critical side task.
-      // See bufferFingerprint.ts.
-      await refreshAM4Fingerprint(ctx.conn, locationIndex);
+      // Switching reloaded the stored preset into the working buffer —
+      // it matches flash. markClean AFTER the ack.
+      markClean(AM4_DIRTY_LABEL);
     }
     return {
       op: 'switch_preset',
@@ -529,8 +528,12 @@ export const writer: DeviceWriter = {
   },
 
   async savePreset(ctx, location, name): Promise<WriteResult> {
-    await warmupAM4BaselineIfNeeded(ctx.conn);
     const locationIndex = parseAm4Location(location);
+    // The overwrite gate + read-back receipt are handled device-agnostically
+    // in the dispatcher (executeSavePreset) via the reader's
+    // checkOverwriteTarget + readSaveSnapshot capabilities. This method just
+    // persists the working buffer.
+
     if (name !== undefined && name.length > 0) {
       // Composite rename + save (mirrors am4_save_preset).
       const renameBytes = buildSetPresetName(locationIndex, name);
@@ -555,6 +558,12 @@ export const writer: DeviceWriter = {
           `Save to ${formatLocationDisplay(locationIndex)} sent but no ack; verify by loading another location and coming back.`,
       };
     }
+
+    // Save persisted the working buffer to flash → buffer is clean.
+    // markClean here (on the SAVE ack), NOT after the convenience
+    // post-save switch — a switch that times out must not leave the
+    // flag dirty and falsely refuse the next navigation.
+    markClean(AM4_DIRTY_LABEL);
 
     // Switch the active location to the just-saved target so the user
     // sees and hears what they saved. Without this, the active location
@@ -582,10 +591,15 @@ export const writer: DeviceWriter = {
         `Scene index ${scene} out of range on Fractal AM4 (valid: 1..4).`,
       );
     }
-    await warmupAM4BaselineIfNeeded(ctx.conn);
     const bytes = buildSwitchScene(scene - 1);
     const result = await sendAndAwaitAck(ctx.conn, bytes, isWriteEcho);
     invalidateChannelCache();
+    if (result.acked) {
+      // A scene switch mutates the active-scene pointer in the working
+      // buffer, so by the deterministic model it is an edit (matches the
+      // old fingerprint poll's behavior — not a regression).
+      markDirty(AM4_DIRTY_LABEL);
+    }
     return {
       op: 'switch_scene',
       target: `scene:${scene}`,
@@ -600,7 +614,6 @@ export const writer: DeviceWriter = {
   },
 
   async setBlock(ctx, slot, change): Promise<WriteResult> {
-    await warmupAM4BaselineIfNeeded(ctx.conn);
     if (typeof slot !== 'number' || !Number.isInteger(slot) || slot < 1 || slot > 4) {
       throw new DispatchError(
         'bad_location',
@@ -627,6 +640,9 @@ export const writer: DeviceWriter = {
     }
     const bytes = buildSetBlockType(slot as 1 | 2 | 3 | 4, wire);
     const result = await sendAndAwaitAck(ctx.conn, bytes, isWriteEcho);
+    if (result.acked) {
+      markDirty(AM4_DIRTY_LABEL);
+    }
     const displayName = BLOCK_NAMES_BY_VALUE[wire] ?? `0x${wire.toString(16)}`;
     return {
       op: 'set_block',
@@ -672,9 +688,11 @@ export const writer: DeviceWriter = {
         },
       );
     }
-    await warmupAM4BaselineIfNeeded(ctx.conn);
     const bytes = buildSetBlockBypass(wire, bypassed);
     const result = await sendAndAwaitAck(ctx.conn, bytes, isWriteEcho);
+    if (result.acked) {
+      markDirty(AM4_DIRTY_LABEL);
+    }
     const stateWord = bypassed ? 'bypassed' : 'active';
     return {
       op: 'set_bypass',
@@ -702,7 +720,6 @@ export const writer: DeviceWriter = {
   async applyPreset(ctx, spec: PresetSpec, target, options): Promise<ApplyResult> {
     const input = specToApplyInput(spec);
     const shouldSave = options?.save ?? false;
-    await warmupAM4BaselineIfNeeded(ctx.conn);
 
     const startMs = Date.now();
     if (target !== undefined) {
@@ -715,13 +732,13 @@ export const writer: DeviceWriter = {
         capture.unsubscribe();
       }
       if (result.ok) {
-        // A save run persists the working buffer to flash, so the
-        // buffer matches the target. Refresh the cache so the next
-        // dirty-gate check has a clean baseline. An audition run
-        // leaves the buffer mutated relative to flash — no refresh,
-        // so the next gate check sees the mismatch.
+        // A save run persists the working buffer to flash at the target.
+        // An audition run leaves the buffer dirty (runApplyPresetWires
+        // marks each acked write dirty), so the next gate sees the edits.
+        // (markClean here is redundant with runApplyPresetAt's own
+        // save-markClean — idempotent boolean set, kept matching II.)
         if (result.saved) {
-          await refreshAM4Fingerprint(ctx.conn, locationIndex);
+          markClean(AM4_DIRTY_LABEL);
         }
         const auditionNote = result.saved
           ? undefined
@@ -771,13 +788,16 @@ export const writer: DeviceWriter = {
     } finally {
       capture.unsubscribe();
     }
+    const budgetNote = wireResult.budgetExceeded
+      ? `apply aborted: the device went silent mid-burst and the operation budget elapsed before all writes were sent (${wireResult.acked + wireResult.unacked} of ${wireResult.totalWrites}). Reconnect (reconnect_midi) and retry — the same spec completes the unfinished writes idempotently.`
+      : undefined;
     const ackNote = wireResult.unacked > 0
       ? `${wireResult.unacked} of ${wireResult.totalWrites} writes did not ack within timeout. This is usually cold-start: the first write burst after a fresh connection drops a few acks while the port warms up. Retry the same call once; the second attempt almost always lands clean. If un-acked writes persist across retries, verify on the AM4 display.`
       : undefined;
     const skipNote = formatSkippedNote(skipped);
-    const warning = [ackNote, skipNote].filter((s) => s !== undefined).join(' ');
+    const warning = [budgetNote, ackNote, skipNote].filter((s) => s !== undefined).join(' ');
     return {
-      ok: wireResult.unacked === 0,
+      ok: !wireResult.budgetExceeded && wireResult.unacked === 0,
       steps: wireResult.totalWrites,
       duration_ms: Date.now() - startMs,
       warning: warning.length > 0 ? warning : undefined,
@@ -1107,7 +1127,7 @@ export const writer: DeviceWriter = {
       throw new DispatchError(
         'capability_not_supported',
         'Fractal AM4',
-        'rename(target="preset") needs a location on Fractal AM4. Use save_preset(location, name) to rename + persist, or am4_set_preset_name with an explicit location.',
+        'rename(target="preset") needs a location on Fractal AM4. Use save_preset(location, name) to rename + persist.',
         { retry_action: 'Call save_preset(port, location, name).' },
       );
     }
@@ -1122,6 +1142,10 @@ export const writer: DeviceWriter = {
     const sceneIdx = Number(m[1]) - 1;
     const bytes = buildSetSceneName(sceneIdx, name);
     const result = await sendAndAwaitAck(ctx.conn, bytes, isCommandAck);
+    if (result.acked) {
+      // A scene rename mutates scene-name cells in the working buffer.
+      markDirty(AM4_DIRTY_LABEL);
+    }
     return {
       op: 'rename',
       target,
@@ -1142,5 +1166,9 @@ export const writer: DeviceWriter = {
    */
   async guardActiveBufferOrSave(ctx, mode) {
     return guardActiveAM4BufferOrSave(ctx.conn, mode);
+  },
+
+  async restorePresetBinary(ctx, bytes, options) {
+    return restorePresetBinaryAm4(ctx, bytes, options);
   },
 };

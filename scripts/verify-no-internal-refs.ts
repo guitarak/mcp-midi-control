@@ -21,7 +21,7 @@
  * patterns to FORBIDDEN_PATTERNS as the lexicon evolves.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
@@ -54,7 +54,11 @@ function listFiles(): string[] {
     'git ls-files "packages/*/src/**/*.ts"',
     { cwd: ROOT, encoding: 'utf8' },
   );
-  return parseGitLsFiles(out);
+  // `git ls-files` reports tracked paths from the index, which can include
+  // files deleted in the working tree but not yet staged (e.g. a tool
+  // surface removed this session). Skip any path that no longer exists on
+  // disk rather than crashing on ENOENT.
+  return parseGitLsFiles(out).filter((rel) => existsSync(path.resolve(ROOT, rel)));
 }
 
 function parseGitLsFiles(out: string): string[] {

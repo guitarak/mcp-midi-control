@@ -25,11 +25,19 @@
  *   - Sets knob values from published source material (interviews, rig
  *     rundowns, Premier Guitar articles) rather than gut feel.
  *
- * Scope at first ship:
+ * Scope:
  *   - AM4  ✓ — Q8.02 firmware, 4 slots linear chain.
  *   - II   ✓ — Q8.02 firmware, row 2 (audio chain) of 4×12 grid.
- *   - III  ✗ — SET_PARAM is undecoded as of Session 97; recipe values
- *              would be unverified guesses. Add when III SET_PARAM lands.
+ *   - gen-3 (III / FM3 / FM9) ✓ SET_PARAMETER is decoded (fn=0x01,
+ *              byte-verified) and the tone-stack knobs are calibrated
+ *              display-first. BUT amp/drive/reverb MODEL selectors are
+ *              enum set-by-name gated (the typed-SET raw enum id is
+ *              capture-pending), so gen-3 recipes are MODEL-AGNOSTIC
+ *              numeric voicings: they set the calibrated tone-stack +
+ *              reverb/comp knobs on whatever amp model is loaded, and the
+ *              agent/user picks the amp model separately. They carry the
+ *              `gen3_` prefix to make that contract obvious. No enum
+ *              model strings appear in any gen-3 slot.
  *   - Hydra ✗ — synth (osc / module), not a multi-block guitar effects
  *              chain. Block-stack semantics don't translate; consider
  *              a separate "patch_archetype" family if Hydra demand
@@ -146,6 +154,16 @@ export interface BlockStackRecipeSpec {
 // whole table type-checks cleanly. Pure runtime no-op.
 const p = <T extends Readonly<Record<string, number | string>>>(params: T): Readonly<Record<string, number | string>> => params;
 
+// gen-3 (III / FM3 / FM9) share one wire codec, one block roster, and one
+// calibrated tone-stack, and the recipes below set numeric knobs only (no
+// gated enum model strings). The slot layout + values are identical across
+// the three, so fan one value across all three port keys rather than
+// triplicating the literal. FM3 is a 4×4 grid, so gen-3 recipes stay within
+// cols 1..3 (row 2 audio chain) to fit every device in the family.
+const gen3 = <T>(value: T): Readonly<Record<'axe-fx-iii' | 'fm3' | 'fm9', T>> =>
+  Object.freeze({ 'axe-fx-iii': value, fm3: value, fm9: value });
+const GEN3_DEVICES = ['axe-fx-iii', 'fm3', 'fm9'] as const;
+
 export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>> = Object.freeze({
     // ── Edge dotted-8th lead ────────────────────────────────────────
     //
@@ -191,7 +209,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           {
             slot: 1,
             block_type: 'compressor',
-            params: p({ type: 'Pedal Comp 2', ratio: 4, threshold: -18, level: 5 }),
+            params: p({ type: 'JFET Pedal Compressor', ratio: 4, threshold: -18, level: 5 }),
           },
           {
             slot: 2,
@@ -397,7 +415,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           {
             slot: 1,
             block_type: 'compressor',
-            params: p({ type: 'Pedal Comp 1', ratio: 2, threshold: -22, level: 5 }),
+            params: p({ type: 'JFET Pedal Compressor', ratio: 2, threshold: -22, level: 5 }),
           },
           {
             slot: 2,
@@ -445,8 +463,8 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
         'Gilmour swirly clean (Pink Floyd "Comfortably Numb" / "Breathe"): Hiwatt-style clean amp + slow phaser + analog delay + plate reverb. Trippy clean with motion.',
       applicable_devices: ['am4', 'axe-fx-ii'] as const,
       signature_params_per_device: {
-        am4: { 'amp.type': 'Hipower Normal', 'phaser.type': 'Phase 90', 'delay.type': 'Analog Stereo' },
-        'axe-fx-ii': { 'amp.effect_type': 'HIPOWER NORMAL', 'phaser.effect_type': 'PHASE 90', 'delay.effect_type': 'ANALOG STEREO' },
+        am4: { 'amp.type': 'Hipower Normal', 'phaser.type': 'Script 90', 'delay.type': 'Analog Stereo' },
+        'axe-fx-ii': { 'amp.effect_type': 'HIPOWER NORMAL', 'phaser.effect_type': 'SCRIPT 90', 'delay.effect_type': 'ANALOG STEREO' },
       },
       source_notes:
         'Premier Guitar Rig Rundown: David Gilmour (2016, 2019); Sound on Sound "Gilmour Clean Tones" (2006). Gilmour used Hiwatt DR103 (= Hipower on Fractal), not Marshall.',
@@ -460,7 +478,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           {
             slot: 2,
             block_type: 'phaser',
-            params: p({ type: 'Phase 90', rate: 0.7, depth: 60, mix: 50 }),
+            params: p({ type: 'Script 90', rate: 0.7, depth: 6, mix: 50 }),
           },
           {
             slot: 3,
@@ -482,7 +500,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           {
             slot: { row: 2, col: 2 },
             block_type: 'phaser',
-            params: p({ effect_type: 'PHASE 90', rate: 0.7, depth: 60, mix: 50 }),
+            params: p({ effect_type: 'SCRIPT 90', rate: 0.7, depth: 6, mix: 50 }),
           },
           {
             slot: { row: 2, col: 3 },
@@ -699,7 +717,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           {
             slot: 1,
             block_type: 'compressor',
-            params: p({ type: 'Pedal Comp 1', ratio: 3, threshold: -20, level: 5 }),
+            params: p({ type: 'JFET Pedal Compressor', ratio: 3, threshold: -20, level: 5 }),
           },
           {
             slot: 2,
@@ -746,8 +764,8 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
         'Modern metal rhythm (Lamb of God / Tool / modern Mesa): Recto Red Modern + parametric EQ (sub-cut + 500 Hz notch) + short room reverb. Polished aggressive low-end.',
       applicable_devices: ['am4', 'axe-fx-ii'] as const,
       signature_params_per_device: {
-        am4: { 'amp.type': 'Recto2 Red Modern', 'filter.type': 'Parametric' },
-        'axe-fx-ii': { 'amp.effect_type': 'RECTO2 RED MODERN' },
+        am4: { 'amp.type': 'Recto2 Red Modern', 'filter.type': 'Peaking' },
+        'axe-fx-ii': { 'amp.effect_type': 'RECTO2 RED MDRN' },
       },
       source_notes:
         'Premier Guitar Rig Rundown: Lamb of God (2018); Mesa Dual Rectifier modern-metal documentation.',
@@ -761,7 +779,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           {
             slot: 2,
             block_type: 'filter',
-            params: p({ type: 'Parametric', freq: 500, q: 1.2, gain: -4, mix: 100 }),
+            params: p({ type: 'Peaking', freq: 500, q: 1.2, gain: -4, mix: 100 }),
           },
           {
             slot: 3,
@@ -773,11 +791,11 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           {
             slot: { row: 2, col: 1 },
             block_type: 'amp',
-            params: p({ effect_type: 'RECTO2 RED MODERN', input_drive: 7, bass: 5, middle: 4, treble: 6, presence: 6, master_volume: 5 }),
+            params: p({ effect_type: 'RECTO2 RED MDRN', input_drive: 7, bass: 5, middle: 4, treble: 6, presence: 6, master_volume: 5 }),
           },
           {
             slot: { row: 2, col: 2 },
-            block_type: 'parametric eq',
+            block_type: 'parametriceq',
           },
           {
             slot: { row: 2, col: 3 },
@@ -808,7 +826,7 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
         'Djent (Periphery / Animals As Leaders / Misha Mansoor): noise gate + T808 OD sub-cut + 5150 III Red high-gain + parametric EQ (sub-cut + mid-scoop) + short room. II-only.',
       applicable_devices: ['axe-fx-ii'] as const,
       signature_params_per_device: {
-        'axe-fx-ii': { 'amp.effect_type': '5150 III RED', 'drive.effect_type': 'T808 OD' },
+        'axe-fx-ii': { 'amp.effect_type': '5153 100W RED', 'drive.effect_type': 'T808 OD' },
       },
       source_notes:
         'Music Radar "Misha Mansoor Rig" (2018); Animals As Leaders / Tosin Abasi rig rundown (Premier Guitar 2017).',
@@ -826,11 +844,11 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           {
             slot: { row: 2, col: 3 },
             block_type: 'amp',
-            params: p({ effect_type: '5150 III RED', input_drive: 6, bass: 5, middle: 4, treble: 6, presence: 6, master_volume: 5 }),
+            params: p({ effect_type: '5153 100W RED', input_drive: 6, bass: 5, middle: 4, treble: 6, presence: 6, master_volume: 5 }),
           },
           {
             slot: { row: 2, col: 4 },
-            block_type: 'parametric eq',
+            block_type: 'parametriceq',
           },
           {
             slot: { row: 2, col: 5 },
@@ -954,6 +972,99 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
           },
         ],
       },
+    },
+
+    // ── gen-3 clean platform (model-agnostic numeric voicing) ────────
+    //
+    // A pedal-platform clean voicing for the modern Fractal family: light
+    // compression to even dynamics, the amp tone-stack set near-flat with
+    // gain low for headroom, and a medium reverb for air. The amp MODEL is
+    // NOT set here (model-by-name is enum-gated on gen-3); load any clean
+    // model (Fender / AC-style) and this voicing sits on top. All knobs are
+    // calibrated display-first values.
+    //
+    // Voicing rationale: gain-staging convention for a clean pedal platform
+    // (low drive for headroom, slight treble lift, ~18% reverb). Not an
+    // artist-specific tone; the amp model is the user's pick.
+    gen3_clean_platform: {
+      name: 'gen3_clean_platform',
+      description:
+        'gen-3 clean platform (III / FM3 / FM9): light comp + near-flat amp tone-stack at low gain + medium reverb. Model-agnostic numeric voicing; pick the amp model separately (model-by-name is capture-gated on gen-3).',
+      applicable_devices: GEN3_DEVICES,
+      signature_params_per_device: gen3(p({ 'amp.drive': 2, 'reverb.mix': 18 })),
+      source_notes:
+        'Clean pedal-platform gain-staging convention (low drive for headroom, slight treble lift, medium reverb). Amp model is user-selected; gen-3 model-by-name is capture-gated.',
+      slots_per_device: gen3([
+        {
+          slot: { row: 2, col: 1 },
+          block_type: 'compressor',
+          params: p({ ratio: 2, thresh: -24, level: 5 }),
+        },
+        {
+          slot: { row: 2, col: 2 },
+          block_type: 'amp',
+          params: p({ drive: 2, bass: 5, mid: 5, treble: 6, master: 6 }),
+        },
+        {
+          slot: { row: 2, col: 3 },
+          block_type: 'reverb',
+          params: p({ mix: 18, size: 55 }),
+        },
+      ]),
+    },
+
+    // ── gen-3 crunch platform (model-agnostic numeric voicing) ───────
+    //
+    // Edge-of-breakup rhythm voicing: amp tone-stack with mid-gain and a
+    // slight mid push, low reverb for room. Sits on a cranked Brit/Plexi-
+    // style model (user-selected). Numeric calibrated knobs only.
+    gen3_crunch_platform: {
+      name: 'gen3_crunch_platform',
+      description:
+        'gen-3 crunch platform (III / FM3 / FM9): mid-gain amp tone-stack with a slight mid push + light reverb. Edge-of-breakup rhythm voicing. Model-agnostic; pick a crunch amp model separately (capture-gated on gen-3).',
+      applicable_devices: GEN3_DEVICES,
+      signature_params_per_device: gen3(p({ 'amp.drive': 5, 'reverb.mix': 12 })),
+      source_notes:
+        'Edge-of-breakup rhythm gain-staging convention (mid drive, mid push, light reverb). Amp model is user-selected; gen-3 model-by-name is capture-gated.',
+      slots_per_device: gen3([
+        {
+          slot: { row: 2, col: 1 },
+          block_type: 'amp',
+          params: p({ drive: 5, bass: 5, mid: 6, treble: 6, master: 6 }),
+        },
+        {
+          slot: { row: 2, col: 2 },
+          block_type: 'reverb',
+          params: p({ mix: 12, size: 45 }),
+        },
+      ]),
+    },
+
+    // ── gen-3 high-gain platform (model-agnostic numeric voicing) ────
+    //
+    // Modern metal rhythm voicing: high drive, scooped mids, tight short
+    // reverb. Sits on a Recto / 5150-style high-gain model (user-selected).
+    // Numeric calibrated knobs only.
+    gen3_high_gain_platform: {
+      name: 'gen3_high_gain_platform',
+      description:
+        'gen-3 high-gain platform (III / FM3 / FM9): high-drive scooped-mid amp tone-stack + tight short reverb. Modern metal rhythm voicing. Model-agnostic; pick a high-gain amp model separately (capture-gated on gen-3).',
+      applicable_devices: GEN3_DEVICES,
+      signature_params_per_device: gen3(p({ 'amp.drive': 8, 'amp.mid': 4 })),
+      source_notes:
+        'Modern metal rhythm gain-staging convention (high drive, scooped mids, tight short reverb). Amp model is user-selected; gen-3 model-by-name is capture-gated.',
+      slots_per_device: gen3([
+        {
+          slot: { row: 2, col: 1 },
+          block_type: 'amp',
+          params: p({ drive: 8, bass: 6, mid: 4, treble: 6, presence: 6, master: 5 }),
+        },
+        {
+          slot: { row: 2, col: 2 },
+          block_type: 'reverb',
+          params: p({ mix: 8, size: 35 }),
+        },
+      ]),
     },
   });
 

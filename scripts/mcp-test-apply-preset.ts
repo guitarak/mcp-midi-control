@@ -1,5 +1,6 @@
 /**
- * MCP-driven hardware test harness for `axefx2_apply_preset_at`.
+ * MCP-driven hardware test harness for the unified `apply_preset` on the
+ * Axe-Fx II.
  *
  * Spawns the SHIPPED MCP server (`dist/server/index.js` — the same
  * binary Claude Desktop loads) as a child process and drives it via
@@ -20,11 +21,11 @@
  * What it does:
  *   - Spawns the MCP server and connects.
  *   - Calls `tools/list` and prints the registered tool descriptions
- *     for `axefx2_apply_preset_at` + `axefx2_get_grid_layout` so the
- *     test path matches exactly what an agent would see and interpret.
- *   - Calls `axefx2_apply_preset_at` with the requested spec.
- *   - Calls `axefx2_get_grid_layout` and parses the chain-break warning
- *     (added gridRender.ts Session 70b).
+ *     for `apply_preset` + `get_preset` so the test path matches exactly
+ *     what an agent would see and interpret.
+ *   - Calls `apply_preset(port='axe-fx-ii', spec, target_location)` with
+ *     the requested spec (converted from the legacy block list).
+ *   - Calls `get_preset(port='axe-fx-ii')` and checks chain_integrity.
  *   - Reports pass/fail. Exits non-zero on failure.
  *
  * Pass criteria:
@@ -68,9 +69,10 @@ function parseCli(argv: string[]): CliOpts {
 
 // ── Preset specs ───────────────────────────────────────────────────────
 
-// Each spec matches axefx2_apply_preset_at's input shape: `blocks` array
-// with `block` slug + optional `params` map of display-unit values. The
-// MCP tool's encode layer translates display → wire under the hood.
+// Each spec is authored in the legacy `blocks` shape (block display name +
+// optional `params` map of display-unit values) for readability, then
+// converted to the unified apply_preset `spec` by toUnifiedSpec() below.
+// The unified tool's encode layer translates display → wire under the hood.
 
 const PRESETS = {
   // Minimal — single block. Edge case: only col 1 occupied, the rest
@@ -175,6 +177,26 @@ const PRESETS = {
   },
 } as const;
 
+// Convert a preset (legacy `blocks` shape) to the unified apply_preset
+// `spec`: sequential slots, block_type slug (trailing instance number
+// stripped, spaces removed, e.g. "Multi Delay 1" → "multidelay"), and
+// params wrapped under the active channel (X).
+function toUnifiedSpec(preset: { name: string; blocks: readonly unknown[] }): {
+  name: string;
+  slots: Array<Record<string, unknown>>;
+} {
+  return {
+    name: preset.name,
+    slots: preset.blocks.map((raw, i) => {
+      const b = raw as { block: string; params?: Record<string, number> };
+      const block_type = b.block.replace(/\s*\d+\s*$/, '').toLowerCase().replace(/\s+/g, '');
+      return b.params
+        ? { slot: i + 1, block_type, params_by_channel: { X: b.params } }
+        : { slot: i + 1, block_type };
+    }),
+  };
+}
+
 // ── MCP response helpers ───────────────────────────────────────────────
 
 function extractText(callResult: unknown): string {
@@ -223,65 +245,67 @@ async function main(): Promise<void> {
 
     // ── 1. List tools, print descriptions for the tools we'll call. ──
     const { tools } = await client.listTools();
-    const applyTool = tools.find((t) => t.name === 'axefx2_apply_preset_at');
-    const gridTool = tools.find((t) => t.name === 'axefx2_get_grid_layout');
-    if (!applyTool || !gridTool) {
-      console.error('❌ Required tools not registered: axefx2_apply_preset_at and/or axefx2_get_grid_layout');
+    const applyTool = tools.find((t) => t.name === 'apply_preset');
+    const readTool = tools.find((t) => t.name === 'get_preset');
+    if (!applyTool || !readTool) {
+      console.error('❌ Required unified tools not registered: apply_preset and/or get_preset');
       process.exit(1);
     }
 
     console.log('── Tool descriptions (what the agent sees) ───────────────────');
-    console.log(`\n[axefx2_apply_preset_at]\n${(applyTool.description ?? '').slice(0, 600)}${(applyTool.description ?? '').length > 600 ? '\n…' : ''}`);
-    console.log(`\n[axefx2_get_grid_layout]\n${(gridTool.description ?? '').slice(0, 400)}${(gridTool.description ?? '').length > 400 ? '\n…' : ''}`);
+    console.log(`\n[apply_preset]\n${(applyTool.description ?? '').slice(0, 600)}${(applyTool.description ?? '').length > 600 ? '\n…' : ''}`);
+    console.log(`\n[get_preset]\n${(readTool.description ?? '').slice(0, 400)}${(readTool.description ?? '').length > 400 ? '\n…' : ''}`);
     console.log('\n──────────────────────────────────────────────────────────────\n');
 
-    // ── 2. Apply the preset to the target slot. ──
-    console.log(`Calling axefx2_apply_preset_at(slot=${opts.slot}, name="${preset.name}", ${preset.blocks.length} blocks)…`);
-    const applyArgs: Record<string, unknown> = {
-      slot: opts.slot,
-      name: preset.name,
-      blocks: preset.blocks,
-      save_authorized: true,
-      on_active_preset_edited: 'discard',
-    };
+    // ── 2. Apply the preset to the target slot via the unified surface. ──
+    const spec = toUnifiedSpec(preset);
+    console.log(`Calling apply_preset(port='axe-fx-ii', target_location=${opts.slot}, name="${preset.name}", ${spec.slots.length} blocks)…`);
     const applyResp = await client.callTool({
-      name: 'axefx2_apply_preset_at',
-      arguments: applyArgs,
+      name: 'apply_preset',
+      arguments: {
+        port: 'axe-fx-ii',
+        target_location: opts.slot,
+        spec,
+        save_authorized: true,
+        on_active_preset_edited: 'discard',
+      },
     });
     const applyText = extractText(applyResp);
     if (isError(applyResp)) {
-      console.error('❌ apply_preset_at returned isError:');
+      console.error('❌ apply_preset returned isError:');
       console.error(applyText);
       process.exit(2);
     }
     // Print a digest — the tool's response is usually a multi-line summary.
     const applyLines = applyText.split('\n');
-    console.log(`✓ apply_preset_at ok. Response digest:`);
+    console.log(`✓ apply_preset ok. Response digest:`);
     for (const l of applyLines.slice(0, 3)) console.log(`    ${l}`);
     if (applyLines.length > 3) console.log(`    … (${applyLines.length - 3} more lines)`);
     console.log('');
 
-    // ── 3. Read grid layout, check for chain break. ──
-    console.log(`Calling axefx2_get_grid_layout…`);
-    const gridResp = await client.callTool({
-      name: 'axefx2_get_grid_layout',
-      arguments: {},
+    // ── 3. Read the preset back, check chain integrity. ──
+    console.log(`Calling get_preset(port='axe-fx-ii')…`);
+    const readResp = await client.callTool({
+      name: 'get_preset',
+      arguments: { port: 'axe-fx-ii' },
     });
-    const gridText = extractText(gridResp);
-    if (isError(gridResp)) {
-      console.error('❌ get_grid_layout returned isError:');
-      console.error(gridText);
+    const readText = extractText(readResp);
+    if (isError(readResp)) {
+      console.error('❌ get_preset returned isError:');
+      console.error(readText);
       process.exit(3);
     }
-    console.log(gridText);
+    console.log(readText);
     console.log('');
 
-    // ── 4. Verdict. ──
-    const hasBreak = /CHAIN BREAK/i.test(gridText);
+    // ── 4. Verdict. chain_integrity.ok === false means a break. ──
+    const ci = (readResp as { structuredContent?: { chain_integrity?: { ok?: boolean } } })
+      .structuredContent?.chain_integrity;
+    const hasBreak = ci ? ci.ok === false : /chain.{0,20}break/i.test(readText);
     if (hasBreak) {
       console.log('═══════════════════════════════════════════════════════════');
-      console.log('❌ FAIL — get_grid_layout reports a chain break.');
-      console.log('   Signal will not flow end-to-end. Inspect cell masks above.');
+      console.log('❌ FAIL — get_preset chain_integrity reports a break.');
+      console.log('   Signal will not flow end-to-end. Inspect the snapshot above.');
       process.exit(4);
     } else {
       console.log('═══════════════════════════════════════════════════════════');

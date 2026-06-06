@@ -69,8 +69,8 @@ const HYDRASYNTH_CONCEPT_KEYS: Readonly<Record<string, string>> = (() => {
  *
  * The canonical fresh-patch path for Hydra is apply_patch (see
  * agent_guidance.fresh_build_vs_tweak). Surfaced via the per-device
- * hydra_* tool surface in CORE_TOOLS. Agents are routed there by the
- * agent_guidance, not by an apply_preset example.
+ * hydra_* tool surface. Agents are routed there by the agent_guidance,
+ * not by an apply_preset example.
  */
 
 /**

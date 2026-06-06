@@ -21,6 +21,7 @@ import type {
   BlockLayoutSnapshot,
   DeviceReader,
   DispatchCtx,
+  PresetBinaryDump,
   PresetSlotSpec,
   PresetSnapshot,
   PresetSnapshotSlot,
@@ -28,6 +29,7 @@ import type {
   ScannedLocation,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { fractalChecksum } from 'fractal-midi/shared';
 import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
 import { resolveParamKind } from '@mcp-midi-control/core/protocol-generic/paramKind.js';
 
@@ -415,6 +417,74 @@ async function readActiveBlockStates(
   return byId;
 }
 
+// ── Byte-exact preset backup (fn 0x03 PATCH_DUMP → 66-frame stream) ──
+//
+// Backs export_preset. The device replies to a PATCH_DUMP request with a
+// 66-message stream (1× 0x77 header + 64× 0x78 chunks + 1× 0x79 footer)
+// totaling 12,951 bytes. The concatenated frames ARE a valid `.syx` file:
+// the same bytes push back to the working buffer unchanged (the
+// axefx2_restore_preset path; 0 NACKs hardware-verified Session 115). We
+// dump the active working buffer here, so we read the active preset number
+// first and request a dump of it. The bytes are opaque to us — this is a
+// blob backup, not a decode.
+
+const FN_PATCH_DUMP = 0x03;
+const FN_PATCH_HEADER = 0x77;
+const FN_PATCH_CHUNK = 0x78;
+const FN_PATCH_FOOTER = 0x79;
+const PATCH_DUMP_FRAME_COUNT = 66;
+const PATCH_DUMP_TIMEOUT_MS = 5000;
+
+/**
+ * Build the fn 0x03 PATCH_DUMP request for a wire preset number. MSB-first
+ * per the buildSwitchPreset convention; LSB-first silently fails for any
+ * preset ≥ 128 (Session 115).
+ */
+function buildPatchDumpRequest(wirePreset: number): number[] {
+  const hi = (wirePreset >> 7) & 0x7f;
+  const lo = wirePreset & 0x7f;
+  const head = [0xf0, 0x00, 0x01, 0x74, AXE_FX_II_XL_PLUS_MODEL_ID, FN_PATCH_DUMP, hi, lo];
+  return [...head, fractalChecksum(head), 0xf7];
+}
+
+function isPatchFrame(b: number[]): boolean {
+  return (
+    b.length >= 6
+    && b[0] === 0xf0
+    && b[1] === 0x00
+    && b[2] === 0x01
+    && b[3] === 0x74
+    && b[4] === AXE_FX_II_XL_PLUS_MODEL_ID
+    && (b[5] === FN_PATCH_HEADER || b[5] === FN_PATCH_CHUNK || b[5] === FN_PATCH_FOOTER)
+  );
+}
+
+/**
+ * Collect the 66-frame PATCH_DUMP reply. The caller must invoke this
+ * BEFORE sending the request so the burst can't outrace the listener.
+ */
+function collectPatchDump(ctx: DispatchCtx): Promise<number[][]> {
+  return new Promise<number[][]>((resolve, reject) => {
+    const collected: number[][] = [];
+    const unsub = ctx.conn.onMessage((bytes) => {
+      if (!isPatchFrame(bytes)) return;
+      collected.push([...bytes]);
+      if (bytes[5] === FN_PATCH_FOOTER) {
+        clearTimeout(timer);
+        unsub();
+        resolve(collected);
+      }
+    });
+    const timer = setTimeout(() => {
+      unsub();
+      reject(new Error(
+        `Timed out waiting for Axe-Fx II PATCH_DUMP after ${collected.length} frames `
+        + `(expected ${PATCH_DUMP_FRAME_COUNT}).`,
+      ));
+    }, PATCH_DUMP_TIMEOUT_MS);
+  });
+}
+
 function normalizeChannel(channel: string | number | undefined): AxeFxIIChannel | undefined {
   if (channel === undefined) return undefined;
   if (typeof channel === 'number') {
@@ -509,6 +579,64 @@ export const reader: DeviceReader = {
     };
   },
 
+  async dumpActivePresetBinary(ctx: DispatchCtx): Promise<PresetBinaryDump> {
+    // 1. Which preset is loaded? We back up the active working buffer, so
+    //    request a PATCH_DUMP of the currently-active preset number.
+    let wirePreset: number;
+    try {
+      const numPromise = ctx.conn.receiveSysExMatching(isGetPresetNumberResponse, GET_RESPONSE_TIMEOUT_MS);
+      ctx.conn.send(buildGetPresetNumber());
+      wirePreset = parseGetPresetNumberResponse(await numPromise).presetNumber;
+    } catch (err) {
+      throw new DispatchError(
+        'no_ack',
+        DEVICE_LABEL,
+        `export_preset: could not read the active preset number — ${err instanceof Error ? err.message : String(err)}. Check the Axe-Fx II is connected and AxeEdit isn't holding the port (try reconnect_midi).`,
+      );
+    }
+    // 2. Request + collect the 66-frame dump. Subscribe before send.
+    const framesPromise = collectPatchDump(ctx);
+    ctx.conn.send(buildPatchDumpRequest(wirePreset));
+    let frames: number[][];
+    try {
+      frames = await framesPromise;
+    } catch (err) {
+      throw new DispatchError(
+        'no_ack',
+        DEVICE_LABEL,
+        `export_preset: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (frames.length !== PATCH_DUMP_FRAME_COUNT) {
+      throw new DispatchError(
+        'no_ack',
+        DEVICE_LABEL,
+        `export_preset: PATCH_DUMP returned ${frames.length} frames; expected ${PATCH_DUMP_FRAME_COUNT}.`,
+      );
+    }
+    // 3. Flatten the frames into the verbatim .syx byte stream.
+    const flat: number[] = [];
+    for (const f of frames) for (const b of f) flat.push(b);
+    const bytes = Uint8Array.from(flat);
+    // 4. Best-effort preset name for the backup filename.
+    let name: string | undefined;
+    try {
+      const namePromise = ctx.conn.receiveSysExMatching(isGetPresetNameResponse, GET_RESPONSE_TIMEOUT_MS);
+      ctx.conn.send(buildGetPresetName());
+      name = parseGetPresetNameResponse(await namePromise).trimEnd() || undefined;
+    } catch {
+      name = undefined;
+    }
+    return {
+      bytes,
+      byte_length: bytes.length,
+      frame_count: frames.length,
+      format: 'axe-fx-ii-patch-dump',
+      name,
+      source: `active working buffer (display slot ${wirePreset + 1})`,
+    };
+  },
+
   /**
    * BK-070: atomic read of the active working buffer. One grid read +
    * one fn 0x1F per placed block; the device's existing state-broadcast
@@ -525,10 +653,10 @@ export const reader: DeviceReader = {
    * (channel read failed) is programmatically detectable. `_meta`
    * envelope carries device label, timestamp, and partial-info flags.
    *
-   * Scope (v1): active-channel state only. Routing edges + per-scene
-   * snapshots + per-X-vs-Y decomposition are deferred to v2 and will
-   * land via additional `PresetSnapshot` fields without a tool-shape
-   * change.
+   * Scope: full X/Y per-channel state (both channels decoded from the one
+   * channel-blocked fn 0x1F dump). Routing edges + per-scene snapshots are
+   * deferred and will land via additional `PresetSnapshot` fields without a
+   * tool-shape change.
    */
   async getBlockLayoutSnapshot(ctx: DispatchCtx): Promise<BlockLayoutSnapshot> {
     // BK-075 phantom-param pre-flight: single grid read → unique placed
@@ -582,15 +710,15 @@ export const reader: DeviceReader = {
   },
 
   async getPreset(ctx: DispatchCtx, options?: { include_channel_state?: boolean }): Promise<PresetSnapshot> {
-    // Default OFF on II. include_channel_state controls ONLY the inactive
-    // Y-channel walk (one fn 0x02 GET per registered param per channel-
-    // bearing block, ~419 reads / ~37 s on an 11-block preset, far over the
-    // conversational tool budget). The ACTIVE channel is always attributed:
-    // it comes from the fn 0x0E QUERY_STATES map read once below (zero extra
-    // round-trips), so channel-bearing blocks return params_by_channel:{X}
-    // with channel_status:'active' even on the default path. Callers that
-    // need the inactive channel too pass include_channel_state: true and pay
-    // the Y-walk latency knowingly. (AM4 defaults OFF for the same reason.)
+    // Default OFF on II. include_channel_state now adds NO extra wire round-
+    // trips: the fn 0x1F dump is CHANNEL-BLOCKED x2 (quarter 0 = X, quarter 1
+    // = Y), so include_channel_state:true reads Y from the SAME dump already
+    // read for X (it used to cost ~419 per-param fn 0x02 GETs / ~37 s plus a
+    // channel-state mutation). Default OFF still returns only X to keep the
+    // response small. The ACTIVE channel is attributed from the fn 0x0E
+    // QUERY_STATES map read once below (zero extra round-trips), so channel-
+    // bearing blocks return params_by_channel:{X} with channel_status:'active'
+    // on the default path. (AM4 defaults OFF for the same reason.)
     const includeChannelState = options?.include_channel_state ?? false;
     // Server-side timer around the whole SysEx read loop. Surfaced as
     // _meta.read_duration_ms — the only client-independent measure of read
@@ -642,16 +770,12 @@ export const reader: DeviceReader = {
     //    concurrent fn 0x1F bursts would interleave 0x75 chunks across
     //    different headers in the inbound stream (no per-request tag).
     //
-    //    For channel-bearing blocks (canBypass=true on II), the active
-    //    channel is read via fn 0x11 ONLY when the caller opts in via
-    //    `include_channel_state`. T-3 Phase A (2026-05-21) flipped the
-    //    default to skip the channel-read loop — that loop adds one
-    //    SysEx round-trip per channel-bearing block (≈ 50 ms each, ≈
-    //    450 ms total on a typical 11-block / 9-channel-bearing preset)
-    //    and the common get_preset use case is "tell me what's on the
-    //    device," not round-trip read → mutate → re-apply. Callers that
-    //    DO want the round-trippable nested shape pass
-    //    `include_channel_state: true` and pay the latency knowingly.
+    //    For channel-bearing blocks the dump carries BOTH X and Y (channel-
+    //    blocked x2). `include_channel_state` controls only whether Y is
+    //    decoded and surfaced; it adds no extra round-trips. The active
+    //    channel for the default-path label comes from the fn 0x0E map read
+    //    once above. The common get_preset use case is "tell me what's on the
+    //    device" (X is enough), so the default stays X-only.
     const slots: PresetSnapshotSlot[] = [];
     const errors: string[] = [];
     // Audibility walker inputs: filled per-block as we decode the param
@@ -766,84 +890,59 @@ export const reader: DeviceReader = {
         // mapping has a hook.
         void opaqueParamIds;
 
-        // When include_channel_state is on and the block has channels,
-        // read Y via per-param fn=0x02 GET (the only channel-aware read).
-        //
-        // fn=0x1F always returns X-channel values regardless of fn=0x11
-        // state (hardware-verified 2026-05-25). The flatParams read above
-        // is therefore always X, even if the active channel is Y. We
-        // force X before the fn=0x1F read (already done implicitly since
-        // fn=0x1F ignores channel), then switch to Y for per-param reads.
+        // X and Y both come from the SAME fn 0x1F dump. The `0x75` body is
+        // CHANNEL-BLOCKED x2: quarter 0 = X, quarter 1 = Y, at
+        // `channel * stride + paramId` with `stride = itemCount / 2` (e.g.
+        // block 0x6a itemCount 236 = 118 params x 2). Structurally identical
+        // to the AM4 x4 dump (live-hardware-confirmed 2026-06-04). This lifts
+        // the old v1 "active-channel only" limit and removes the per-param
+        // fn 0x02 Y-walk AND its channel-state mutation (set Y / restore X):
+        // both channels are already in the one dump we read for X. The earlier
+        // "fn 0x1F is monolithic X" reading was the quarter-0 symptom of a
+        // channel-blocked dump indexed by paramId. (II distinctness across X/Y
+        // is arithmetic-confirmed 236 = 118x2 + structural transfer from the
+        // AM4 live read; pending a paired II X!=Y hardware confirmation.)
         let yChannelParams: Record<string, number | string> | undefined;
-        if (includeChannelState && block.canBypass && activeChannel !== undefined) {
-          try {
-            ctx.conn.send(buildSetBlockChannel(block.effectId, 'Y'));
-            const verifyPromise = ctx.conn.receiveSysExMatching(
-              (bytes) => isGetBlockChannelResponse(bytes, block.effectId),
-              GET_RESPONSE_TIMEOUT_MS,
-            );
-            ctx.conn.send(buildGetBlockChannel(block.effectId));
-            const actual = parseGetBlockChannelResponse(await verifyPromise);
-            if (actual === 'Y') {
-              const groupCode = BLOCK_BY_ID[block.effectId].groupCode;
-              const paramIndex = buildGroupParamIndex(groupCode);
-              const yParams: Record<string, number | string> = {};
-              for (const [paramId, p] of paramIndex) {
-                // Match the X-channel decode: skip firmware-internal
-                // housekeeping params so the Y map has the same shape.
-                if (HOUSEKEEPING_OPAQUE.has(p.name)) continue;
-                try {
-                  const targetId = { effectId: block.effectId, paramId };
-                  const respPromise = ctx.conn.receiveSysExMatching(
-                    (bytes) => isGetBlockParameterResponse(bytes, targetId),
-                    GET_RESPONSE_TIMEOUT_MS,
-                  );
-                  ctx.conn.send(buildGetBlockParameterValue(targetId));
-                  const resp = await respPromise;
-                  const parsed = parseGetBlockParameterResponse(resp);
-                  const kind = resolveParamKind('axe-fx-ii', p.block, p.name);
-                  let display: number | string;
-                  if (kind.decodeWire !== undefined) {
-                    display = kind.decodeWire(parsed.value);
-                  } else if (p.controlType === 'select') {
-                    // Enum labels are stable across fn=0x02 calls — the
-                    // device's label always reflects the enumValues table
-                    // entry for the wire value.
-                    display = parsed.label ?? parsed.value;
-                  } else {
-                    // Opaque knob / "unknown" controlType. parsed.label is
-                    // unreliable here — see the comment in the X-channel
-                    // branch above (Bug A in the alpha.13 report). Return
-                    // the raw wire integer instead of a transient label.
-                    display = parsed.value;
-                  }
-                  yParams[p.name] = display;
-                } catch {
-                  // Skip params that fail to read on the other channel.
-                }
-              }
-              yChannelParams = yParams;
+        if (includeChannelState && block.canBypass && triple.itemCount > 0 && triple.itemCount % 2 === 0) {
+          const stride = triple.itemCount / 2;
+          const groupCode = BLOCK_BY_ID[block.effectId].groupCode;
+          const paramIndex = buildGroupParamIndex(groupCode);
+          const yParams: Record<string, number | string> = {};
+          for (const [paramId, p] of paramIndex) {
+            // Match the X-channel decode: skip firmware-internal housekeeping
+            // params so the Y map has the same shape.
+            if (HOUSEKEEPING_OPAQUE.has(p.name)) continue;
+            const yIdx = stride + paramId;
+            if (yIdx >= triple.values.length) continue;
+            const wire = triple.values[yIdx];
+            const kind = resolveParamKind('axe-fx-ii', p.block, p.name);
+            let display: number | string;
+            if (kind.decodeWire !== undefined) {
+              display = kind.decodeWire(wire);
+            } else if (p.controlType === 'select') {
+              display = p.enumValues?.[wire] ?? wire;
+            } else {
+              // Opaque knob / "unknown" controlType: raw wire integer (stable,
+              // unlike the fn 0x02 transient label; Bug A in the alpha.13 report).
+              display = wire;
             }
-            ctx.conn.send(buildSetBlockChannel(block.effectId, activeChannel));
-            await new Promise((res) => setTimeout(res, CHANNEL_SWITCH_SETTLE_MS));
-          } catch {
-            yChannelParams = undefined;
+            yParams[p.name] = display;
           }
+          yChannelParams = yParams;
         }
 
         // Shape decision:
         //   - non-channel block: flat `params: {...}`, channel_status omitted.
-        //   - channel block + both channels read: `params_by_channel:
-        //     {X: {...}, Y: {...}}` so the snapshot round-trips through
-        //     apply_preset's schema.
-        //   - channel block + active only: `params_by_channel: {[ch]: {...}}`
-        //     (single channel populated).
-        //   - channel block + channel read failed: fall back to flat `params`
-        //     with channel_status='unknown'.
-        // fn=0x1F always returns X-channel values (monolithic). flatParams
-        // is therefore always the X snapshot regardless of activeChannel.
-        // yChannelParams, when populated, holds genuine Y-channel values
-        // read via per-param fn=0x02 GET.
+        //   - channel block + both channels read (include_channel_state):
+        //     `params_by_channel: {X: {...}, Y: {...}}` so the snapshot
+        //     round-trips through apply_preset's schema.
+        //   - channel block + active only (default): `params_by_channel:
+        //     {X: {...}}` (X = quarter 0 of the dump).
+        //   - channel block + active channel unresolved: fall back to flat
+        //     `params` with channel_status='unknown'.
+        // X = quarter 0 and Y = quarter 1 of the channel-blocked fn 0x1F dump,
+        // FIXED order (not sliding-with-active), so both are labelled directly
+        // without an active-channel read.
         let params: PresetSlotSpec['params'];
         let paramsByChannel: PresetSlotSpec['params_by_channel'];
         let channelStatus: PresetSnapshotSlot['channel_status'];
@@ -851,7 +950,7 @@ export const reader: DeviceReader = {
           params = flatParams;
           paramsByChannel = undefined;
           channelStatus = undefined;
-        } else if (activeChannel !== undefined && yChannelParams !== undefined) {
+        } else if (yChannelParams !== undefined) {
           params = undefined;
           paramsByChannel = { X: flatParams, Y: yChannelParams };
           channelStatus = 'all_channels';
@@ -956,7 +1055,7 @@ export const reader: DeviceReader = {
     // doesn't have to already know it exists (alpha.17 finding).
     const hasChannelBearing = placed.some((p) => p.canBypass);
     const channelStateHint = (!includeChannelState && hasChannelBearing)
-      ? 'Only the active channel (X) is included. Pass include_channel_state:true to get_preset for the full X/Y per-channel read (slower: one extra per-param read per channel-bearing block).'
+      ? 'Only the active channel (X) is included. Pass include_channel_state:true to get_preset for the full X/Y per-channel read (decoded from the same fn 0x1F dump; no extra round-trips).'
       : undefined;
     return {
       name: presetName,

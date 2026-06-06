@@ -1059,9 +1059,368 @@ function caseIiFn07ModifierRead(): string | null {
   return null;
 }
 
+function caseGen3Fn1fPollBlockBulkRead(): string | null {
+  // Self-contained reimplementation of the gen-3 fn=0x1F poll + positional
+  // 0x74/0x75/0x76 burst assembly (see fractal-midi/src/axe-fx-iii/setParam.ts).
+  const xor7f = (bytes: readonly number[]): number => {
+    let x = 0;
+    for (const b of bytes) x ^= b;
+    return x & 0x7f;
+  };
+  const enc14 = (n: number): [number, number] => [n & 0x7f, (n >> 7) & 0x7f];
+  // High septet is 2 bits wide, matching production packValue16/unpackValue16.
+  const packValue16 = (v: number): [number, number, number] => [v & 0x7f, (v >> 7) & 0x7f, (v >> 14) & 0x03];
+  const unpack = (lo: number, mid: number, hi: number): number => (lo & 0x7f) | ((mid & 0x7f) << 7) | ((hi & 0x03) << 14);
+  const frame = (model: number, fn: number, payload: number[]): number[] => {
+    const body = [0xf0, 0x00, 0x01, 0x74, model, fn, ...payload];
+    return [...body, xor7f(body), 0xf7];
+  };
+
+  // 1. Poll shape: 10 bytes, fn=0x1F, effectId septet-LE, valid checksum.
+  const poll = frame(0x12, 0x1f, [...enc14(66)]);
+  if (poll.length !== 10) return `poll length ${poll.length} ≠ 10`;
+  if (poll[5] !== 0x1f) return `poll fn byte 0x${poll[5].toString(16)} ≠ 0x1f`;
+  if (poll[6] !== 66 || poll[7] !== 0) return `poll effectId bytes ${poll[6]},${poll[7]} ≠ 66,0`;
+  if (poll[poll.length - 2] !== xor7f(poll.slice(0, -2))) return 'poll checksum mismatch';
+
+  // 2. Frame paging: two 0x75 sections concatenate in arrival order into one
+  //    positional value array. (The reader then indexes it channel-blocked,
+  //    index = channel × stride + paramId; that projection is tested in
+  //    verify-response-shape-parity / verify-fractal-modern-family, not here —
+  //    this golden asserts only the transport-level concatenation.)
+  // HEAD is 12 bytes: payload is <eid:14b><itemCount:14b> only — NO flag byte
+  // (the byte before F7 is the checksum). FM9-confirmed 2026-06-04.
+  const head = frame(0x12, 0x74, [...enc14(66), ...enc14(6)]);
+  if (head.length !== 12) return `0x74 head length ${head.length} ≠ 12 (no flag byte)`;
+  const body0 = frame(0x12, 0x75, [0x00, 0x02, ...packValue16(10), ...packValue16(20), ...packValue16(30), ...packValue16(40)]);
+  const body1 = frame(0x12, 0x75, [0x01, 0x02, ...packValue16(50), ...packValue16(524)]);
+  const end = frame(0x12, 0x76, []);
+
+  const isFn = (b: readonly number[], fn: number): boolean =>
+    b[0] === 0xf0 && b[1] === 0x00 && b[2] === 0x01 && b[3] === 0x74 && b[4] === 0x12 && b[5] === fn;
+  const values: number[] = [];
+  let blockId: number | undefined;
+  for (const f of [head, body0, body1, end]) {
+    if (isFn(f, 0x74)) blockId = (f[6] & 0x7f) | ((f[7] & 0x7f) << 7);
+    else if (isFn(f, 0x75)) {
+      for (let i = 8; i + 3 <= f.length - 2; i += 3) values.push(unpack(f[i], f[i + 1], f[i + 2]));
+    }
+  }
+  if (blockId !== 66) return `assembled blockId ${blockId} ≠ 66`;
+  const want = [10, 20, 30, 40, 50, 524];
+  if (JSON.stringify(values) !== JSON.stringify(want)) {
+    return `positional values ${JSON.stringify(values)} ≠ ${JSON.stringify(want)}`;
+  }
+  return null;
+}
+
+// gen-3 fn=0x03 REQUEST_PRESET_DUMP: big-endian preset number + trailing 0x00,
+// byte-exact against the FM9 capture (preset 49 = f0 00 01 74 12 03 00 31 00 25 f7).
+function caseGen3Fn03RequestPresetDump(): string | null {
+  const xor7f = (b: readonly number[]): number => b.reduce((x, c) => x ^ c, 0) & 0x7f;
+  const build = (n: number, model = 0x12): number[] => {
+    const body = [0xf0, 0x00, 0x01, 0x74, model, 0x03, (n >> 7) & 0x7f, n & 0x7f, 0x00];
+    return [...body, xor7f(body), 0xf7];
+  };
+  const want49 = [0xf0, 0x00, 0x01, 0x74, 0x12, 0x03, 0x00, 0x31, 0x00, 0x25, 0xf7];
+  const p49 = build(49);
+  if (JSON.stringify(p49) !== JSON.stringify(want49)) {
+    return `preset 49 bytes ${p49.map((x) => x.toString(16)).join(' ')} ≠ captured`;
+  }
+  const p444 = build(444); // (3<<7)|60; little-endian misread would be 7683
+  if (p444[6] !== 3 || p444[7] !== 60) return `preset 444 BE bytes ${p444[6]},${p444[7]} ≠ 3,60`;
+  return null;
+}
+
+// gen-3 enum labels cross the wire septet-packed; the stream is byte-5 aligned.
+// Uses the real FM9 capture3 reverb SET-echo IN frame (value 524 = "Medium Spring").
+const FM9_REVERB524_IN_HEX =
+  'f0 00 01 74 12 01 09 00 42 00 0a 00 20 1a 48 72 03 00 00 20 00 26 59 2c 46 4b 55 5a ' +
+  '20 29 5c 0e 26 4b 39 4e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 64 f7';
+const FM9_REVERB524_OUT_HEX =
+  'f0 00 01 74 12 01 09 00 42 00 0a 00 00 00 00 0c 04 00 00 00 00 5f f7';
+function parseHex(s: string): number[] {
+  return s.trim().split(/\s+/).map((h) => parseInt(h, 16));
+}
+function septetUnpack8to7(septets: readonly number[]): number[] {
+  let acc = 0, bits = 0; const out: number[] = [];
+  for (const s of septets) {
+    acc = (acc << 7) | (s & 0x7f); bits += 7;
+    if (bits >= 8) { bits -= 8; out.push((acc >> bits) & 0xff); }
+  }
+  return out;
+}
+function unpackAsciiAtOffset(frame: readonly number[], offset: number): string {
+  const stream = frame.slice(offset, frame.length - 2);
+  return septetUnpack8to7(stream).map((c) => (c >= 0x20 && c < 0x7f ? String.fromCharCode(c) : '.')).join('');
+}
+function caseGen3EnumLabelSeptetStream(): string | null {
+  const inFrame = parseHex(FM9_REVERB524_IN_HEX);
+  const at5 = unpackAsciiAtOffset(inFrame, 5);
+  if (!at5.includes('Medium Spring')) return `byte-5 unpack missing "Medium Spring": ${at5}`;
+  return null;
+}
+function caseGen3EnumSetEchoRawIdName(): string | null {
+  const out = parseHex(FM9_REVERB524_OUT_HEX);
+  // raw-id is the value field at bytes 15,16 (little-endian septet).
+  const rawId = (out[15] & 0x7f) | ((out[16] & 0x7f) << 7);
+  if (rawId !== 524) return `OUT raw-id ${rawId} ≠ 524`;
+  const name = unpackAsciiAtOffset(parseHex(FM9_REVERB524_IN_HEX), 5);
+  if (!name.includes('Medium Spring')) return `IN echo name missing "Medium Spring": ${name}`;
+  return null;
+}
+function caseGen3SeptetLabelWrongOffset(): string | null {
+  const inFrame = parseHex(FM9_REVERB524_IN_HEX);
+  // Byte-5 recovers the label; byte-6 (one off) must NOT — that's the trap.
+  if (!unpackAsciiAtOffset(inFrame, 5).includes('Medium Spring')) return 'byte-5 should recover the label';
+  if (unpackAsciiAtOffset(inFrame, 6).includes('Medium Spring')) return 'byte-6 unexpectedly recovered the label (offset not the cause)';
+  return null;
+}
+
+function caseGen3Fn01GridSetPositionInsert(): string | null {
+  // Gen-3 block insert (fn=0x01 sub=0x32): effectId @ septet 8-9, gridPos @
+  // septet 12-13. gridPos = col*6 + row (gen-3 grid: 6 rows). Fixtures from
+  // FM9-Edit (model 0x12) AND AxeEdit III (model 0x10) over loopMIDI: the same
+  // op across two model bytes is the cross-family axis (no hardware).
+  const ROWS = 6;
+  const xor7 = (b: number[]): number => b.reduce((a, x) => a ^ x, 0) & 0x7f;
+  const buildInsert = (model: number, effectId: number, gridPos: number): number[] => {
+    const body = [
+      0xf0, 0x00, 0x01, 0x74, model, 0x01, 0x32, 0x00,
+      effectId & 0x7f, (effectId >> 7) & 0x7f, 0x00, 0x00,
+      gridPos & 0x7f, (gridPos >> 7) & 0x7f, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    return [...body, xor7(body), 0xf7];
+  };
+  const gp = (col0: number, row0: number): number => col0 * ROWS + row0;
+  const h2 = (b: number): string => b.toString(16).padStart(2, '0');
+  const fixtures: [string, number[], string][] = [
+    ['FM9 Amp r1c1', buildInsert(0x12, 58, gp(0, 0)), 'f0 00 01 74 12 01 32 00 3a 00 00 00 00 00 00 00 00 00 00 00 00 1e f7'],
+    ['FM9 Amp r1c2', buildInsert(0x12, 58, gp(1, 0)), 'f0 00 01 74 12 01 32 00 3a 00 00 00 06 00 00 00 00 00 00 00 00 18 f7'],
+    ['FM9 Cab r1c4', buildInsert(0x12, 62, gp(3, 0)), 'f0 00 01 74 12 01 32 00 3e 00 00 00 12 00 00 00 00 00 00 00 00 08 f7'],
+    ['III Amp r1c1', buildInsert(0x10, 58, gp(0, 0)), 'f0 00 01 74 10 01 32 00 3a 00 00 00 00 00 00 00 00 00 00 00 00 1c f7'],
+    ['III Amp r1c2', buildInsert(0x10, 58, gp(1, 0)), 'f0 00 01 74 10 01 32 00 3a 00 00 00 06 00 00 00 00 00 00 00 00 1a f7'],
+    // FM3 (model 0x11) is a 4-row x 12-col grid: gridPos = col*4 + row. Cab at
+    // r4c12 -> (12-1)*4 + (4-1) = 47. A third model byte for the cross-family axis.
+    ['FM3 Amp r1c1', buildInsert(0x11, 58, 0), 'f0 00 01 74 11 01 32 00 3a 00 00 00 00 00 00 00 00 00 00 00 00 1d f7'],
+    ['FM3 Cab r4c12', buildInsert(0x11, 62, 47), 'f0 00 01 74 11 01 32 00 3e 00 00 00 2f 00 00 00 00 00 00 00 00 36 f7'],
+  ];
+  for (const [label, got, wantHex] of fixtures) {
+    const want = parseHex(wantHex);
+    if (got.length !== want.length || got.some((b, i) => b !== want[i])) {
+      return `${label}: built ${got.map(h2).join(' ')} != captured ${wantHex}`;
+    }
+  }
+  return null;
+}
+
+function caseGen3Fn01GridRouting(): string | null {
+  // Gen-3 routing write (fn=0x01 sub=0x35): connects two adjacent-column cells.
+  // 26-byte frame; only bytes 12/21/22/23 vary.
+  //
+  // Two formula variants (see cookbook gen3-fn01-grid-routing):
+  //   6-row (III/FM9): b22 uses scaled colTerm + destSign; b23 uses |destRow-3| mod-4 wrap.
+  //   4-row (FM3):     b22 uses colTerm=srcCol, no destSign; b23=(destRow-1)*32 linear.
+  const xor7 = (b: number[]): number => b.reduce((a, x) => a ^ x, 0) & 0x7f;
+
+  const build6row = (model: number, srcRow: number, srcCol: number, destRow: number): number[] => {
+    const srcGp = (srcCol - 1) * 6 + (srcRow - 1);
+    const b21 = Math.floor(srcGp / 2);
+    const colTerm = Math.floor((3 * (srcCol - 1)) / 2) + 1;
+    const destSign = destRow >= 3 ? 1 : 0;
+    const b22 = ((srcGp & 1) << 6) | (colTerm + destSign);
+    const b23 = ((Math.abs(destRow - 3) + (srcCol % 2 === 0 ? 2 : 0)) % 4) << 5;
+    const body = [0xf0, 0x00, 0x01, 0x74, model, 0x01, 0x35, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00,
+      b21, b22, b23];
+    return [...body, xor7(body), 0xf7];
+  };
+
+  const build4row = (srcRow: number, srcCol: number, destRow: number): number[] => {
+    const srcGp = (srcCol - 1) * 4 + (srcRow - 1);
+    const b21 = Math.floor(srcGp / 2);
+    const b22 = ((srcGp & 1) << 6) | srcCol;
+    const b23 = (destRow - 1) << 5;
+    const body = [0xf0, 0x00, 0x01, 0x74, 0x11, 0x01, 0x35, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00,
+      b21, b22, b23];
+    return [...body, xor7(body), 0xf7];
+  };
+
+  const h2 = (b: number): string => b.toString(16).padStart(2, '0');
+
+  // 6-row fixtures: FM9-Edit loopMIDI, 2026-06-05 (10 of 26 corpus cables)
+  const fixtures6: [string, number, number, number, string][] = [
+    ['A r2c3->r3c4', 2,3,3, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 06 45 00 63 f7'],
+    ['C r3c3->r3c4', 3,3,3, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 07 05 00 22 f7'],
+    ['D r2c5->r3c6', 2,5,3, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 0c 48 00 64 f7'],
+    ['sweep r3c3->r1c4', 3,3,1, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 07 04 40 63 f7'],
+    ['sweep r3c3->r6c4', 3,3,6, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 07 05 60 42 f7'],
+    ['col r3c1->r3c2', 3,1,3, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 01 02 00 23 f7'],
+    ['col r3c5->r3c6', 3,5,3, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 0d 08 00 25 f7'],
+    ['r1c3->r1c4',  1,3,1, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 06 04 40 62 f7'],
+    ['r4c3->r1c4',  4,3,1, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 07 44 40 23 f7'],
+    ['r6c3->r6c4',  6,3,6, 'f0 00 01 74 12 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 08 45 60 0d f7'],
+  ];
+
+  // 4-row fixtures: FM3-Edit loopMIDI, 2026-06-05 (7 of 10 corpus cables)
+  // These include the key discriminating cables that prove the formula branch.
+  const fixtures4: [string, number, number, number, string][] = [
+    ['FM3 r2c1->r2c2 (baseline)',        2,1,2, 'f0 00 01 74 11 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 00 41 20 42 f7'],
+    ['FM3 r4c1->r4c2 (destRow=4 b23=60)',4,1,4, 'f0 00 01 74 11 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 01 41 60 03 f7'],
+    ['FM3 r2c1->r4c2 (fan-out)',          2,1,4, 'f0 00 01 74 11 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 00 41 60 02 f7'],
+    ['FM3 r2c2->r2c3 (even srcCol KEY)', 2,2,2, 'f0 00 01 74 11 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 02 42 20 43 f7'],
+    ['FM3 r2c3->r2c4 (col3 colTerm=3)',  2,3,2, 'f0 00 01 74 11 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 04 43 20 44 f7'],
+    ['FM3 r4c3->r2c4 (cross-row)',        4,3,2, 'f0 00 01 74 11 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 05 43 20 45 f7'],
+    ['FM3 r1c2->r1c3 (row-1 even-col!)', 1,2,1, 'f0 00 01 74 11 01 35 00 00 00 00 00 01 00 00 00 00 00 00 02 00 02 02 00 23 f7'],
+  ];
+
+  for (const [label, sr, sc, dr, wantHex] of fixtures6) {
+    const got = build6row(0x12, sr, sc, dr);
+    const want = parseHex(wantHex);
+    if (got.length !== want.length || got.some((b, i) => b !== want[i])) {
+      return `6-row ${label}: built ${got.map(h2).join(' ')} != captured ${wantHex}`;
+    }
+  }
+  for (const [label, sr, sc, dr, wantHex] of fixtures4) {
+    const got = build4row(sr, sc, dr);
+    const want = parseHex(wantHex);
+    if (got.length !== want.length || got.some((b, i) => b !== want[i])) {
+      return `4-row ${label}: built ${got.map(h2).join(' ')} != captured ${wantHex}`;
+    }
+  }
+  return null;
+}
+
+function caseGen3Fn01StorePreset(): string | null {
+  // Gen-3 store / save-to-location (fn=0x01 sub=0x26): presetNum @ septet 12-13
+  // LSB-first. Fixtures from FM9-Edit (0x12) AND AxeEdit III (0x10) over
+  // loopMIDI: same op across two model bytes (cross-family axis, no hardware).
+  const xor7 = (b: number[]): number => b.reduce((a, x) => a ^ x, 0) & 0x7f;
+  const buildStore = (model: number, presetNum: number): number[] => {
+    const body = [
+      0xf0, 0x00, 0x01, 0x74, model, 0x01, 0x26, 0x00, 0x00, 0x00, 0x00, 0x00,
+      presetNum & 0x7f, (presetNum >> 7) & 0x7f, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    return [...body, xor7(body), 0xf7];
+  };
+  const h2 = (b: number): string => b.toString(16).padStart(2, '0');
+  const fixtures: [string, number[], string][] = [
+    ['FM9 save in place (preset 0)', buildStore(0x12, 0), 'f0 00 01 74 12 01 26 00 00 00 00 00 00 00 00 00 00 00 00 00 00 30 f7'],
+    ['FM9 save to preset 10', buildStore(0x12, 10), 'f0 00 01 74 12 01 26 00 00 00 00 00 0a 00 00 00 00 00 00 00 00 3a f7'],
+    ['FM9 save to preset 5', buildStore(0x12, 5), 'f0 00 01 74 12 01 26 00 00 00 00 00 05 00 00 00 00 00 00 00 00 35 f7'],
+    ['III save to preset 5', buildStore(0x10, 5), 'f0 00 01 74 10 01 26 00 00 00 00 00 05 00 00 00 00 00 00 00 00 37 f7'],
+  ];
+  for (const [label, got, wantHex] of fixtures) {
+    const want = parseHex(wantHex);
+    if (got.length !== want.length || got.some((b, i) => b !== want[i])) {
+      return `${label}: built ${got.map(h2).join(' ')} != captured ${wantHex}`;
+    }
+  }
+  return null;
+}
+
+function caseGen3EditorSyncReadSurface(): string | null {
+  // Real FM9 (model 0x12) connect+sync frames: every fn=0x01 response ECHOES
+  // the query's bytes 5..11, and each sub-action has a fixed response length.
+  // A block renders as PLACED iff the sub=0x7b value bytes 12..13 are nonzero.
+  const xor7 = (b: readonly number[]): number => b.reduce((a, x) => a ^ x, 0) & 0x7f;
+  const placedQ = parseHex('f0 00 01 74 12 01 7b 00 3a 00 00 00 00 00 00 00 00 00 00 00 00 57 f7');
+  const placedR = parseHex('f0 00 01 74 12 01 7b 00 3a 00 00 00 76 01 00 00 00 00 00 00 00 20 f7');
+  // Echo invariant: response bytes 5..11 == query bytes 5..11.
+  for (let i = 5; i <= 11; i++) {
+    if (placedR[i] !== placedQ[i]) return `sub=0x7b echo broke at byte ${i}: ${placedR[i]} ≠ ${placedQ[i]}`;
+  }
+  // Placed marker nonzero + valid checksum + 23-byte length.
+  if (placedR.length !== 23) return `sub=0x7b response length ${placedR.length} ≠ 23`;
+  if ((placedR[12] | placedR[13]) === 0) return 'sub=0x7b placed block has zero marker bytes';
+  if (placedR[placedR.length - 2] !== xor7(placedR.slice(0, -2))) return 'sub=0x7b checksum mismatch';
+  // The 0x74 bulk-read head is 12 bytes (no flag byte; byte 10 is the checksum).
+  const head = parseHex('f0 00 01 74 12 74 42 00 24 02 07 f7');
+  if (head.length !== 12) return `0x74 head length ${head.length} ≠ 12`;
+  if (head[10] !== xor7(head.slice(0, 10))) return '0x74 head byte 10 is not the checksum (spurious flag byte?)';
+  // itemCount in the head is channel-blocked: 292 = 73 × 4.
+  const itemCount = (head[8] & 0x7f) | ((head[9] & 0x7f) << 7);
+  if (itemCount % 4 !== 0) return `itemCount ${itemCount} is not 4 × paramCount (channel-blocked)`;
+
+  // FM3 cross-family (query side): FM3-Edit (model byte 0x11, wire-confirmed)
+  // drives the SAME fn=0x01 read surface — same sub-actions, same sub=0x2e
+  // layout-query address, same effectId-at-bytes-8..9 block addressing.
+  const fm3LayoutQ = parseHex('f0 00 01 74 11 01 2e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 3b f7');
+  const fm9LayoutQ = parseHex('f0 00 01 74 12 01 2e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 38 f7');
+  if (fm3LayoutQ[4] !== 0x11) return `FM3 model byte ${fm3LayoutQ[4]} ≠ 0x11`;
+  // identical sub-action + address region (bytes 6..11) across model bytes
+  for (let i = 6; i <= 11; i++) {
+    if (fm3LayoutQ[i] !== fm9LayoutQ[i]) return `FM3/FM9 sub=0x2e query diverges at byte ${i}`;
+  }
+  const fm3DescQ = parseHex('f0 00 01 74 11 01 01 00 02 00 00 00 00 00 00 00 00 00 00 00 00 16 f7');
+  if (((fm3DescQ[8] & 0x7f) | ((fm3DescQ[9] & 0x7f) << 7)) !== 2) return 'FM3 sub=0x01 effectId not at bytes 8..9';
+  if (fm3DescQ[fm3DescQ.length - 2] !== xor7(fm3DescQ.slice(0, -2))) return 'FM3 sub=0x01 query checksum mismatch';
+  return null;
+}
+
+function caseGen1NibbleSplit(): string | null {
+  // gen-1 (Axe-Fx Standard/Ultra) nibble-split: every 8-bit field (block id,
+  // param id, value) goes on the wire as two MIDI bytes, low nibble first:
+  //   [v & 0x0f, (v >> 4) & 0x0f]. Each byte is a single nibble (0..15), so
+  // the high bit is always clear. NOT gen-2 septet, NOT gen-3 float32.
+  // See fractal-midi/src/axe-fx-gen1/nibble.ts.
+  const split = (v: number): [number, number] => [v & 0x0f, (v >> 4) & 0x0f];
+  const join = (lo: number, hi: number): number => ((hi & 0x0f) << 4) | (lo & 0x0f);
+  // Worked examples printed in the published Ultra SysEx doc.
+  const fixtures: { v: number; lo: number; hi: number }[] = [
+    { v: 0, lo: 0x0, hi: 0x0 },
+    { v: 163, lo: 0x3, hi: 0xa }, // doc: value 163 = 0xA3 -> "03 0A"
+    { v: 100, lo: 0x4, hi: 0x6 }, // doc: Compressor 1 block dec 100 = 0x64 -> "04 06"
+    { v: 70, lo: 0x6, hi: 0x4 }, // doc: Amp TYPE max 70 = 0x46 -> "06 04"
+    { v: 254, lo: 0xe, hi: 0xf },
+    { v: 255, lo: 0xf, hi: 0xf },
+  ];
+  for (const fx of fixtures) {
+    const [lo, hi] = split(fx.v);
+    if (lo !== fx.lo || hi !== fx.hi) return `gen-1 split(${fx.v}) = [${lo},${hi}], expected [${fx.lo},${fx.hi}]`;
+    if (join(lo, hi) !== fx.v) return `gen-1 join round-trip failed for v=${fx.v}`;
+  }
+  // Full 0..255 round-trip + 7-bit-clean (the doc's complete conversion table oracle).
+  for (let v = 0; v <= 255; v++) {
+    const [lo, hi] = split(v);
+    if (lo & 0x80 || hi & 0x80) return `gen-1 nibble not 7-bit-clean for v=${v}`;
+    if (join(lo, hi) !== v) return `gen-1 0..255 round-trip failed at ${v}`;
+  }
+  // Full set-param envelope (fn 0x02, fixed 0x01 trailer, NO checksum):
+  //   Comp 2 (block 101) Knee (param 5) = SOFTER (2)
+  //   -> F0 00 01 74 01 02 05 06 05 00 02 00 01 F7
+  const env = (block: number, param: number, value: number): number[] => [
+    0xf0, 0x00, 0x01, 0x74, 0x01, 0x02, ...split(block), ...split(param), ...split(value), 0x01, 0xf7,
+  ];
+  const got = env(101, 5, 2);
+  const expected = [0xf0, 0x00, 0x01, 0x74, 0x01, 0x02, 0x05, 0x06, 0x05, 0x00, 0x02, 0x00, 0x01, 0xf7];
+  for (let i = 0; i < expected.length; i++) {
+    if (got[i] !== expected[i]) {
+      return `gen-1 envelope drift at byte ${i}: expected 0x${expected[i].toString(16)}, got 0x${got[i].toString(16)}`;
+    }
+  }
+  // Trailer is a FIXED byte, not an XOR checksum: confirm the XOR of the
+  // worked example's F0..value payload is 0x02 (not the 0x01 trailer).
+  let xor = 0;
+  for (const b of got.slice(0, 12)) xor ^= b;
+  if ((xor & 0x7f) === 0x01) return `gen-1 trailer 0x01 unexpectedly equals the payload XOR (would imply a checksum)`;
+  return null;
+}
+
 const FUNCTIONAL_CASES: Record<string, () => string | null> = {
+  'gen3-editor-sync-read-surface': caseGen3EditorSyncReadSurface,
+  'gen3-fn01-grid-set-position-insert': caseGen3Fn01GridSetPositionInsert,
+  'gen3-fn01-grid-routing': caseGen3Fn01GridRouting,
+  'gen3-fn01-store-preset': caseGen3Fn01StorePreset,
+  'gen3-fn03-request-preset-dump': caseGen3Fn03RequestPresetDump,
+  'gen3-enum-label-septet-stream': caseGen3EnumLabelSeptetStream,
+  'gen3-enum-setecho-rawid-name': caseGen3EnumSetEchoRawIdName,
+  'gen3-septet-label-wrong-offset': caseGen3SeptetLabelWrongOffset,
+  'gen3-fn1f-poll-block-bulk-read': caseGen3Fn1fPollBlockBulkRead,
   'xor-7f-envelope-checksum': caseXor7fEnvelopeChecksum,
   'septet-14bit': caseSeptet14bit,
+  'gen1-nibble-split': caseGen1NibbleSplit,
   'septet-21bit-byte2-mask-preservation': caseSeptet21bitByte2MaskPreservation,
   'vendor-envelope-descriptor-table': caseVendorEnvelopeDescriptorTable,
   'xor-fold-hash': caseXorFoldHash,

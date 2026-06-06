@@ -131,10 +131,6 @@ serious AI sessions; that's your full-flash recovery file.
 - **Cannot send arbitrary SysEx without you explicitly asking for it.**
   The `send_sysex` primitive exists for developers; it's not a path the
   AI takes during normal "build me a tone" conversations.
-- **Cannot operate while AM4-Edit is open and grabbing the port (on
-  some Windows configs).** If your AM4 driver is in exclusive-access
-  mode and AM4-Edit has the port, the server reports "port not found"
-  and stops. No data corruption, just no connection.
 - **Cannot persist anything you can't see in chat.** Every change is a
   tool call you can read.
 

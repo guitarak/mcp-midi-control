@@ -15,7 +15,7 @@
  *   npx tsx scripts/agent-regression/runner.ts <case-id>
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -328,15 +328,34 @@ async function runCaseOnce(opts: RunOnceOptions): Promise<CaseResult> {
     }
   });
 
+  // Wall-limit kill. On Windows, `child.kill('SIGTERM')` does NOT reliably
+  // terminate the `claude` process tree (claude spawns its own MCP-server
+  // child, and SIGTERM is emulated): the runner's `await child.on('exit')`
+  // then never resolves and the whole sweep hangs forever. Force-kill the
+  // entire tree (taskkill /T /F on Windows; SIGKILL elsewhere), and arm a
+  // grace timer that resolves the await even if the OS never delivers `exit`,
+  // so a runaway case always terminates the case instead of the sweep.
+  let timedOut = false;
   const maxWall = (testCase.expectations.max_wall_seconds ?? 120) * 1000;
-  const timeout = setTimeout(() => {
-    if (!child.killed) child.kill('SIGTERM');
-  }, maxWall);
-
   const exitCode: number = await new Promise((resolve) => {
-    child.on('exit', (code) => resolve(code ?? -1));
+    let settled = false;
+    const settle = (code: number): void => {
+      if (settled) return;
+      settled = true;
+      resolve(code);
+    };
+    child.on('exit', (code) => settle(code ?? -1));
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      forceKillTree(child.pid);
+      // If the kill still doesn't yield an `exit` event within a short grace
+      // window, resolve anyway so the harness reports a timeout instead of
+      // hanging. The orphaned tree, if any, is reaped by the OS.
+      setTimeout(() => settle(-1), 5000);
+    }, maxWall);
+    // Clear the wall timer once the child exits on its own.
+    child.on('exit', () => clearTimeout(timeout));
   });
-  clearTimeout(timeout);
 
   const wall_seconds = (Date.now() - startedAt) / 1000;
 
@@ -346,7 +365,16 @@ async function runCaseOnce(opts: RunOnceOptions): Promise<CaseResult> {
   // sequence shown in the report reflects what the AGENT did.
   const agent_tool_calls = tool_calls.filter((c) => !HARNESS_INVISIBLE_TOOLS.has(c.short_name));
 
-  const failures = applyAssertions(testCase, agent_tool_calls, final_text, exitCode);
+  // A wall-limit kill reports as a clean timeout, not a confusing "exited with
+  // code -1": pass exitCode 0 to applyAssertions so its exit-code check stays
+  // quiet, and prepend the timeout failure explicitly.
+  const failures = timedOut
+    ? [
+        `timed out after ${(maxWall / 1000).toFixed(0)}s wall limit (force-killed); ` +
+          `agent made ${agent_tool_calls.length} tool call(s) before the cutoff`,
+        ...applyAssertions(testCase, agent_tool_calls, final_text, 0),
+      ]
+    : applyAssertions(testCase, agent_tool_calls, final_text, exitCode);
 
   // Default flipped to ALWAYS trace (for cross-session
   // analytics on tool usage, wall times, agent decision patterns). Set
@@ -468,6 +496,27 @@ function processEvent(
 
 function stripPrefix(name: string): string {
   return name.startsWith(MCP_TOOL_PREFIX) ? name.slice(MCP_TOOL_PREFIX.length) : name;
+}
+
+/**
+ * Force-kill a spawned process AND its descendants. `claude` spawns its own
+ * MCP-server child, and on Windows a plain `child.kill('SIGTERM')` neither
+ * reaches that grandchild nor reliably terminates `claude` itself, so the
+ * runner hangs on `child.on('exit')`. `taskkill /T /F` walks the tree by PID;
+ * on POSIX, SIGKILL the group. Best-effort: a race where the tree already
+ * exited just throws, which we swallow.
+ */
+function forceKillTree(pid: number | undefined): void {
+  if (pid === undefined) return;
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /pid ${pid} /T /F`, { stdio: 'ignore' });
+    } else {
+      process.kill(pid, 'SIGKILL');
+    }
+  } catch {
+    /* already exited */
+  }
 }
 
 /**
@@ -608,7 +657,7 @@ function applyAssertions(
       failures.push(`tool_call_validators: \`${v.tool}\` was never called`);
       continue;
     }
-    const idx = v.call_index ?? 0;
+    const idx = v.call_index === 'last' ? matches.length - 1 : (v.call_index ?? 0);
     if (idx >= matches.length) {
       failures.push(`tool_call_validators: \`${v.tool}\` was called ${matches.length}× but validator wanted index ${idx}`);
       continue;
@@ -685,7 +734,19 @@ if (isMain && process.argv[2] !== undefined) {
     process.exit(1);
   }
   const result = await runCase({ case: testCase, verbose: true });
+  // Single-case dev runs append to the same corpus as the full sweep (tagged
+  // via:'single'), so iteration history isn't lost — only full sweeps logged
+  // before. Code-state is dirty-aware (see resultsLog.ts).
+  const { captureCodeState, appendResultRow, loadRows, caseHistoryLine } = await import('./resultsLog.js');
+  appendResultRow(captureCodeState(), result, {
+    mockFixture: testCase.mockFixture,
+    via: 'single',
+    model: 'claude-sonnet-4-6',
+  });
   console.log(`\n${result.passed ? 'PASS' : 'FAIL'}: ${result.case.id} (${result.wall_seconds.toFixed(1)}s, ${result.tool_calls.length} tool calls)`);
   for (const f of result.failures) console.log(`  ✗ ${f}`);
+  // Inline trend (automatic — no separate command needed).
+  const hist = caseHistoryLine(loadRows(), result.case.id);
+  if (hist !== '') console.log(`  ${hist}`);
   process.exit(result.passed ? 0 : 1);
 }

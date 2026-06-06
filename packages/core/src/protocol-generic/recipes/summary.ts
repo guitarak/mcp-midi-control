@@ -30,11 +30,13 @@
  * the agent sees exactly what's safe to apply.
  */
 
+import { AMP_RECIPES } from './amp.js';
 import { AUTO_WAH_RECIPES } from './autoWah.js';
 import { BLOCK_STACK_RECIPES } from './blockStack.js';
 import { FILTER_RECIPES } from './filter.js';
 import { HYDRA_PATCH_RECIPES } from './patchArchetype.js';
 import { PITCH_RECIPES, type RecipePort } from './pitch.js';
+import { REVERB_RECIPES } from './reverb.js';
 import { SCENE_LEVELING_RECIPES } from './sceneLeveling.js';
 import { WAH_RECIPES } from './wah.js';
 
@@ -46,7 +48,7 @@ export interface RecipeSummaryEntry {
    * vocabulary domain (e.g. all `pitch` recipes when the user asks
    * for "harmony" or "octave").
    */
-  readonly family: 'auto_wah' | 'pitch' | 'wah' | 'filter' | 'scene_leveling' | 'block_stack' | 'patch_archetype';
+  readonly family: 'auto_wah' | 'pitch' | 'wah' | 'filter' | 'amp' | 'reverb' | 'scene_leveling' | 'block_stack' | 'patch_archetype';
   /** One-line description for the agent to surface. */
   readonly description: string;
   /**
@@ -173,7 +175,13 @@ export function summarizeRecipesForPort(port: string): readonly RecipeSummaryEnt
   }
 
   const portKey = normalized as RecipePort;
-  if (portKey !== 'am4' && portKey !== 'axe-fx-ii' && portKey !== 'axe-fx-iii') {
+  if (
+    portKey !== 'am4' &&
+    portKey !== 'axe-fx-ii' &&
+    portKey !== 'axe-fx-iii' &&
+    portKey !== 'fm3' &&
+    portKey !== 'fm9'
+  ) {
     return [];
   }
   const entries: RecipeSummaryEntry[] = [];
@@ -230,6 +238,32 @@ export function summarizeRecipesForPort(port: string): readonly RecipeSummaryEnt
       family: 'filter',
       description: recipe.description,
       target_block: 'filter',
+      params,
+    });
+  }
+
+  for (const recipe of Object.values(AMP_RECIPES)) {
+    if (!recipe.applicable_devices.includes(portKey)) continue;
+    const params = recipe.params_per_device[portKey];
+    if (params === undefined) continue;
+    entries.push({
+      id: recipe.name,
+      family: 'amp',
+      description: recipe.description,
+      target_block: 'amp',
+      params,
+    });
+  }
+
+  for (const recipe of Object.values(REVERB_RECIPES)) {
+    if (!recipe.applicable_devices.includes(portKey)) continue;
+    const params = recipe.params_per_device[portKey];
+    if (params === undefined) continue;
+    entries.push({
+      id: recipe.name,
+      family: 'reverb',
+      description: recipe.description,
+      target_block: 'reverb',
       params,
     });
   }

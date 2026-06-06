@@ -4,10 +4,11 @@ Pure-TypeScript codec and parameter dictionaries for Fractal Audio
 guitar processors. Build and parse the SysEx wire bytes a Fractal
 device speaks, without pulling in a MIDI transport library.
 
-> **First public release.** Covers AM4 and Axe-Fx II at hardware-verified
-> parity, plus the Axe-Fx III at codec and calibration via public-capture
-> verification and JUCE-BinaryData mining (III hardware-verification stays
-> community-driven; see the III notes in the coverage table).
+> Covers AM4 and Axe-Fx II at hardware-verified parity, the modern Fractal
+> family (Axe-Fx III / FM3 / FM9) at codec and calibration via public-capture
+> verification and editor-binary mining, and the Axe-Fx Standard/Ultra (gen-1)
+> as a SET-only descriptor. The gen-3 family stays community-driven for
+> hardware verification; see the per-device notes in the coverage table.
 
 > **Unaffiliated community library.** "Fractal Audio", "AM4",
 > "Axe-Fx", "Axe-Fx II", "Axe-Fx III", "FM3", and "FM9" are
@@ -84,8 +85,9 @@ import { params } from 'fractal-midi/axe-fx-iii';
 | AM4 | ✅ | ✅ | ✅ | ✅ |
 | Axe-Fx II | ✅ | ✅ | ✅ | ✅ |
 | Axe-Fx III | ✅ (full catalog) | ✅ ([see note](#axe-fx-iii-codec-note)) | ✅ ([see note](#axe-fx-iii-calibration-note)) | 🟡 community beta ([see note](#axe-fx-iii-hardware-note)) |
-| FM3 | ❌ | ❌ | ❌ | ❌ |
-| FM9 | ❌ | ❌ | ❌ | ❌ |
+| FM3 | ✅ (device-true, mined from FM3-Edit) | ✅ (shared gen-3) | 🟡 (linear; some non-linear pending) | ❌ community beta |
+| FM9 | ✅ (device-true, mined from FM9-Edit) | ✅ (shared gen-3) | 🟡 (linear; some non-linear pending) | ❌ community beta |
+| Axe-Fx Standard/Ultra (gen-1) | ✅ (922 params) | ✅ (nibble-split, SET-only) | 🟡 (linear; 171 non-linear pending) | ❌ community beta (no gen-1 hardware) |
 
 ### Coverage notes
 
@@ -130,9 +132,14 @@ that disagrees with their hardware.
 
 FM3 and FM9 share the III protocol family (model bytes `0x11` /
 `0x12` vs III's `0x10`, identical envelope per Fractal's v1.4 MIDI
-spec). Catalog + codec + calibration for those devices are planned as
-mechanical ports of the III pipeline once the FM3-Edit / FM9-Edit
-JUCE binaries are mined for parameterName + dispatcher tables.
+spec). Both ship device-true param catalogs mined from their own
+FM3-Edit / FM9-Edit JUCE binaries (paramIds are device-specific and are
+never reused from the III) on the shared gen-3 codec. Calibration
+covers the linear params; some non-linear display formulas are still
+pending. Neither has been hardware-verified by the maintainer, so they
+remain community beta: FM9 has real community captures confirming the
+shared read and preset-dump paths, while FM3 confirmation is still
+open.
 
 ## License
 

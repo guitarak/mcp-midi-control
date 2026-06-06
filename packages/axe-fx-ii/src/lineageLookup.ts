@@ -206,7 +206,7 @@ export function runAxeFxIILineageLookup(
     const shapeCount = [ask.name !== undefined, ask.real_gear !== undefined, hasStructured].filter(Boolean).length;
     if (shapeCount !== 1) {
         throw new Error(
-            'axefx2_lookup_lineage requires exactly one call shape: `name` (forward), `real_gear` (fuzzy reverse), or at least one structured filter (`manufacturer` / `model`).',
+            'lookup_lineage requires exactly one call shape: `name` (forward), `real_gear` (fuzzy reverse), or at least one structured filter (`manufacturer` / `model`).',
         );
     }
     const records = loadAxeFxIILineage(ask.block_type);

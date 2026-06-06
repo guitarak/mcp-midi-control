@@ -110,17 +110,19 @@ async function main(): Promise<void> {
       console.log(applyText.split('\n').slice(0, 3).map((l) => `      ${l}`).join('\n'));
     }
 
-    console.log(`\nStep 2: reading grid layout to verify chain integrity…`);
-    const grid = await c.callTool({ name: 'axefx2_get_grid_layout', arguments: {} });
-    const gridText = ext(grid);
-    const hasBreak = /CHAIN BREAK/i.test(gridText);
+    console.log(`\nStep 2: reading get_preset to verify chain integrity…`);
+    const snap = await c.callTool({ name: 'get_preset', arguments: { port: 'axe-fx-ii' } });
+    const snapText = ext(snap);
+    const ci = (snap as { structuredContent?: { chain_integrity?: { ok?: boolean; summary?: string } } })
+      .structuredContent?.chain_integrity;
+    const hasBreak = ci ? ci.ok === false : /chain.{0,20}break/i.test(snapText);
     if (hasBreak) {
-      console.log(`  ✗ grid reports a chain break:`);
-      console.log(gridText.split('\n').slice(0, 12).map((l) => `      ${l}`).join('\n'));
+      console.log(`  ✗ chain_integrity reports a break:`);
+      console.log(`      ${ci?.summary ?? snapText.split('\n').slice(0, 12).join('\n      ')}`);
       pass = false;
     } else {
-      console.log(`  ✓ grid reads clean (6 blocks + 6 shunts, full chain)`);
-      console.log(gridText.split('\n').slice(0, 6).map((l) => `      ${l}`).join('\n'));
+      console.log(`  ✓ chain_integrity reads clean (6 blocks, full chain)`);
+      console.log(`      ${ci?.summary ?? snapText.split('\n').slice(0, 6).join('\n      ')}`);
     }
   } finally {
     await c.close();

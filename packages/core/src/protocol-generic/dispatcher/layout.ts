@@ -12,7 +12,7 @@ import {
 } from '../types.js';
 
 import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
-import { openCtx, requireDevice } from './core.js';
+import { assertInstanceSupported, openCtx, requireDevice } from './core.js';
 import { resolveBlockName } from './resolvers.js';
 
 /**
@@ -35,6 +35,11 @@ export async function executeSetBlock(args: {
       `set_block is not implemented for ${descriptor.display_name}.`,
     );
   }
+  assertInstanceSupported(
+    descriptor,
+    args.change.instance,
+    args.change.block_type ? `set_block ${args.change.block_type}` : 'set_block',
+  );
   const ctx = openCtx(descriptor);
   const result = await descriptor.writer.setBlock(ctx, args.slot, args.change);
   // BK-075: block placement just changed; invalidate the cached layout
@@ -62,6 +67,7 @@ export async function executeSetBypass(args: {
       `set_bypass is not implemented for ${descriptor.display_name}.`,
     );
   }
+  assertInstanceSupported(descriptor, args.instance, `set_bypass ${args.block}`);
   const canonical_block = resolveBlockName(descriptor, args.block);
   const ctx = openCtx(descriptor);
   const result = await descriptor.writer.setBypass(ctx, canonical_block, args.bypassed, args.instance);

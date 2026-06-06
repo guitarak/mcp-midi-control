@@ -81,7 +81,7 @@ implementation strategy:
 
 | Capability | AM4 | Axe-Fx II | Hydrasynth |
 |---|---|---|---|
-| Device-sourced dirty signal | ❌ not exposed (verified by capture: zero MIDI bytes on front-panel edits). Dirty gate polls the working-buffer fingerprint on the navigation seam; see `bufferFingerprint.ts` + `tools/safeEdit.ts`. | ✅ via `0x74` state-broadcast | ❌ not exposed in MIDI |
+| Device-sourced dirty signal | ❌ not exposed (verified by capture: zero MIDI bytes on front-panel edits). Dirty gate uses the deterministic in-memory `markDirty`/`markClean` tracker (`core/server-shared/bufferDirty.ts`), set at AM4 write call sites + cleared on save/switch; see `tools/safeEdit.ts`. Does NOT track front-panel / parallel-editor edits (deliberate tradeoff; the old fingerprint poll did, but non-deterministically, which false-refused users). | ✅ via `0x74` state-broadcast | ❌ not exposed in MIDI |
 | `on_active_preset_edited` guard | ✅ unified surface (`apply_preset`, `switch_preset`) | ✅ shipped | n/a (no dirty detection) |
 | `save_authorized` guard on apply-at-slot | ✅ unified `apply_preset(target_location, save_authorized)` | ✅ shipped | ✅ `apply_patch(save: true)` |
 | Multi-preset overwrite scan | ✅ `scan_locations` | ✅ `scan_locations` | n/a (different patch model) |
@@ -104,16 +104,19 @@ broadcast that fires on edits (`0x74` triple). We listen passively
 and flip an in-memory `dirty[device]` flag. Device-sourced and
 authoritative.
 
-**Polled fingerprint (AM4).** Hardware probing confirmed AM4 emits
-zero unsolicited MIDI on front-panel edits; no push signal exists.
-Continuous polling (AM4-Edit does ~60 Hz) is too expensive for the
-MCP server. The dirty gate instead dumps the working buffer ONCE on
-the navigation seam, hashes it, and compares to the last cached
-"clean" fingerprint for the active location. Cache
-baselines are refreshed after every clean transition (post-switch,
-post-save). Catches our writes + front-panel knob turns + parallel-
-editor edits in one ~200 ms round-trip. Implemented in
-`packages/am4/src/bufferFingerprint.ts` + `tools/safeEdit.ts`.
+**Deterministic in-memory flag (AM4).** Hardware probing confirmed AM4
+emits zero unsolicited MIDI on front-panel edits; no push signal exists.
+The AM4 also has no transport-layer send classifier, so it fires
+`markDirty` (`core/server-shared/bufferDirty.ts`) at each acked
+edit-class write call site in `writer.ts` / `applyExecutor.ts` /
+`presetRestore.ts`, and `markClean` on save / switch — the same
+call-site model Axe-Fx II uses. `tools/safeEdit.ts` consults
+`isDirty(label)`. A prior version polled + hashed the working-buffer
+dump, but the AM4 dump is non-deterministic (~20% byte drift on a
+zero-mutation re-dump, 2026-05-28), so the hash both fails-open and
+false-refuses — a real user was refused a navigation immediately after
+a clean save (2026-06-03). Tradeoff vs. the old poll: this detects OUR
+edits reliably but not out-of-band front-panel / parallel-editor edits.
 
 **No detection (Hydrasynth).** Device doesn't expose a dirty signal
 and the patch-buffer dump cost is prohibitive. We don't fake it.
@@ -234,31 +237,30 @@ exercises the gates. Extending it to cover more of the unified
   the cache refresh isn't checked against a prior baseline). In
   practice this is closed by every clean transition the agent does.
 
-- **Device save we can't see.** If the user presses SAVE on the
-  device's own front panel, the working buffer is now identical to
-  flash at the active location. The next navigation gate dumps the
-  buffer, compares to the cached fingerprint, and finds a mismatch
-  (cached pre-save state vs. current post-save state). Result is a
-  false-positive warning: agent asks, user says "I saved it"
+- **Device save we can't see.** If we made edits (flag = dirty) and the
+  user then presses SAVE on the device's own front panel, the buffer now
+  matches flash but our in-memory flag is still dirty (we never saw the
+  front-panel save). The next navigation warns; user says "I saved it"
   → choose `'discard'`. Fail-safe (extra confirmation) rather than
   fail-dangerous (silent edit loss).
 
-- **Server restart.** Fingerprint cache is in-memory; resets on
-  restart. The first post-restart navigation has no baseline to
-  compare against and proceeds without checking. The post-navigation
-  refresh establishes the baseline for next time.
+- **Server restart.** The dirty flag is in-memory and resets to clean on
+  restart. The first post-restart navigation treats the buffer as clean
+  and proceeds; our own edits after restart re-arm the flag.
 
 ## References
 
-- `packages/core/src/server-shared/bufferDirty.ts`: shared dirty-flag tracker (Axe-Fx II uses this; AM4 doesn't, it uses the fingerprint cache instead)
+- `packages/core/src/server-shared/bufferDirty.ts`: shared deterministic dirty-flag tracker (`markDirty`/`markClean`/`isDirty`). Axe-Fx II, fractal-modern, AND AM4 all use it.
 - `packages/axe-fx-ii/src/tools/shared.ts:guardActiveBufferOrSave`:
   reference implementation of the warn/discard/save-first guard
 - `packages/axe-fx-ii/src/midi.ts`: device-sourced dirty
   classification (state-broadcast listener)
-- `packages/am4/src/bufferFingerprint.ts` + `tools/safeEdit.ts`:
-  AM4 polled-fingerprint implementation
-- AM4 doesn't broadcast on front-panel edits, full stop (verified
-  by capture). The polled-fingerprint approach is the answer to this
-  finding, not a workaround pending replacement.
-- AM4 dirty gate is always-poll (the hybrid code-side classifier was
-  removed; fingerprint is the single source of truth).
+- `packages/am4/src/tools/safeEdit.ts:guardActiveAM4BufferOrSave`:
+  AM4 guard; consults `isDirty`, fires `markDirty`/`markClean` at the
+  writer / applyExecutor / presetRestore call sites.
+- AM4 doesn't broadcast on front-panel edits, full stop (verified by
+  capture). The earlier polled-fingerprint workaround was removed
+  (2026-06-03): the AM4 dump is non-deterministic (~20% drift on a
+  zero-mutation re-dump), so the hash false-refused users. AM4 now
+  tracks ITS OWN edits via markDirty (not front-panel / parallel-editor
+  edits — accepted tradeoff for determinism).

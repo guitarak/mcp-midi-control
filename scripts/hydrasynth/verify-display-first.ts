@@ -70,9 +70,9 @@ for (const entry of HYDRASYNTH_NRPNS) {
   const f = NRPN_DISPLAY[entry.name];
   // Only params that have a forward decoder are in scope (we can only
   // round-trip what we can display). If it has a decoder, it MUST encode.
-  if (f?.decode) {
+  if (f !== undefined && typeof f.decode === 'function') {
     check(`${entry.name}: has encode (bidirectional)`, typeof f.encode === 'function',
-      'duration param has a display decoder but no inverse — add encode to its timeTable');
+      'duration param has a display decoder but no inverse: add encode to its timeTable');
   }
 }
 // Reverse: every encode-capable param must be a known display-first family

@@ -21,13 +21,18 @@ import type {
   BlockLayoutSnapshot,
   DeviceReader,
   DispatchCtx,
+  LocationRef,
+  OverwriteTargetInfo,
+  PresetBinaryDump,
   PresetSnapshot,
   PresetSnapshotSlot,
   PresetSlotSpec,
   ReadResult,
+  SavedSnapshot,
   ScannedLocation,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { receivePresetDumpStream } from '../presetDump.js';
 
 import {
   BLOCK_NAMES_BY_VALUE,
@@ -37,7 +42,9 @@ import {
   KNOWN_PARAMS,
   buildBlockLayoutSnapshot,
   buildReadParam,
+  buildRequestActiveBufferDump,
   decode as am4Decode,
+  roundDisplayValue,
   isReadResponseLong,
   parseLongReadBypassFlag,
   READ_TYPE_LONG,
@@ -71,6 +78,11 @@ import {
 
 import { parseAm4Location } from './schema.js';
 
+// Active-location state register (mirrors safeEdit.ts) — read by
+// checkOverwriteTarget to tell a refresh-of-current from a clobber-of-other.
+const LOCATION_STATE_PID_LOW = 0x00ce;
+const LOCATION_STATE_PID_HIGH = 0x000a;
+
 /**
  * Per-block pidLow list, derived once from KNOWN_PARAMS. Most blocks
  * have a single pidLow (e.g. drive = 0x76); amp spans two (0x3a tone
@@ -96,6 +108,69 @@ function pidLowsForBlock(blockType: string): readonly number[] {
 const SCENE_STATE_PID_LOW = 0x00ce;
 const SCENE_STATE_PID_HIGH = 0x000d;
 const BYPASS_STATE_PID_HIGH = 0x0003;
+
+/**
+ * Decode a `<block>.channel` selector read into an A/B/C/D letter.
+ *
+ * reverb / delay / drive read the channel index back as a clean raw u32
+ * (0..3), so the direct `enumValues[asUInt32LE]` lookup succeeds. The AMP
+ * channel selector at (0x003A, 0x07D2) is different: it reads back derived
+ * /cached firmware state, not the index (HW archive: 11244 / 19968 observed
+ * with no clean enum fit). The SYSEX-MAP records the SET side as "enum int
+ * 0..3 packed as float32", so we try a float32 interpretation as a
+ * best-effort fallback. This is NOT a guaranteed-correct decode of the
+ * active amp channel; on hardware it must be confirmed against the front
+ * panel for non-A channels. `get_preset(include_channel_state:true)` does
+ * not rely on it; it reads all four channels from the channel-blocked dump
+ * in FIXED A/B/C/D order.
+ */
+function decodeChannelSelector(
+  parsed: { asUInt32LE(): number; rawValue: Uint8Array },
+  enumValues: Record<number, string> | undefined,
+): { letter?: string; failureReason?: string } {
+  const wire = parsed.asUInt32LE();
+  const direct = enumValues?.[Math.round(wire)];
+  if (typeof direct === 'string') return { letter: direct };
+  const floatView = new DataView(parsed.rawValue.buffer, parsed.rawValue.byteOffset, 4);
+  const asFloat = floatView.getFloat32(0, true);
+  const rounded = Math.round(asFloat);
+  if (Number.isFinite(asFloat) && rounded >= 0 && rounded <= 3) {
+    const floatName = enumValues?.[rounded];
+    if (typeof floatName === 'string') return { letter: floatName };
+    return {
+      failureReason:
+        `channel float read ${asFloat} (rounded ${rounded}) not in enumValues ` +
+        `(have ${Object.keys(enumValues ?? {}).join(',')})`,
+    };
+  }
+  return {
+    failureReason:
+      `channel wire ${wire} (0x${wire.toString(16)}) not in enumValues ` +
+      `(have ${Object.keys(enumValues ?? {}).join(',')}); float32 interpretation = ${asFloat}`,
+  };
+}
+
+/**
+ * Read a channel-bearing block's ACTIVE channel as an A/B/C/D letter.
+ * Best-effort: returns `{ failureReason }` (never throws) when the selector
+ * register can't be resolved (notably amp; see `decodeChannelSelector`).
+ */
+async function readActiveChannelLetter(
+  conn: import('@mcp-midi-control/core/midi/transport.js').MidiConnection,
+  blockType: string,
+): Promise<{ letter?: string; failureReason?: string }> {
+  const channelKey = `${blockType}.channel` as ParamKey;
+  const channelParam = KNOWN_PARAMS[channelKey] as Param | undefined;
+  if (channelParam === undefined) {
+    return { failureReason: `no '${blockType}.channel' param registered in the codec` };
+  }
+  try {
+    const parsed = await sendReadAndParse(conn, channelParam.pidLow, channelParam.pidHigh);
+    return decodeChannelSelector(parsed, channelParam.enumValues as Record<number, string> | undefined);
+  } catch (err) {
+    return { failureReason: err instanceof Error ? err.message : String(err) };
+  }
+}
 
 async function readBypassState(
   conn: import('@mcp-midi-control/core/midi/transport.js').MidiConnection,
@@ -135,7 +210,51 @@ function decodeChunkValue(param: Param, wire: number): number | string {
     return enumValues?.[wire] ?? wire;
   }
   const internal = wire / 65534;
-  return am4Decode(param, internal);
+  return roundDisplayValue(param, am4Decode(param, internal));
+}
+
+/**
+ * Decode every registered param of `blockType` for one channel directly
+ * from the fn 0x1F chunk dump already in hand.
+ *
+ * The AM4 `0x75` body is CHANNEL-BLOCKED: it packs four contiguous copies
+ * of every paramId slot, one per channel, in FIXED order A/B/C/D (quarter 0
+ * = channel A), so `value index = channel * stride + pidHigh` with
+ * `stride = itemCount / 4`. Confirmed on live AM4 hardware 2026-06-04
+ * (`probe-am4-channel-{blocked,orientation,switch-test}.ts`): channel-bearing
+ * blocks all have `itemCount % 4 === 0` with DISTINCT quarters, and a
+ * reversible A->B->A switch left the quarters invariant (FIXED, not sliding).
+ * See `readOps.ts` and cookbook `am4-fn1f-atomic-read`.
+ *
+ * Non-channel-blocked chunks (`itemCount % 4 !== 0`, every non-channel
+ * register) degrade safely: only channel index 0 reads a value (at `pidHigh`),
+ * other channel indices return nothing for that chunk.
+ */
+function decodeChannelParams(
+  blockType: string,
+  chunks: ReadonlyMap<number, { itemCount: number; values: readonly number[] }>,
+  channelIndex: number,
+): Record<string, number | string> {
+  const out: Record<string, number | string> = {};
+  for (const [, param] of Object.entries(KNOWN_PARAMS)) {
+    const p = param as Param;
+    if (p.block !== blockType) continue;
+    const chunk = chunks.get(p.pidLow);
+    if (chunk === undefined) continue;
+    const { itemCount, values } = chunk;
+    let idx: number;
+    if (itemCount > 0 && itemCount % 4 === 0) {
+      const stride = itemCount / 4;
+      idx = channelIndex * stride + p.pidHigh;
+    } else {
+      // Not channel-blocked: a single copy at pidHigh; only channel A is real.
+      if (channelIndex !== 0) continue;
+      idx = p.pidHigh;
+    }
+    if (idx >= values.length) continue;
+    out[p.name] = decodeChunkValue(p, values[idx]);
+  }
+  return out;
 }
 
 /**
@@ -220,6 +339,92 @@ function formatApplicableKnobs(blockType: string, am4Name: string): string | und
   return lines.join('\n');
 }
 
+/**
+ * Save receipt. After a save persists, read back the working buffer with
+ * TARGETED deterministic reads only — the same primitives get_param /
+ * get_block_layout use, never the non-deterministic fn-0x1F bulk dump (whose
+ * chunk-to-paramId map is undecoded). Returns the 4-slot block chain plus the
+ * amp/drive MODEL NAMES (the bytes that distinguish one preset from another),
+ * and the persisted preset name at the just-saved location.
+ *
+ * Reads (worst case 7, ~350 ms): 4 block-slot reads + amp.type + drive.type
+ * + readPresetName(target). Each model read is gated on its block being placed
+ * (no wasted read when there's no drive). Every field but block_chain is
+ * best-effort: a thrown read omits the field, never throws. The caller
+ * (savePreset) treats the whole call as best-effort too — a failure here must
+ * not fail a save that already landed.
+ *
+ * `missing` collects field names whose read failed so the caller can surface
+ * an honest "could not confirm X" line instead of silently dropping it.
+ */
+export async function readSaveSnapshot(
+  ctx: DispatchCtx,
+  locationIndex: number,
+): Promise<{ snapshot: SavedSnapshot; missing: string[] }> {
+  const missing: string[] = [];
+
+  // 1. Block chain — 4 deterministic slot-register reads (same wire shape as
+  //    getBlockLayoutSnapshot). A failed slot read records 'none' for that
+  //    slot rather than aborting the chain.
+  const block_chain: string[] = [];
+  for (const position of [1, 2, 3, 4] as const) {
+    try {
+      const pidHigh = BLOCK_SLOT_PID_HIGH_BASE + (position - 1);
+      const parsed = await sendReadAndParse(ctx.conn, BLOCK_SLOT_PID_LOW, pidHigh);
+      const u32 = parsed.asUInt32LE();
+      block_chain.push(BLOCK_NAMES_BY_VALUE[u32] ?? 'none');
+    } catch {
+      block_chain.push('none');
+      missing.push(`block_chain[slot ${position}]`);
+    }
+  }
+
+  // 2/3. Amp + drive MODEL NAME via targeted single-param enum reads (the
+  //      get_param path: deterministic fn 0x02 GET, NOT the opaque fn-0x1F
+  //      chunk dump). Only read the type when the block is actually placed.
+  const readModel = async (
+    key: ParamKey,
+    blockName: string,
+    enumTable: readonly string[],
+    fieldLabel: string,
+  ): Promise<string | undefined> => {
+    if (!block_chain.includes(blockName)) return undefined; // block not placed
+    try {
+      const param = KNOWN_PARAMS[key] as Param;
+      const parsed = await sendReadAndParse(ctx.conn, param.pidLow, param.pidHigh);
+      const wire = parsed.asUInt32LE();
+      const name = enumTable[wire];
+      if (typeof name === 'string') return name;
+      missing.push(fieldLabel);
+      return undefined;
+    } catch {
+      missing.push(fieldLabel);
+      return undefined;
+    }
+  };
+  const amp_model = await readModel('amp.type' as ParamKey, 'amp', AMP_TYPES, 'amp_model');
+  const drive_model = await readModel('drive.type' as ParamKey, 'drive', DRIVE_TYPES, 'drive_model');
+
+  // 4. Persisted preset name at the target (non-destructive, action 0x0012).
+  let preset_name: string | undefined;
+  try {
+    const parsed = await readPresetName(ctx.conn, locationIndex);
+    preset_name = parsed.isEmpty ? undefined : (parsed.name?.trim() || undefined);
+  } catch {
+    missing.push('preset_name');
+  }
+
+  return {
+    snapshot: {
+      block_chain,
+      ...(amp_model !== undefined ? { amp_model } : {}),
+      ...(drive_model !== undefined ? { drive_model } : {}),
+      ...(preset_name !== undefined ? { preset_name } : {}),
+    },
+    missing,
+  };
+}
+
 // ── Reader adapter ──────────────────────────────────────────────────
 //
 // `getParam` wraps the existing `sendReadAndParse` + `decode` pipeline
@@ -245,9 +450,23 @@ export const reader: DeviceReader = {
     const wire = param.unit === 'enum'
       ? parsed.asUInt32LE()
       : parsed.asInternalFloat();
-    const display = param.unit === 'enum'
-      ? ((param.enumValues as Record<number, string> | undefined)?.[Math.round(wire)] ?? Math.round(wire))
-      : am4Decode(param, wire);
+    let display: number | string;
+    if (param.unit === 'enum') {
+      const enumValues = param.enumValues as Record<number, string> | undefined;
+      const direct = enumValues?.[Math.round(wire)];
+      if (direct !== undefined) {
+        display = direct;
+      } else if (name === 'channel' && CHANNEL_BLOCKS.has(block)) {
+        // amp's channel selector reads back derived/cached firmware state
+        // (raw u32 like 19968, not 0..3); fall back to the float32-packed-enum
+        // interpretation so it resolves to a letter. See decodeChannelSelector.
+        display = decodeChannelSelector(parsed, enumValues).letter ?? Math.round(wire);
+      } else {
+        display = Math.round(wire);
+      }
+    } else {
+      display = roundDisplayValue(param, am4Decode(param, wire));
+    }
     return {
       block,
       name,
@@ -278,6 +497,44 @@ export const reader: DeviceReader = {
     };
   },
 
+  async dumpActivePresetBinary(ctx: DispatchCtx): Promise<PresetBinaryDump> {
+    // Byte-exact backup of the active working buffer via the fn 0x03
+    // request → 6-message PRESET_DUMP stream (0x77 header + 4× 0x78 chunks
+    // + 0x79 footer, 12,352 bytes). The concatenated frames are a valid
+    // `.syx`. The AM4 encoder is non-deterministic between identical dumps
+    // (its inner bytes are not byte-stable), so we can't decode the blob,
+    // but a verbatim backup still round-trips to the same location. Restore
+    // is a separate (not-yet-shipped) path; export is read-only and safe.
+    // The listener must be registered before the request is sent.
+    const streamPromise = receivePresetDumpStream(ctx.conn, { timeoutMs: 2000 });
+    ctx.conn.send(buildRequestActiveBufferDump());
+    let stream;
+    try {
+      stream = await streamPromise;
+    } catch (err) {
+      throw new DispatchError(
+        'no_ack',
+        'Fractal AM4',
+        `export_preset: ${err instanceof Error ? err.message : String(err)}. Check the AM4 is connected (try reconnect_midi).`,
+      );
+    }
+    // Concatenate header + chunks + footer in wire order.
+    const flat: number[] = [...stream.headerBytes];
+    for (const chunk of stream.chunkBytes) for (const b of chunk) flat.push(b);
+    for (const b of stream.footerBytes) flat.push(b);
+    const bytes = Uint8Array.from(flat);
+    return {
+      bytes,
+      byte_length: bytes.length,
+      frame_count: stream.messageCount,
+      format: 'am4-preset-dump',
+      // AM4's working-buffer name read needs a stored-location index the
+      // active buffer doesn't have, so the name is omitted here; the
+      // backup filename falls back to device + timestamp.
+      source: 'active working buffer',
+    };
+  },
+
   async getBlockLayoutSnapshot(ctx: DispatchCtx): Promise<BlockLayoutSnapshot> {
     // 4 slot-register reads → block-type names per slot. Identical wire
     // shape to the `am4_get_block_layout` tool (HW-044); kept duplicated
@@ -293,21 +550,52 @@ export const reader: DeviceReader = {
     return buildBlockLayoutSnapshot([slots[0], slots[1], slots[2], slots[3]]);
   },
 
+  // Overwrite pre-check capability — backs the dispatcher's confirmable
+  // overwrite gate. Reads the active location + the target's name, both
+  // non-destructively. Returns undefined when occupancy can't be determined
+  // (a read failed) so the dispatcher degrades rather than guessing.
+  async checkOverwriteTarget(ctx: DispatchCtx, location: LocationRef): Promise<OverwriteTargetInfo | undefined> {
+    const locationIndex = parseAm4Location(location);
+    const target_display = formatLocationDisplay(locationIndex);
+    let activeIndex: number | undefined;
+    try {
+      const parsed = await sendReadAndParse(ctx.conn, LOCATION_STATE_PID_LOW, LOCATION_STATE_PID_HIGH);
+      const idx = parsed.asUInt32LE();
+      if (idx >= 0 && idx <= 103) activeIndex = idx;
+    } catch {
+      activeIndex = undefined;
+    }
+    if (activeIndex !== undefined && activeIndex === locationIndex) {
+      // Saving over the location we're editing is a refresh, not a clobber.
+      return { target_display, is_active_location: true };
+    }
+    try {
+      const resp = await readPresetName(ctx.conn, locationIndex);
+      const occupant = resp.isEmpty ? undefined : (resp.name?.trim() || undefined);
+      return { target_display, is_active_location: false, ...(occupant ? { occupant_name: occupant } : {}) };
+    } catch {
+      return undefined; // name read failed → let the dispatcher degrade
+    }
+  },
+
+  // Read-after-save receipt capability — delegates to the module-scope
+  // readSaveSnapshot() above (object-method names don't shadow module bindings).
+  async readSaveSnapshot(ctx: DispatchCtx, location: LocationRef): Promise<{ snapshot: SavedSnapshot; missing: readonly string[] }> {
+    return readSaveSnapshot(ctx, parseAm4Location(location));
+  },
+
   async getPreset(ctx: DispatchCtx, options?: { include_channel_state?: boolean }): Promise<PresetSnapshot> {
-    // Default OFF, matching II. Reading the non-active channels (B/C/D) is
-    // NOT cheap: fn 0x1F is active-channel-only, so each extra channel costs
-    // one per-param fn 0x02 GET for every registered param of the block
-    // (amp=206, delay=86, reverb=68, drive=38). A 4-channel-block preset is
-    // ~1182 serial GETs plus channel switches: ~6 s warm, up to ~60 s cold,
-    // far over the conversational tool budget. The common get_preset use is
-    // "what is on the device," which the active-channel fn 0x1F dump answers
-    // in ~0.3 s. Note the ACTIVE channel is always attributed regardless of
-    // this flag (the channel-selector read below is gated by CHANNEL_BLOCKS,
-    // not by this flag), so channel-bearing blocks still return
-    // params_by_channel:{<active>} + channel_status:'active' on the default
-    // path. Callers that need the full A/B/C/D nested shape pass
-    // include_channel_state: true and pay the latency knowingly. (This used
-    // to default ON "to match II", but II defaults OFF, so OFF is symmetric.)
+    // Default OFF, matching II, but the cost asymmetry the old default was
+    // built around is gone. The fn 0x1F `0x75` body is CHANNEL-BLOCKED: it
+    // already carries all four channels (A/B/C/D, FIXED order, quarter 0 = A)
+    // at `channel * stride + pidHigh` (stride = itemCount / 4). So
+    // include_channel_state:true now reads B/C/D straight from the SAME dump
+    // already read for the active channel: no per-param fn 0x02 loop, no
+    // channel-state mutation (the old path did ~1182 serial GETs, ~6-60 s, and
+    // mutated device channel state). Default OFF still returns only the active
+    // channel to keep the response small and avoid the (amp-unreliable)
+    // channel-selector read implying more than it can. Channel-blocked layout
+    // confirmed on live AM4 hardware 2026-06-04 (cookbook am4-fn1f-atomic-read).
     const includeChannelState = options?.include_channel_state ?? false;
     // Server-side timer around the SysEx read loop — surfaced as
     // _meta.read_duration_ms (client-independent; alpha.17 finding).
@@ -322,9 +610,10 @@ export const reader: DeviceReader = {
       layoutSlots.push(BLOCK_NAMES_BY_VALUE[u32] ?? ('none' as BlockTypeName));
     }
 
-    // 2. Per placed slot: chunk-based read via fn 0x1F + bypass read +
-    //    optional per-channel reads. Performance: ~50 ms per pidLow chunk,
-    //    ~50 ms per bypass read, ~50 ms per extra channel switch+read.
+    // 2. Per placed slot: chunk-based read via fn 0x1F + bypass read.
+    //    Performance: ~50 ms per pidLow chunk, ~50 ms per bypass read. All
+    //    channels come from the chunk(s) already read (channel-blocked), so
+    //    include_channel_state adds no extra wire round-trips.
     const slots: PresetSnapshotSlot[] = [];
     const errors: string[] = [];
     let totalPlaced = 0;
@@ -339,174 +628,64 @@ export const reader: DeviceReader = {
           errors.push(`slot ${slotIdx + 1} (${blockType}): no documented params`);
           continue;
         }
-        const chunks = new Map<number, number[]>();
+        const chunks = new Map<number, { itemCount: number; values: number[] }>();
         for (const pidLow of pidLows) {
           const triple = await readAllParams(ctx.conn, pidLow);
-          chunks.set(pidLow, triple.values);
-        }
-
-        const flatParams: Record<string, number | string> = {};
-        for (const [, param] of Object.entries(KNOWN_PARAMS)) {
-          const p = param as Param;
-          if (p.block !== blockType) continue;
-          const chunk = chunks.get(p.pidLow);
-          if (chunk === undefined || p.pidHigh >= chunk.length) continue;
-          const wire = chunk[p.pidHigh];
-          flatParams[p.name] = decodeChunkValue(p, wire);
+          chunks.set(pidLow, { itemCount: triple.itemCount, values: triple.values });
         }
 
         const bypassed = await readBypassState(ctx.conn, blockType);
 
-        let activeChannel: string | undefined;
-        // When the channel-param read fails or returns an out-of-range
-        // wire value, capture WHY so the response includes a diagnostic
-        // line. Bug C in the alpha.13 report: amp returned
-        // channel_status="unknown" while delay/reverb worked, and the
-        // silent catch hid the root cause from agents. Surfacing the
-        // reason lets the founder pin the actual failure mode (response
-        // shape mismatch, out-of-range decode, wire encoding wrong) on
-        // hardware without another full debug cycle.
-        let channelReadFailureReason: string | undefined;
-        if (CHANNEL_BLOCKS.has(blockType)) {
-          try {
-            const channelKey = `${blockType}.channel` as ParamKey;
-            const channelParam = KNOWN_PARAMS[channelKey] as Param | undefined;
-            if (channelParam === undefined) {
-              channelReadFailureReason = `no '${blockType}.channel' param registered in the codec`;
-            } else {
-              const parsed = await sendReadAndParse(ctx.conn, channelParam.pidLow, channelParam.pidHigh);
-              const wire = parsed.asUInt32LE();
-              const enumValues = channelParam.enumValues as Record<number, string> | undefined;
-              const name = enumValues?.[wire];
-              if (typeof name === 'string') {
-                activeChannel = name;
-              } else {
-                // Try interpreting the 4 raw payload bytes as an IEEE 754
-                // float32 — the SYSEX-MAP §6a row for amp.channel
-                // (pidLow=0x003A, pidHigh=0x07D2) notes the value is "enum
-                // int 0..3 packed as float32". delay/reverb at the same
-                // pidHigh appear to work via asUInt32LE; amp may differ
-                // (the 2026-05-28 alpha.13 desktop session caught amp
-                // returning channel_status='unknown' while delay/reverb
-                // returned 'all_channels'). Try the float interpretation
-                // as a fallback before giving up.
-                const floatView = new DataView(parsed.rawValue.buffer, parsed.rawValue.byteOffset, 4);
-                const asFloat = floatView.getFloat32(0, true);
-                const rounded = Math.round(asFloat);
-                if (Number.isFinite(asFloat) && rounded >= 0 && rounded <= 3) {
-                  const floatName = enumValues?.[rounded];
-                  if (typeof floatName === 'string') {
-                    activeChannel = floatName;
-                  } else {
-                    channelReadFailureReason =
-                      `${blockType}.channel float read ${asFloat} (rounded ${rounded}) ` +
-                      `not in enumValues (have ${Object.keys(enumValues ?? {}).join(',')})`;
-                  }
-                } else {
-                  channelReadFailureReason =
-                    `${blockType}.channel wire ${wire} (0x${wire.toString(16)}) ` +
-                    `not in enumValues (have ${Object.keys(enumValues ?? {}).join(',')}); ` +
-                    `float32 interpretation = ${asFloat}`;
-                }
-              }
-            }
-          } catch (err) {
-            channelReadFailureReason = err instanceof Error ? err.message : String(err);
-          }
-        }
-
-        // Shape decision — must match II reader and AM4 delay/reverb so the
-        // response is consistent across every channel-bearing block on every
-        // device. Channel blocks ALWAYS surface params under params_by_channel,
-        // even when the active channel can't be determined (key 'A' default,
-        // channel_status='unknown' tells the agent the attribution is best-
-        // effort). Non-channel blocks use flat `params`. The earlier mixed
-        // shape (amp: flat+unknown vs delay: by-channel+active in the same
-        // response) confused agents during state-anchoring round-trips.
+        // Shape decision: must match II reader so the response is consistent
+        // across every channel-bearing block on every device. Non-channel
+        // blocks use flat `params`; channel blocks surface params under
+        // `params_by_channel`.
         let params: PresetSlotSpec['params'];
         let paramsByChannel: PresetSlotSpec['params_by_channel'];
         let channelStatus: PresetSnapshotSlot['channel_status'];
         if (!CHANNEL_BLOCKS.has(blockType)) {
-          params = flatParams;
-        } else if (activeChannel !== undefined && includeChannelState) {
-          // Read other channels by switching + per-param GETs.
-          //
-          // The active-channel data above came from fn 0x1F (atomic chunk
-          // read, ~50 ms per pidLow). That envelope is NOT channel-aware:
-          // it always returns the active-scene channel's data regardless
-          // of any prior `switchBlockChannel` write. Confirmed in the
-          // 2026-05-28 alpha.13 desktop session — `get_preset` returned
-          // channel A's data 4× for every channel-bearing block, while
-          // `get_params({channel:"B"})` (which uses sendReadAndParse / fn
-          // 0x02 GET, which IS channel-aware) returned the correct B
-          // state. Bug B in the alpha.13 report.
-          //
-          // The fix: for non-active channels, swap the chunk read for
-          // per-param fn 0x02 reads, which respect the prior channel
-          // switch. The cost is wall-clock — ~50 ms per param × ~10-30
-          // params per block × up to 3 non-active channels. A four-block
-          // preset can take several seconds. Callers chasing minimum
-          // latency can opt out with include_channel_state: false.
-          const allChannelParams: Record<string, Record<string, number | string>> = {
-            [activeChannel]: flatParams,
-          };
-          // Pre-collect the param objects for this block so we don't walk
-          // KNOWN_PARAMS for every channel.
-          const blockParams: Param[] = [];
-          for (const [, paramAny] of Object.entries(KNOWN_PARAMS)) {
-            const p = paramAny as Param;
-            if (p.block === blockType) blockParams.push(p);
+          params = decodeChannelParams(blockType, chunks, 0);
+        } else if (includeChannelState) {
+          // All four channels from the SAME fn 0x1F dump via channel-stride
+          // indexing (FIXED order A/B/C/D, quarter 0 = A). This replaces the
+          // old ~1182 serial per-param fn 0x02 GETs across B/C/D (~6-60 s) AND
+          // the channel-state mutation (switchBlockChannel + switch back): the
+          // dump already holds all four channels at `channel * stride + pidHigh`
+          // (stride = itemCount / 4). Live-hardware-confirmed 2026-06-04. No
+          // active-channel resolution is needed for attribution.
+          const allChannelParams: Record<string, Record<string, number | string>> = {};
+          for (let c = 0; c < 4; c++) {
+            const chParams = decodeChannelParams(blockType, chunks, c);
+            if (Object.keys(chParams).length > 0) allChannelParams[channelLetter(c)] = chParams;
           }
-          const channelNames = ['A', 'B', 'C', 'D'];
-          for (const ch of channelNames) {
-            if (ch === activeChannel) continue;
-            try {
-              await switchBlockChannel(ctx.conn, blockType, ch);
-              const chParams: Record<string, number | string> = {};
-              for (const p of blockParams) {
-                // Skip the channel selector itself — reading it via fn 0x02
-                // returns the channel index, not a per-channel value.
-                if (p.name === 'channel') continue;
-                try {
-                  const parsed = await sendReadAndParse(ctx.conn, p.pidLow, p.pidHigh);
-                  const wire = p.unit === 'enum'
-                    ? parsed.asUInt32LE()
-                    : parsed.asInternalFloat();
-                  const display = p.unit === 'enum'
-                    ? ((p.enumValues as Record<number, string> | undefined)?.[Math.round(wire)] ?? Math.round(wire))
-                    : am4Decode(p, wire);
-                  chParams[p.name] = display;
-                } catch {
-                  // Skip params that fail to read (e.g. type-gated knobs
-                  // that aren't currently exposed on this channel's type).
-                }
-              }
-              allChannelParams[ch] = chParams;
-            } catch {
-              // Skip channels that fail to switch.
-            }
-          }
-          await switchBlockChannel(ctx.conn, blockType, activeChannel).catch(() => {});
           paramsByChannel = allChannelParams;
-          channelStatus = Object.keys(allChannelParams).length === 4
-            ? 'all_channels'
-            : 'active';
-        } else if (activeChannel !== undefined) {
-          paramsByChannel = { [activeChannel]: flatParams };
-          channelStatus = 'active';
+          channelStatus = Object.keys(allChannelParams).length === 4 ? 'all_channels' : 'active';
         } else {
-          // Channel-bearing block but active channel read failed (out-of-range
-          // wire value, USB hiccup, etc). Keep the by-channel shape under 'A'
-          // as a best-effort key so callers see the same envelope as the
-          // active-known path. channel_status='unknown' signals that the key
-          // is a fallback, not a hardware-confirmed read.
-          paramsByChannel = { A: flatParams };
-          channelStatus = 'unknown';
-          if (channelReadFailureReason !== undefined) {
-            errors.push(
-              `slot ${slotIdx + 1} (${blockType}): channel-state read failed → ${channelReadFailureReason}. ` +
-              `channel_status='unknown' is a fallback; per-channel params B/C/D are NOT included in this response.`,
-            );
+          // Default path: return only the ACTIVE channel's quarter. The
+          // selector read is reliable for reverb/delay/drive; amp's register
+          // returns derived/cached firmware state (see decodeChannelSelector),
+          // so amp degrades to channel A with channel_status='unknown'.
+          const { letter: activeChannel, failureReason } =
+            await readActiveChannelLetter(ctx.conn, blockType);
+          if (activeChannel !== undefined) {
+            const idx = ['A', 'B', 'C', 'D'].indexOf(activeChannel);
+            paramsByChannel = {
+              [activeChannel]: decodeChannelParams(blockType, chunks, idx < 0 ? 0 : idx),
+            };
+            channelStatus = 'active';
+          } else {
+            // Selector unresolved: show channel A (quarter 0) as a best-effort
+            // key. channel_status='unknown' signals the attribution is a
+            // fallback, not a hardware-confirmed active-channel read.
+            paramsByChannel = { A: decodeChannelParams(blockType, chunks, 0) };
+            channelStatus = 'unknown';
+            if (failureReason !== undefined) {
+              errors.push(
+                `slot ${slotIdx + 1} (${blockType}): channel-selector read failed -> ${failureReason}. ` +
+                `channel_status='unknown' is a fallback; showing channel A (quarter 0 of the dump). ` +
+                `Pass include_channel_state:true to read all four channels A/B/C/D directly.`,
+              );
+            }
           }
         }
 
@@ -544,7 +723,7 @@ export const reader: DeviceReader = {
 
     const hasChannelBearing = layoutSlots.some((b) => CHANNEL_BLOCKS.has(b));
     const channelStateHint = (!includeChannelState && hasChannelBearing)
-      ? 'Only the active channel is included. Pass include_channel_state:true to get_preset for the full per-channel read (A/B/C/D; slower: a per-param read per channel on channel-bearing blocks).'
+      ? 'Only the active channel is included. Pass include_channel_state:true to get_preset for the full per-channel read (A/B/C/D, decoded from the same fn 0x1F dump; fast, no channel-state mutation).'
       : undefined;
     return {
       slots,

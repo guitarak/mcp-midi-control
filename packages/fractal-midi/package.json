@@ -1,7 +1,7 @@
 {
   "name": "fractal-midi",
-  "version": "0.1.0-alpha.11",
-  "description": "Pure-TypeScript codec and parameter dictionaries for Fractal Audio devices (AM4, Axe-Fx II, Axe-Fx III). No MIDI transport dependency, bring your own.",
+  "version": "0.2.0",
+  "description": "Pure-TypeScript codec and parameter dictionaries for Fractal Audio devices (AM4, Axe-Fx II, Axe-Fx III, FM3, FM9, VP4, Axe-Fx Standard/Ultra). No MIDI transport dependency, bring your own.",
   "license": "Apache-2.0",
   "author": "Stephen Staker <stephenstaker@gmail.com>",
   "type": "module",
@@ -27,6 +27,22 @@
     "./axe-fx-iii": {
       "types": "./dist/axe-fx-iii/index.d.ts",
       "default": "./dist/axe-fx-iii/index.js"
+    },
+    "./axe-fx-gen1": {
+      "types": "./dist/axe-fx-gen1/index.d.ts",
+      "default": "./dist/axe-fx-gen1/index.js"
+    },
+    "./fm3": {
+      "types": "./dist/fm3/index.d.ts",
+      "default": "./dist/fm3/index.js"
+    },
+    "./fm9": {
+      "types": "./dist/fm9/index.d.ts",
+      "default": "./dist/fm9/index.js"
+    },
+    "./vp4": {
+      "types": "./dist/vp4/index.d.ts",
+      "default": "./dist/vp4/index.js"
     }
   },
   "files": [
@@ -49,6 +65,9 @@
     "axe-fx",
     "axe-fx-ii",
     "axe-fx-iii",
+    "fm3",
+    "fm9",
+    "vp4",
     "am4",
     "midi",
     "sysex",

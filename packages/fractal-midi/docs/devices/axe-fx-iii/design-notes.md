@@ -5,7 +5,7 @@ codebase yet; this captures the patterns we've established for the
 Axe-Fx II + AM4 family so the III implementation can mirror them.
 The project maintainer does not own a III, III hardware verification
 relies on beta users via the capture procedures documented in the
-consumer MCP server's `docs/AXEFX3-BETA-TESTING.md`.
+community capture guides under `../../capture-guides/`.
 
 Authoritative source for the III's third-party MIDI surface is Fractal's
 official PDF: **"Axe-Fx III MIDI for Third-Party Devices" v1.4**

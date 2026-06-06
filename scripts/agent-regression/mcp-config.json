@@ -4,6 +4,7 @@
       "type": "stdio",
       "command": "node",
       "args": ["packages/server-all/dist/server/index.js"],
+      "alwaysLoad": true,
       "env": {}
     }
   }

@@ -18,7 +18,6 @@
  */
 
 import path from 'node:path';
-import { appendFileSync, mkdirSync } from 'node:fs';
 import { execSync, spawn } from 'node:child_process';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -26,50 +25,13 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 import { runCase } from './runner.js';
 import { ALL_CASES } from './cases-all.js';
+import { captureCodeState, appendResultRow, loadRows, caseHistoryLine } from './resultsLog.js';
 import type { AgentRegressionCase, CaseResult, Device } from './types.js';
 
-/**
- * Persistent per-case results log. Append-only JSON-lines stream so
- * cross-session analytics ("did recipe-pickup wall-time drop after the
- * migration?", "which cases flake recurrently?") have a machine-readable
- * corpus. Gitignored; local-only.
- */
-const RESULTS_LOG = path.resolve('scripts', 'agent-regression', 'results.jsonl');
-
-/** Capture git SHA once at process start so every row pins to a commit. */
-function captureGitSha(): string {
-  try {
-    return execSync('git rev-parse HEAD', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-      .trim()
-      .slice(0, 12);
-  } catch {
-    return 'unknown';
-  }
-}
-
-function appendResultRow(sha: string, result: CaseResult, mockFixture?: string): void {
-  const row = {
-    timestamp: new Date().toISOString(),
-    sha,
-    case_id: result.case.id,
-    device: result.case.device,
-    passed: result.passed,
-    flaked: result.flaked,
-    attempts: result.attempts,
-    tool_count: result.tool_calls.length,
-    wall_seconds: Number(result.wall_seconds.toFixed(3)),
-    mock_fixture: mockFixture,
-    failures: result.passed ? undefined : result.failures,
-  };
-  try {
-    mkdirSync(path.dirname(RESULTS_LOG), { recursive: true });
-    appendFileSync(RESULTS_LOG, JSON.stringify(row) + '\n', 'utf8');
-  } catch (err) {
-    // Best-effort; don't fail the sweep on log-write failure (e.g.
-    // disk full, read-only fs). Surface to stderr so it's visible.
-    console.error(`    [results.jsonl append failed] ${(err as Error).message}`);
-  }
-}
+// Per-case results are appended to a shared, gitignored JSON-lines corpus
+// (see resultsLog.ts) so cross-session analytics ("did recipe-pickup wall-time
+// drop after the migration?", "which cases flake recurrently?") have a
+// machine-readable history. Read by `stats.ts` (npm run agent-sweep:stats).
 
 /**
  * Pre-flight: ask the shipped MCP server which devices are visible
@@ -94,6 +56,8 @@ async function detectAvailableDevices(): Promise<{ devices: Set<Device>; probeEr
     if (/am4/i.test(text)) available.add('am4');
     if (/axe[- ]?fx ?ii(?!i)/i.test(text)) available.add('axe-fx-ii');
     if (/axe[- ]?fx ?iii|axefx ?3/i.test(text)) available.add('axe-fx-iii');
+    if (/\bfm ?3\b|fm-3/i.test(text)) available.add('fm3');
+    if (/\bfm ?9\b|fm-9/i.test(text)) available.add('fm9');
     if (/hydrasynth|hydra/i.test(text)) available.add('hydrasynth');
   } catch (err) {
     // Probe failure: capture the error so the sweep header can flag it.
@@ -311,7 +275,10 @@ async function main(): Promise<void> {
   const total = cases.length;
   let completed = 0;
   const results: CaseResult[] = [];
-  const runSha = captureGitSha();
+  const codeState = captureCodeState();
+  if (codeState.dirty) {
+    console.log(`Code state: ${codeState.sha} + uncommitted changes${codeState.tree_sha ? ` (tree ${codeState.tree_sha})` : ''} — results tagged dirty.\n`);
+  }
   for (const testCase of cases) {
     const result = await runCase({ case: testCase, model: args.model, verbose: args.verbose });
     completed += 1;
@@ -326,7 +293,11 @@ async function main(): Promise<void> {
       console.log(`    (passed on attempt ${result.attempts} after a failed first run, investigate if recurring)`);
     }
     results.push(result);
-    appendResultRow(runSha, result, testCase.mockFixture);
+    appendResultRow(codeState, result, {
+      mockFixture: testCase.mockFixture,
+      via: 'sweep',
+      model: args.model ?? 'claude-sonnet-4-6',
+    });
   }
 
   // ── Summary ────────────────────────────────────────────────────
@@ -347,6 +318,18 @@ async function main(): Promise<void> {
     const tag = r.passed ? (r.flaked ? '⚠ flake' : '✓') : '✗';
     console.log(`| ${r.case.id} | ${r.case.device} | ${tag} | ${r.tool_calls.length} | ${r.wall_seconds.toFixed(1)}s |`);
   }
+
+  // Inline trend across the corpus (automatic — no separate command needed).
+  // Surfaces flake/wall history for the cases just run so recurring flakiness
+  // is visible without remembering `agent-sweep:stats`. The corpus already
+  // includes this run's rows (appended above).
+  const corpus = loadRows();
+  console.log('\nHistory (this case across all logged runs):');
+  for (const r of results) {
+    const line = caseHistoryLine(corpus, r.case.id);
+    if (line !== '') console.log(`  ${r.case.id.padEnd(34)} ${line}`);
+  }
+  console.log('  (full corpus query: npm run agent-sweep:stats)');
 
   process.exit(failed > 0 ? 1 : 0);
 }

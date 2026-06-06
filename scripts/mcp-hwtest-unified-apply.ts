@@ -18,8 +18,8 @@
  *
  * Pass criteria (script-side):
  *   - unified apply_preset returns ok=true
- *   - axefx2_get_grid_layout shows the 4 content blocks + 8 shunts
- *   - no chain-break warning
+ *   - unified get_preset reports chain_integrity.ok (the 4 content blocks
+ *     are cabled, no chain break)
  *
  * Pass criteria (audible — founder reports):
  *   - Plug in guitar, switch Axe-Fx II to slot 608, play
@@ -77,18 +77,22 @@ async function main(): Promise<void> {
       console.log(applyText.split('\n').slice(0, 3).map((l) => `      ${l}`).join('\n'));
     }
 
-    // Step 2: read grid layout via the surviving device-namespaced read tool.
-    console.log(`\nStep 2: reading grid layout to verify chain integrity…`);
-    const grid = await c.callTool({ name: 'axefx2_get_grid_layout', arguments: {} });
-    const gridText = ext(grid);
-    const hasBreak = /CHAIN BREAK/i.test(gridText);
+    // Step 2: read the preset via the unified surface to verify chain
+    // integrity. get_preset's chain_integrity field is the audibility
+    // check over the same grid dump the removed grid-layout tool used.
+    console.log(`\nStep 2: reading get_preset to verify chain integrity…`);
+    const snap = await c.callTool({ name: 'get_preset', arguments: { port: 'axe-fx-ii' } });
+    const snapText = ext(snap);
+    const ci = (snap as { structuredContent?: { chain_integrity?: { ok?: boolean; summary?: string } } })
+      .structuredContent?.chain_integrity;
+    const hasBreak = ci ? ci.ok === false : /chain.{0,20}break/i.test(snapText);
     if (hasBreak) {
-      console.log(`  ✗ grid layout reports a chain break:`);
-      console.log(gridText.split('\n').slice(0, 12).map((l) => `      ${l}`).join('\n'));
+      console.log(`  ✗ chain_integrity reports a break:`);
+      console.log(`      ${ci?.summary ?? snapText.split('\n').slice(0, 12).join('\n      ')}`);
       pass = false;
     } else {
-      console.log(`  ✓ grid layout reads clean (no chain break)`);
-      console.log(gridText.split('\n').slice(0, 6).map((l) => `      ${l}`).join('\n'));
+      console.log(`  ✓ chain_integrity reads clean (no chain break)`);
+      console.log(`      ${ci?.summary ?? snapText.split('\n').slice(0, 6).join('\n      ')}`);
     }
   } finally {
     await c.close();

@@ -153,12 +153,25 @@ Scraped copy lives in `docs/wiki/` (gitignored; regenerate via
 ### Fractal Audio Gen1 Wiki: `https://wiki.fractalaudio.com/gen1/index.php`
 **Separate MediaWiki instance** for original Axe-Fx Standard / Ultra
 (model bytes 0x00 / 0x01), direct ancestors to the Axe-Fx II family.
-Useful for understanding the function-ID space evolution and the
-8-bit-vs-16-bit parameter-value migration. Not covered by the existing
-`scrape-wiki.ts` which targets `wiki.fractalaudio.com/wiki/` only.
-- `Axe-Fx_SysEx_Documentation` page: Standard / Ultra protocol spec.
-  The wiki disclaims SysEx info is "printed here with
-  the permission of Fractal Audio", an authoritative source.
+- `Axe-Fx_SysEx_Documentation` page: the Standard / Ultra protocol spec,
+  "printed here with the permission of Fractal Audio" (authoritative).
+  **HARVESTED 2026-06-06** to `docs/manuals/AxeFx-gen1-SysEx-Spec-wiki.wikitext.txt`.
+  This is the FULLER doc that documents the bidirectional protocol the narrow
+  "Ultra System Exclusive Messages" param-set PDF omits: function 0x02 carries a
+  query(0)/set(1) flag (→ MIDI_PARAM_VALUE with value + label), plus MIDI_GET_PATCH
+  0x03 → MIDI_PATCH_DUMP 0x04, get-firmware 0x08, get-preset-name 0x0f. The page
+  had been catalogued here for sessions but never pulled, so gen-1 was built
+  set-only from the PDF until the read path was decoded from this page.
+- `AxeFxSysExTable` is a redirect to `Axe-Fx_SysEx_Documentation` (no separate table).
+
+**Complete enumeration (don't re-discover pages one at a time):** run
+`npx tsx scripts/_research/scrape-fractal-wiki.ts` — it walks the MediaWiki
+`list=allpages` API across BOTH wiki instances, filters the gift-card spam (620
+of the gen1 wiki's 1040 pages are spam), and flags protocol-relevant titles.
+Full title lists land in `samples/wiki-inventory/`. As of 2026-06-06 the gen1
+wiki's 420 real pages contain exactly ONE wire-protocol spec (the page above);
+every other MIDI/SysEx-named page is user-facing (CC charts, dump tutorials,
+modifier-usage, setup guides), confirmed to carry no wire bytes.
 
 ### Fractal Audio Forum: `https://forum.fractalaudio.com`
 Active community. Useful search terms:

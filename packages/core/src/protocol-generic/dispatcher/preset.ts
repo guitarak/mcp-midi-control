@@ -14,9 +14,11 @@ import {
   type ApplyResult,
   type ApplySetlistResult,
   type DeviceDescriptor,
+  type PresetBinaryDump,
   type PresetSnapshot,
   type PresetSlotSpec,
   type PresetSpec,
+  type RestorePresetResult,
   type RestoreDefaultsRangeOptions,
   type RestoreDefaultsRangeResult,
   type RestoreDefaultsResult,
@@ -374,6 +376,96 @@ export async function executeGetPreset(args: {
   }
   const ctx = openCtx(descriptor);
   return descriptor.reader.getPreset(ctx, { include_channel_state: args.include_channel_state });
+}
+
+/**
+ * Byte-exact backup of the active working-buffer preset. Backs the unified
+ * `export_preset` tool. Returns the device's raw dump frames (concatenated
+ * SysEx) so the tool layer can write a verbatim `.syx` file; the dispatcher
+ * stays pure (no filesystem I/O — that's a host concern owned by the tool
+ * handler).
+ *
+ * Devices that don't implement `reader.dumpActivePresetBinary` (modern
+ * Fractal community-beta, Hydrasynth) error with capability_not_supported,
+ * mirroring the `get_preset` capability-gate pattern.
+ */
+export async function executeExportActivePreset(args: {
+  port: string;
+}): Promise<PresetBinaryDump & { device: string }> {
+  const descriptor = requireDevice(args.port);
+  if (descriptor.reader.dumpActivePresetBinary === undefined) {
+    throw new DispatchError(
+      'capability_not_supported',
+      descriptor.display_name,
+      `export_preset is not implemented for ${descriptor.display_name}. Byte-exact backup of the active preset is available on Fractal AM4 and Axe-Fx II; other devices return capability_not_supported. Use get_preset for a structured (non-byte-exact) snapshot.`,
+    );
+  }
+  const ctx = openCtx(descriptor);
+  const dump = await descriptor.reader.dumpActivePresetBinary(ctx);
+  return { ...dump, device: descriptor.display_name };
+}
+
+/**
+ * Byte-exact backup of a stored preset at `location` (integer index).
+ * Backs the `export_preset` tool when a `location` argument is given.
+ * Uses the gen-3 fn=0x03 REQUEST_PRESET_DUMP / 0x77/0x78/0x79 chain.
+ * Wire-confirmed on FM9 fw 11.00 (capture 2026-06-04).
+ */
+export async function executeExportStoredPreset(args: {
+  port: string;
+  location: number;
+}): Promise<PresetBinaryDump & { device: string }> {
+  const descriptor = requireDevice(args.port);
+  if (descriptor.reader.dumpStoredPresetBinary === undefined) {
+    throw new DispatchError(
+      'capability_not_supported',
+      descriptor.display_name,
+      `export_preset with a location argument requires stored-preset dump support; ${descriptor.display_name} does not implement it yet. Stored-preset dump (fn=0x03) is available on gen-3 devices (Axe-Fx III / FM3 / FM9). Use export_preset without a location to dump the active preset.`,
+    );
+  }
+  const ctx = openCtx(descriptor);
+  const dump = await descriptor.reader.dumpStoredPresetBinary(args.location, ctx);
+  return { ...dump, device: descriptor.display_name };
+}
+
+/**
+ * Backs `import_preset`: push a byte-exact preset dump (from
+ * `export_preset`) back onto the device. Same-device-model only (the bytes
+ * are the device's native dump frames). Default pushes to the working buffer;
+ * with `target_location` + `save_authorized` (gated here) it also persists.
+ *
+ * Devices without `writer.restorePresetBinary` (modern Fractal community-beta,
+ * Hydrasynth) error with capability_not_supported.
+ */
+export async function executeRestorePreset(args: {
+  port: string;
+  bytes: Uint8Array;
+  target_location?: string | number;
+  save_authorized?: boolean;
+}): Promise<RestorePresetResult & { device: string }> {
+  const descriptor = requireDevice(args.port);
+  if (descriptor.writer.restorePresetBinary === undefined) {
+    throw new DispatchError(
+      'capability_not_supported',
+      descriptor.display_name,
+      `apply_preset restore (restore_from) is not implemented for ${descriptor.display_name}. Byte-exact restore is available on Fractal AM4 and Axe-Fx II; for other devices build the preset structurally with apply_preset(spec) instead.`,
+    );
+  }
+  if (args.target_location !== undefined && args.save_authorized && !descriptor.capabilities.supports_save) {
+    throw new DispatchError(
+      'capability_not_supported',
+      descriptor.display_name,
+      `apply_preset restore with save requires a device that supports save; ${descriptor.display_name} does not.`,
+    );
+  }
+  const ctx = openCtx(descriptor);
+  const result = await descriptor.writer.restorePresetBinary(ctx, args.bytes, {
+    target_location: args.target_location,
+    save_authorized: args.save_authorized,
+  });
+  // The pushed bytes replace the working buffer's block layout.
+  invalidateBlockLayoutCache(descriptor.id);
+  return { ...result, device: descriptor.display_name };
 }
 
 /**

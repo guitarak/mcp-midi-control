@@ -14,6 +14,7 @@ export {
   encode,
   decode,
   formatDisplay,
+  roundDisplayValue,
   formatUnitSuffix,
   resolveEnumValue,
   findEnumCandidates,

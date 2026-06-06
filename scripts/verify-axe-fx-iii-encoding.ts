@@ -243,7 +243,7 @@ check('buildSetParameterBypass(66, true) — Reverb 1 bypass via fn=0x01 path',
 // These lock isSetGetParameterResponse + parseSetGetParameterResponse
 // against the real wire frames AxeEdit III emits to a real Axe-Fx III.
 
-// FC-12 footswitch: Drive 1 boost ON (effectId=58, paramId=40, value=508)
+// FC-12 footswitch: Amp 1 boost ON (effectId=58 = ID_DISTORT1 = the Amp block, paramId=40, value=508)
 const fc12_d1on = [
   0xf0, 0x00, 0x01, 0x74, 0x10, 0x01, 0x52, 0x00, 0x3a, 0x00, 0x28, 0x00,
   0x00, 0x00, 0x00, 0x7c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x2b, 0xf7,
@@ -329,10 +329,13 @@ checkEqual('resolveEffectId("Compressor 1")', resolveEffectId('Compressor 1'), 4
 checkEqual('resolveEffectId("CMP")',          resolveEffectId('CMP'),          46);
 checkEqual('resolveEffectId("Reverb 1")',     resolveEffectId('Reverb 1'),     66);
 checkEqual('resolveEffectId("Reverb 2")',     resolveEffectId('Reverb 2'),     67);
-checkEqual('resolveEffectId("Drive 1")',      resolveEffectId('Drive 1'),      58);
-checkEqual('resolveEffectId("Drive 4")',      resolveEffectId('Drive 4'),      61);
-checkEqual('resolveEffectId("DRV", 3)',       resolveEffectId('DRV', 3),       60);
-checkThrows('resolveEffectId("Amp") throws (not in v1.4)', () => resolveEffectId('Amp'), /no effect ID in the v1.4 spec/);
+// ID_DISTORT1..4 (58..61) is the AMP block; ID_FUZZ1..4 (118..121) is the
+// user-facing Drive pedal. FM9-hardware-confirmed via broadcast itemCounts.
+checkEqual('resolveEffectId("Amp 1")',        resolveEffectId('Amp 1'),        58);
+checkEqual('resolveEffectId("Amp 4")',        resolveEffectId('Amp 4'),        61);
+checkEqual('resolveEffectId("AMP", 3)',       resolveEffectId('AMP', 3),       60);
+checkEqual('resolveEffectId("Drive 1")',      resolveEffectId('Drive 1'),      118);
+checkEqual('resolveEffectId("FUZ", 2)',       resolveEffectId('FUZ', 2),       119);
 checkThrows('resolveEffectId("NAM") throws (post-1.13)', () => resolveEffectId('NAM'), /no effect ID in the v1.4 spec/);
 checkThrows('resolveEffectId("Bogus")', () => resolveEffectId('Bogus'), /Unknown Axe-Fx III block/);
 

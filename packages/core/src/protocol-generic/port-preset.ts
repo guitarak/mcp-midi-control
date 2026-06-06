@@ -14,7 +14,7 @@
  * Translation passes:
  *
  *   1. **Slot topology.** AM4's 4 linear slots ↔ II's 4×12 grid ↔
- *      III's 4×14 grid. Linear→grid places blocks on row 2 (the
+ *      III's 6×14 grid. Linear→grid places blocks on row 2 (the
  *      conventional main signal row), col=source slot index. Grid→
  *      linear pulls blocks in column order, drops any over slot_count.
  *

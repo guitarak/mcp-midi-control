@@ -245,6 +245,27 @@ export function formatDisplay(param: Param, displayValue: number): string {
 }
 
 /**
+ * Round a decoded display value to the AM4 panel's per-unit resolution,
+ * returning a NUMBER (unlike `formatDisplay`, which returns a string).
+ *
+ * The numeric sibling of `formatDisplay`: same `DISPLAY_PRECISION` table,
+ * but it keeps the result a number so read tools surface a clean
+ * `amp.gain: 5` instead of the Q15 inverse residue `5.0000305…`. Display
+ * value in, display value out. Enum/string values pass through unchanged.
+ *
+ * Applied at the device-package decode boundary (descriptor reader +
+ * schema decode closure), NOT inside the shared `decode` codec, so other
+ * consumers that want the full-precision inverse still get it.
+ */
+export function roundDisplayValue(param: Param, value: number | string): number | string {
+  if (typeof value !== 'number' || param.unit === 'enum') return value;
+  const decimals = DISPLAY_PRECISION[param.unit];
+  const factor = 10 ** decimals;
+  const rounded = Math.round(value * factor) / factor;
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+/**
  * Render the unit suffix for read-tool output, including the leading
  * space. Returns `' <suffix>'` (with leading space) for non-empty
  * suffixes, or empty string when the param is unitless or the override
@@ -1786,10 +1807,13 @@ export const KNOWN_PARAMS = {
   },
   'drive.clip_type': {
     block: 'drive', name: 'clip_type',
-    displayLabel: 'Frequency',
+    // 'Type' is a provisional caption for this 14-entry clip-diode enum.
+    // The prior 'Frequency' was wrong (likely an editor label-extraction
+    // error). PENDING hardware confirmation of the AM4-Edit caption.
+    displayLabel: 'Type',
     pidLow: 0x0076, pidHigh: 0x0012,
-    // Cache id=18: 14-entry enum. Hand-authored — generator only
-    // attaches one enum import per block (used for `type` at id=10).
+    // Cache id=18: 14-entry enum. Hand-authored (the generator only
+    // attaches one enum import per block, used for `type` at id=10).
     unit: 'enum', displayMin: 0, displayMax: 13,
     enumValues: {
       0: 'LV TUBE', 1: 'HARD', 2: 'SOFT', 3: 'GERMANIUM', 4: 'FW RECT',
@@ -3780,25 +3804,34 @@ export const KNOWN_PARAMS = {
     pidLow: 0x002a, pidHigh: 0x0002,
     unit: 'bipolar_percent', displayMin: -100, displayMax: 100,
   },
+  // Scene Level trims (Main Levels page) are ±20 dB on the device — NOT the
+  // -80..+20 span of preset.level. The AM4 Owner's Manual (Main Levels page)
+  // states each Scene Level trims its scene ±20 dB. The wire is the same
+  // normalized 0..1 float as every other dB param, so the DECODE must scale it
+  // against ±20: a wrong -80..+20 here makes get_param / get_preset / list_params
+  // report bogus dB (e.g. set +10 read back as -5) even though the write is fine.
+  // Verified live 2026-06-06: wire 0.75 → +10 dB, 0.40 → -4 dB (see
+  // docs/_private/0.2.0-dev-test-2026-06-06.md). The encode path is unit-scale
+  // based (db scale = 1) and ignores these bounds, so writes were always correct.
   'preset.scene_1_level': {
     block: 'preset', name: 'scene_1_level',
     pidLow: 0x002a, pidHigh: 0x0018,
-    unit: 'db', displayMin: -80, displayMax: 20,
+    unit: 'db', displayMin: -20, displayMax: 20,
   },
   'preset.scene_2_level': {
     block: 'preset', name: 'scene_2_level',
     pidLow: 0x002a, pidHigh: 0x0019,
-    unit: 'db', displayMin: -80, displayMax: 20,
+    unit: 'db', displayMin: -20, displayMax: 20,
   },
   'preset.scene_3_level': {
     block: 'preset', name: 'scene_3_level',
     pidLow: 0x002a, pidHigh: 0x001a,
-    unit: 'db', displayMin: -80, displayMax: 20,
+    unit: 'db', displayMin: -20, displayMax: 20,
   },
   'preset.scene_4_level': {
     block: 'preset', name: 'scene_4_level',
     pidLow: 0x002a, pidHigh: 0x001b,
-    unit: 'db', displayMin: -80, displayMax: 20,
+    unit: 'db', displayMin: -20, displayMax: 20,
   },
 
   // ── PATCH family — pidLow=0x00CE (cross-references catalog case 0x3c) ──
@@ -4361,11 +4394,11 @@ export const KNOWN_PARAMS = {
 
   // tuning reference Hz convention — HW unverified
   'global.tuningref': { block: 'global', name: 'tuningref', displayLabel: "Calibration", pidLow: 0x0001, pidHigh: 0x000d, unit: 'hz', displayMin: 430, displayMax: 450 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
+  // safe placeholder — tuner mute type; likely on Tuner page but exact UI location unconfirmed
   'global.tunermute': { block: 'global', name: 'tunermute', displayLabel: "Mute Type", pidLow: 0x0001, pidHigh: 0x000e, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.delayspill': { block: 'global', name: 'delayspill', displayLabel: "Spillover", pidLow: 0x0001, pidHigh: 0x000f, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
+  // confirmed 2026-06-05: OFF/DELAY/REVERB/DELAY+REVERB
+  'global.delayspill': { block: 'global', name: 'delayspill', displayLabel: "Spillover", pidLow: 0x0001, pidHigh: 0x000f, unit: 'enum', displayMin: 0, displayMax: 3, enumValues: { 0: 'Off', 1: 'Delay', 2: 'Reverb', 3: 'Delay & Rev' } },
+  // safe placeholder — not found on front-panel Setup menu; may be editor-only
   'global.usetuneoffsets': { block: 'global', name: 'usetuneoffsets', displayLabel: "Use Offsets", pidLow: 0x0001, pidHigh: 0x0010, unit: 'count', displayMin: 0, displayMax: 127 },
   // per-string tuning offset — HW unverified
   'global.offset1': { block: 'global', name: 'offset1', displayLabel: "E 1", pidLow: 0x0001, pidHigh: 0x0011, unit: 'semitones', displayMin: -1, displayMax: 1 },
@@ -4401,16 +4434,16 @@ export const KNOWN_PARAMS = {
   'global.out2eq10': { block: 'global', name: 'out2eq10', pidLow: 0x0001, pidHigh: 0x002b, unit: 'db', displayMin: -12, displayMax: 12 },
   // gate threshold offset dB — HW unverified
   'global.gate_offset': { block: 'global', name: 'gate_offset', displayLabel: "Noisegate Offset", pidLow: 0x0001, pidHigh: 0x002d, unit: 'db', displayMin: -40, displayMax: 0 },
-  // — captured at 1.0 = "Last Two"; full enum table pending HW
-  'global.tap_tempo_mode': { block: 'global', name: 'tap_tempo_mode', displayLabel: "Tap Tempo Mode", pidLow: 0x0001, pidHigh: 0x002e, unit: 'enum', displayMin: 0, displayMax: 7 },
+  // confirmed 2026-06-05: AVERAGE/LAST TWO (index 1 previously captured)
+  'global.tap_tempo_mode': { block: 'global', name: 'tap_tempo_mode', displayLabel: "Tap Tempo Mode", pidLow: 0x0001, pidHigh: 0x002e, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Average', 1: 'Last Two' } },
   // input trim percent — HW unverified
   'global.in1_trim': { block: 'global', name: 'in1_trim', displayLabel: "Input Pad", pidLow: 0x0001, pidHigh: 0x002f, unit: 'percent', displayMin: 0, displayMax: 100 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.out1_config': { block: 'global', name: 'out1_config', displayLabel: "Output Mode", pidLow: 0x0001, pidHigh: 0x0030, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.out1_phase': { block: 'global', name: 'out1_phase', displayLabel: "Output Phase", pidLow: 0x0001, pidHigh: 0x0031, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.in1_source': { block: 'global', name: 'in1_source', displayLabel: "Input Source", pidLow: 0x0001, pidHigh: 0x0034, unit: 'count', displayMin: 0, displayMax: 127 },
+  // confirmed 2026-06-05: STEREO/SUM L+R/COPY L->R/SPLIT/MUTE (note: SPLIT shows cab-sim routing info on device)
+  'global.out1_config': { block: 'global', name: 'out1_config', displayLabel: "Output Mode", pidLow: 0x0001, pidHigh: 0x0030, unit: 'enum', displayMin: 0, displayMax: 4, enumValues: { 0: 'Stereo', 1: 'Sum L+R', 2: 'Copy L->R', 3: 'Split', 4: 'Mute' } },
+  // confirmed 2026-06-05
+  'global.out1_phase': { block: 'global', name: 'out1_phase', displayLabel: "Output Phase", pidLow: 0x0001, pidHigh: 0x0031, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Normal', 1: 'Invert' } },
+  // confirmed 2026-06-05
+  'global.in1_source': { block: 'global', name: 'in1_source', displayLabel: "Input Source", pidLow: 0x0001, pidHigh: 0x0034, unit: 'enum', displayMin: 0, displayMax: 2, enumValues: { 0: 'Analog', 1: 'SPDIF', 2: 'USB (Channels 3/4)' } },
   // safe placeholder (range unverified) — Ghidra catalog entry only
   'global.in1_config': { block: 'global', name: 'in1_config', pidLow: 0x0001, pidHigh: 0x0035, unit: 'count', displayMin: 0, displayMax: 127 },
   // percent inferred from AM4-Edit display — HW unverified
@@ -4419,12 +4452,12 @@ export const KNOWN_PARAMS = {
   'global.fc_hold_timeout': { block: 'global', name: 'fc_hold_timeout', displayLabel: "Hold Timeout", pidLow: 0x0001, pidHigh: 0x0039, unit: 'ms', displayMin: 0, displayMax: 5000 },
   // MIDI channel 1..16
   'global.midi_chan': { block: 'global', name: 'midi_chan', displayLabel: "MIDI Channel", pidLow: 0x0001, pidHigh: 0x003a, unit: 'count', displayMin: 1, displayMax: 16 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.midi_prog_change': { block: 'global', name: 'midi_prog_change', displayLabel: "Receive MIDI PC", pidLow: 0x0001, pidHigh: 0x003b, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.no_redundant_pc': { block: 'global', name: 'no_redundant_pc', displayLabel: "Ignore Redundant PC", pidLow: 0x0001, pidHigh: 0x003c, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.send_midipc': { block: 'global', name: 'send_midipc', displayLabel: "Send MIDI PC", pidLow: 0x0001, pidHigh: 0x003f, unit: 'count', displayMin: 0, displayMax: 127 },
+  // confirmed 2026-06-05
+  'global.midi_prog_change': { block: 'global', name: 'midi_prog_change', displayLabel: "Receive MIDI PC", pidLow: 0x0001, pidHigh: 0x003b, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
+  // confirmed 2026-06-05
+  'global.no_redundant_pc': { block: 'global', name: 'no_redundant_pc', displayLabel: "Ignore Redundant PC", pidLow: 0x0001, pidHigh: 0x003c, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
+  // confirmed 2026-06-05: OFF + Chan 1..16 + Omni
+  'global.send_midipc': { block: 'global', name: 'send_midipc', displayLabel: "Send MIDI PC", pidLow: 0x0001, pidHigh: 0x003f, unit: 'enum', displayMin: 0, displayMax: 17, enumValues: { 0: 'Off', 1: 'Chan 1', 2: 'Chan 2', 3: 'Chan 3', 4: 'Chan 4', 5: 'Chan 5', 6: 'Chan 6', 7: 'Chan 7', 8: 'Chan 8', 9: 'Chan 9', 10: 'Chan 10', 11: 'Chan 11', 12: 'Chan 12', 13: 'Chan 13', 14: 'Chan 14', 15: 'Chan 15', 16: 'Chan 16', 17: 'Omni' } },
   'global.in1_vol_cc': { block: 'global', name: 'in1_vol_cc', displayLabel: "Input Volume", pidLow: 0x0001, pidHigh: 0x0046, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.out1_vol_cc': { block: 'global', name: 'out1_vol_cc', displayLabel: "Output Volume", pidLow: 0x0001, pidHigh: 0x0047, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.tempo_cc': { block: 'global', name: 'tempo_cc', displayLabel: "Tap Tempo", pidLow: 0x0001, pidHigh: 0x0048, unit: 'count', displayMin: 0, displayMax: 127 },
@@ -4432,8 +4465,8 @@ export const KNOWN_PARAMS = {
   'global.scene_cc': { block: 'global', name: 'scene_cc', displayLabel: "Scene Select", pidLow: 0x0001, pidHigh: 0x004a, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.scene_incr_cc': { block: 'global', name: 'scene_incr_cc', displayLabel: "Scene +1", pidLow: 0x0001, pidHigh: 0x004b, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.scene_decr_cc': { block: 'global', name: 'scene_decr_cc', displayLabel: "Scene -1", pidLow: 0x0001, pidHigh: 0x004c, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.scene_revert': { block: 'global', name: 'scene_revert', pidLow: 0x0001, pidHigh: 0x004d, unit: 'count', displayMin: 0, displayMax: 127 },
+  // not visible on front-panel Setup menu; may be editor-only or firmware-internal
+  'global.scene_revert': { block: 'global', name: 'scene_revert', displayLabel: "Default Scene Revert", pidLow: 0x0001, pidHigh: 0x004d, unit: 'count', displayMin: 0, displayMax: 127 },
   // safe placeholder (range unverified) — Ghidra catalog entry only
   'global.custom_scale': { block: 'global', name: 'custom_scale', pidLow: 0x0001, pidHigh: 0x0050, unit: 'count', displayMin: 0, displayMax: 127 },
   // safe placeholder (range unverified) — Ghidra catalog entry only
@@ -4444,14 +4477,14 @@ export const KNOWN_PARAMS = {
   'global.fc_ring_bright_level': { block: 'global', name: 'fc_ring_bright_level', displayLabel: "Switch LED Bright", pidLow: 0x0001, pidHigh: 0x0058, unit: 'percent', displayMin: 0, displayMax: 100 },
   // percent inferred from AM4-Edit display — HW unverified
   'global.fc_ring_dim_level': { block: 'global', name: 'fc_ring_dim_level', displayLabel: "Switch LED Dim", pidLow: 0x0001, pidHigh: 0x0059, unit: 'percent', displayMin: 0, displayMax: 100 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.linefreq': { block: 'global', name: 'linefreq', displayLabel: "AC Line Frequency", pidLow: 0x0001, pidHigh: 0x005a, unit: 'count', displayMin: 0, displayMax: 127 },
+  // confirmed 2026-06-05: 0=50 Hz, 1=60 Hz (50 Hz is index 0)
+  'global.linefreq': { block: 'global', name: 'linefreq', displayLabel: "AC Line Frequency", pidLow: 0x0001, pidHigh: 0x005a, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: '50 Hz', 1: '60 Hz' } },
   'global.preset_incr_cc': { block: 'global', name: 'preset_incr_cc', displayLabel: "Preset +1", pidLow: 0x0001, pidHigh: 0x005d, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.preset_decr_cc': { block: 'global', name: 'preset_decr_cc', displayLabel: "Preset -1", pidLow: 0x0001, pidHigh: 0x005e, unit: 'count', displayMin: 0, displayMax: 127 },
   // unit inferred from USBLEVEL1 sibling — HW unverified
   'global.metlevel1': { block: 'global', name: 'metlevel1', displayLabel: "Metronome Level", pidLow: 0x0001, pidHigh: 0x0061, unit: 'db', displayMin: -64, displayMax: 24 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.usb78_source': { block: 'global', name: 'usb78_source', displayLabel: "USB 3/4 Record Source", pidLow: 0x0001, pidHigh: 0x0062, unit: 'count', displayMin: 0, displayMax: 127 },
+  // confirmed 2026-06-05: only 2 values visible (Input/None)
+  'global.usb78_source': { block: 'global', name: 'usb78_source', displayLabel: "USB 3/4 Record Source", pidLow: 0x0001, pidHigh: 0x0062, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Input', 1: 'None' } },
   // — captured at 1.11 dB
   'global.usblevel1': { block: 'global', name: 'usblevel1', displayLabel: "USB 1/2 Level", pidLow: 0x0001, pidHigh: 0x0063, unit: 'db', displayMin: -64, displayMax: 24 },
   // unit inferred from USBLEVEL1 sibling — HW unverified
@@ -4460,12 +4493,12 @@ export const KNOWN_PARAMS = {
   'global.aeslevel': { block: 'global', name: 'aeslevel', displayLabel: "SPDIF In Level", pidLow: 0x0001, pidHigh: 0x0065, unit: 'db', displayMin: -64, displayMax: 24 },
   // down-tune semitones — HW unverified
   'global.downtune': { block: 'global', name: 'downtune', displayLabel: "Downtune", pidLow: 0x0001, pidHigh: 0x0067, unit: 'semitones', displayMin: -12, displayMax: 0 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.tuneraccidentals': { block: 'global', name: 'tuneraccidentals', displayLabel: "Display Mode", pidLow: 0x0001, pidHigh: 0x0068, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.midi_thru': { block: 'global', name: 'midi_thru', displayLabel: "MIDI Thru", pidLow: 0x0001, pidHigh: 0x006d, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.tuner_on_volume': { block: 'global', name: 'tuner_on_volume', displayLabel: "Tuner on Heel Down", pidLow: 0x0001, pidHigh: 0x006e, unit: 'count', displayMin: 0, displayMax: 127 },
+  // confirmed 2026-06-05: 0=Flats, 1=Both (b for flats / # for sharps), 2=Sharps
+  'global.tuneraccidentals': { block: 'global', name: 'tuneraccidentals', displayLabel: "Tuner Accidentals", pidLow: 0x0001, pidHigh: 0x0068, unit: 'enum', displayMin: 0, displayMax: 2, enumValues: { 0: 'Flats', 1: 'Both', 2: 'Sharps' } },
+  // confirmed 2026-06-05
+  'global.midi_thru': { block: 'global', name: 'midi_thru', displayLabel: "MIDI Thru", pidLow: 0x0001, pidHigh: 0x006d, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
+  // CC# assignment param (0=CC#1 ... not ON/OFF); exact mapping unconfirmed — keep as count
+  'global.tuner_on_volume': { block: 'global', name: 'tuner_on_volume', displayLabel: "Tuner on Heel Down CC", pidLow: 0x0001, pidHigh: 0x006e, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.bypass_fx1_cc': { block: 'global', name: 'bypass_fx1_cc', displayLabel: "FX1 Bypass", pidLow: 0x0001, pidHigh: 0x006f, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.bypass_fx2_cc': { block: 'global', name: 'bypass_fx2_cc', displayLabel: "FX2 Bypass", pidLow: 0x0001, pidHigh: 0x0070, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.bypass_fx3_cc': { block: 'global', name: 'bypass_fx3_cc', displayLabel: "FX3 Bypass", pidLow: 0x0001, pidHigh: 0x0071, unit: 'count', displayMin: 0, displayMax: 127 },
@@ -4490,8 +4523,8 @@ export const KNOWN_PARAMS = {
   'global.ext_startval_begin_2': { block: 'global', name: 'ext_startval_begin_2', pidLow: 0x0001, pidHigh: 0x007d, unit: 'count', displayMin: 0, displayMax: 127 },
   // external CC initial value 0..127
   'global.ext_startval_begin_3': { block: 'global', name: 'ext_startval_begin_3', pidLow: 0x0001, pidHigh: 0x007e, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.auto_truebypass': { block: 'global', name: 'auto_truebypass', displayLabel: "Automatic AM4 Bypass", pidLow: 0x0001, pidHigh: 0x0081, unit: 'count', displayMin: 0, displayMax: 127 },
+  // confirmed 2026-06-05
+  'global.auto_truebypass': { block: 'global', name: 'auto_truebypass', displayLabel: "Automatic AM4 Bypass", pidLow: 0x0001, pidHigh: 0x0081, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
   'global.truebypass_cc': { block: 'global', name: 'truebypass_cc', displayLabel: "AM4 Bypass", pidLow: 0x0001, pidHigh: 0x0083, unit: 'count', displayMin: 0, displayMax: 127 },
   // press-hold timeout ms — HW unverified
   'global.fs_press_hold1': { block: 'global', name: 'fs_press_hold1', displayLabel: "Press & Hold 1", pidLow: 0x0001, pidHigh: 0x0084, unit: 'ms', displayMin: 0, displayMax: 5000 },
@@ -4501,37 +4534,39 @@ export const KNOWN_PARAMS = {
   'global.fs_press_hold3': { block: 'global', name: 'fs_press_hold3', displayLabel: "Press & Hold 3", pidLow: 0x0001, pidHigh: 0x0086, unit: 'ms', displayMin: 0, displayMax: 5000 },
   // press-hold timeout ms — HW unverified
   'global.fs_press_hold4': { block: 'global', name: 'fs_press_hold4', displayLabel: "Press & Hold 4", pidLow: 0x0001, pidHigh: 0x0087, unit: 'ms', displayMin: 0, displayMax: 5000 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.startup_mode': { block: 'global', name: 'startup_mode', displayLabel: "Startup Mode", pidLow: 0x0001, pidHigh: 0x0089, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.gap_fill': { block: 'global', name: 'gap_fill', displayLabel: "Gapless Changes", pidLow: 0x0001, pidHigh: 0x008f, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.select_fade': { block: 'global', name: 'select_fade', displayLabel: "Fade Timeout", pidLow: 0x0001, pidHigh: 0x0091, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.presshold_mode': { block: 'global', name: 'presshold_mode', displayLabel: "Press & Hold Mode", pidLow: 0x0001, pidHigh: 0x0092, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.tap_amp_fx_mode': { block: 'global', name: 'tap_amp_fx_mode', displayLabel: "Tap Amp in FX Mode", pidLow: 0x0001, pidHigh: 0x0093, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.tap_amp_ch_amp_mode': { block: 'global', name: 'tap_amp_ch_amp_mode', displayLabel: "Tap Current Ch. in Amp Mode", pidLow: 0x0001, pidHigh: 0x0094, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.cabinetbyp': { block: 'global', name: 'cabinetbyp', displayLabel: "Cab Modeling", pidLow: 0x0001, pidHigh: 0x0095, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.pwrampbyp': { block: 'global', name: 'pwrampbyp', displayLabel: "Power Amp Modeling", pidLow: 0x0001, pidHigh: 0x0096, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.sprk_model': { block: 'global', name: 'sprk_model', displayLabel: "Speaker Imp. Curve", pidLow: 0x0001, pidHigh: 0x0097, unit: 'count', displayMin: 0, displayMax: 127 },
+  // confirmed 2026-06-05
+  'global.startup_mode': { block: 'global', name: 'startup_mode', displayLabel: "Startup Mode", pidLow: 0x0001, pidHigh: 0x0089, unit: 'enum', displayMin: 0, displayMax: 3, enumValues: { 0: 'Preset', 1: 'Scene', 2: 'Effects', 3: 'Amp' } },
+  // confirmed 2026-06-05: 0=Off is default (gapless is OFF until user enables it)
+  'global.gap_fill': { block: 'global', name: 'gap_fill', displayLabel: "Gapless Changes", pidLow: 0x0001, pidHigh: 0x008f, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
+  // confirmed 2026-06-05: 0=Off, 1..10=seconds; device label is "Fade Selected Effect Timeout"
+  'global.select_fade': { block: 'global', name: 'select_fade', displayLabel: "Fade Selected Effect Timeout", pidLow: 0x0001, pidHigh: 0x0091, unit: 'enum', displayMin: 0, displayMax: 10, enumValues: { 0: 'Off', 1: '1 Second', 2: '2 Seconds', 3: '3 Seconds', 4: '4 Seconds', 5: '5 Seconds', 6: '6 Seconds', 7: '7 Seconds', 8: '8 Seconds', 9: '9 Seconds', 10: '10 Seconds' } },
+  // confirmed 2026-06-05
+  'global.presshold_mode': { block: 'global', name: 'presshold_mode', displayLabel: "Press & Hold Mode", pidLow: 0x0001, pidHigh: 0x0092, unit: 'enum', displayMin: 0, displayMax: 2, enumValues: { 0: 'Disabled', 1: 'Gig Mode', 2: 'Custom Mode' } },
+  // confirmed 2026-06-05
+  'global.tap_amp_fx_mode': { block: 'global', name: 'tap_amp_fx_mode', displayLabel: "Tap Amp in FX Mode", pidLow: 0x0001, pidHigh: 0x0093, unit: 'enum', displayMin: 0, displayMax: 2, enumValues: { 0: 'Nothing', 1: 'Bypass', 2: 'Boost' } },
+  // confirmed 2026-06-05
+  'global.tap_amp_ch_amp_mode': { block: 'global', name: 'tap_amp_ch_amp_mode', displayLabel: "Tap Current Ch. in Amp Mode", pidLow: 0x0001, pidHigh: 0x0094, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Nothing', 1: 'Boost' } },
+  // confirmed 2026-06-05: device shows "ACTIVE"/"BYPASSED" (not "ON"/"OFF")
+  'global.cabinetbyp': { block: 'global', name: 'cabinetbyp', displayLabel: "Cab Modeling", pidLow: 0x0001, pidHigh: 0x0095, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Active', 1: 'Bypassed' } },
+  // confirmed 2026-06-05
+  'global.pwrampbyp': { block: 'global', name: 'pwrampbyp', displayLabel: "Power Amp Modeling", pidLow: 0x0001, pidHigh: 0x0096, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'On', 1: 'Off' } },
+  // confirmed 2026-06-05: index 0 = Default (manual); indices 1-8 confirmed on hardware;
+  // more entries likely exist beyond index 8 (full list not swept)
+  'global.sprk_model': { block: 'global', name: 'sprk_model', displayLabel: "Speaker Imp. Curve", pidLow: 0x0001, pidHigh: 0x0097, unit: 'enum', displayMin: 0, displayMax: 127, enumValues: { 0: 'Default', 1: 'Resistive Load', 2: '1x8 5F1 Tweed', 3: '1x10 Princeton NR', 4: '1x10 BF Princeton', 5: '1x10 SF Princeton', 6: '1x12 Tweed Emmi', 7: '1x12 Vibrato Lux', 8: '1x12 Deluxe Verb' } },
   'global.amp_chan_cc': { block: 'global', name: 'amp_chan_cc', displayLabel: "Amp Channel", pidLow: 0x0001, pidHigh: 0x0098, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.out_boost_cc': { block: 'global', name: 'out_boost_cc', displayLabel: "Amp Out Boost", pidLow: 0x0001, pidHigh: 0x0099, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.scenesync_ch': { block: 'global', name: 'scenesync_ch', displayLabel: "Scene Sync Channel", pidLow: 0x0001, pidHigh: 0x009c, unit: 'count', displayMin: 0, displayMax: 127 },
+  // confirmed 2026-06-05: OFF + Chan 1..16 + Omni
+  'global.scenesync_ch': { block: 'global', name: 'scenesync_ch', displayLabel: "Scene Sync Channel", pidLow: 0x0001, pidHigh: 0x009c, unit: 'enum', displayMin: 0, displayMax: 17, enumValues: { 0: 'Off', 1: 'Chan 1', 2: 'Chan 2', 3: 'Chan 3', 4: 'Chan 4', 5: 'Chan 5', 6: 'Chan 6', 7: 'Chan 7', 8: 'Chan 8', 9: 'Chan 9', 10: 'Chan 10', 11: 'Chan 11', 12: 'Chan 12', 13: 'Chan 13', 14: 'Chan 14', 15: 'Chan 15', 16: 'Chan 16', 17: 'Omni' } },
   'global.scenesync_cc': { block: 'global', name: 'scenesync_cc', displayLabel: "Scene Sync CC#", pidLow: 0x0001, pidHigh: 0x009d, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.dynacab_sync': { block: 'global', name: 'dynacab_sync', pidLow: 0x0001, pidHigh: 0x009e, unit: 'count', displayMin: 0, displayMax: 127 },
+  // front panel label is "DynaCab Auto-Match" under Amp Expert > Speaker > IMPEDANCE section
+  // (not in Setup menu). Global default; per-preset behavior may differ.
+  'global.dynacab_sync': { block: 'global', name: 'dynacab_sync', displayLabel: "DynaCab Auto-Match", pidLow: 0x0001, pidHigh: 0x009e, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
   'global.amp1_vol_cc': { block: 'global', name: 'amp1_vol_cc', displayLabel: "Amp Block Out Vol", pidLow: 0x0001, pidHigh: 0x009f, unit: 'count', displayMin: 0, displayMax: 127 },
   // safe placeholder (range unverified) — Ghidra catalog entry only
   'global.metronome': { block: 'global', name: 'metronome', displayLabel: "Metronome", pidLow: 0x0001, pidHigh: 0x00a0, unit: 'count', displayMin: 0, displayMax: 127 },
   'global.metronome_cc': { block: 'global', name: 'metronome_cc', displayLabel: "Metronome", pidLow: 0x0001, pidHigh: 0x00a1, unit: 'count', displayMin: 0, displayMax: 127 },
-  // safe placeholder (range unverified) — Ghidra catalog entry only
-  'global.inspdif_config': { block: 'global', name: 'inspdif_config', displayLabel: "SPDIF Input Mode", pidLow: 0x0001, pidHigh: 0x00a2, unit: 'count', displayMin: 0, displayMax: 127 },
+  // confirmed 2026-06-05: only visible when Input Source = SPDIF
+  'global.inspdif_config': { block: 'global', name: 'inspdif_config', displayLabel: "SPDIF Input Mode", pidLow: 0x0001, pidHigh: 0x00a2, unit: 'enum', displayMin: 0, displayMax: 3, enumValues: { 0: 'Stereo', 1: 'Left Only', 2: 'Right Only', 3: 'Sum L+R' } },
 
   // ============================================================
   // 2026-05-17  closeout — wires the
@@ -4558,7 +4593,8 @@ export const KNOWN_PARAMS = {
 
   // ---- CABINET (pidLow=0x003e) — 4 entries ----
   'amp.cab_proximity_2':       { block: 'amp', name: 'cab_proximity_2',       displayLabel: 'Proximity', pidLow: 0x003e, pidHigh: 0x0015, unit: 'percent',     displayMin: 0,   displayMax: 100 },
-  'amp.cab_zoom':              { block: 'amp', name: 'cab_zoom', displayLabel: "ZOOM",              pidLow: 0x003e, pidHigh: 0x0021, unit: 'count',       displayMin: 0,   displayMax: 127 },
+  // confirmed 2026-06-05: zooms the IR graph display in AM4-Edit — display-only, no audio effect
+  'amp.cab_zoom':              { block: 'amp', name: 'cab_zoom', displayLabel: "Cab IR Graph Zoom", pidLow: 0x003e, pidHigh: 0x0021, unit: 'enum',       displayMin: 0,   displayMax: 1, enumValues: { 0: 'Normal', 1: 'Zoomed Out' } },
   'amp.cab_dynacab_z_1':       { block: 'amp', name: 'cab_dynacab_z_1',       displayLabel: 'Distance', pidLow: 0x003e, pidHigh: 0x0047, unit: 'percent',     displayMin: 0,   displayMax: 100 },
   'amp.cab_dynacab_z_2':       { block: 'amp', name: 'cab_dynacab_z_2',       displayLabel: 'Distance', pidLow: 0x003e, pidHigh: 0x0048, unit: 'percent',     displayMin: 0,   displayMax: 100 },
 
@@ -4597,20 +4633,26 @@ export const KNOWN_PARAMS = {
   'amp.spkr_imp_curve':        { block: 'amp', name: 'spkr_imp_curve',        displayLabel: 'Spkr Imp. Curve',       pidLow: 0x003a, pidHigh: 0x0087, unit: 'count', displayMin: 0, displayMax: 127 },
   'amp.power_amp_modeling':    { block: 'amp', name: 'power_amp_modeling',    displayLabel: 'Power Amp Modeling',    pidLow: 0x003a, pidHigh: 0x008d, unit: 'enum',  displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
   'amp.spkr_breakup':          { block: 'amp', name: 'spkr_breakup',          displayLabel: 'Breakup',               pidLow: 0x003a, pidHigh: 0x008e, unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
-  'amp.plate_suppr_diodes':    { block: 'amp', name: 'plate_suppr_diodes',    displayLabel: 'Plate Suppr. Diodes',   pidLow: 0x003a, pidHigh: 0x0090, unit: 'count', displayMin: 0, displayMax: 127 },
+  // confirmed 2026-06-05: front panel "Plate Suppression Diodes" under Power Tubes section
+  'amp.plate_suppr_diodes':    { block: 'amp', name: 'plate_suppr_diodes',    displayLabel: 'Plate Suppression Diodes', pidLow: 0x003a, pidHigh: 0x0090, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
   'amp.dynamatch':             { block: 'amp', name: 'dynamatch',             displayLabel: 'DynaMatch',             pidLow: 0x003a, pidHigh: 0x0092, unit: 'enum',  displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
   'amp.nfb_compensation':      { block: 'amp', name: 'nfb_compensation',      displayLabel: 'NFB Compensation',      pidLow: 0x003a, pidHigh: 0x0093, unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
   'amp.mid_gain_boost':        { block: 'amp', name: 'mid_gain_boost',        displayLabel: 'Mid/Gain Boost',        pidLow: 0x003a, pidHigh: 0x0094, unit: 'enum',  displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
   'amp.tubes':                 { block: 'amp', name: 'tubes',                 displayLabel: 'Tubes',                 pidLow: 0x003a, pidHigh: 0x0095, unit: 'count', displayMin: 0, displayMax: 127 },
 
   // ---- PATCH (pidLow=0x00ce) — 29 entries ----
-  // Channel A/B/C/D color pickers. AM4-Edit shows ~8 named colors;
-  // exact enum table not yet captured, so count 0..127 as
-  // safe-write placeholder.
-  'preset.channel_a_color':    { block: 'preset', name: 'channel_a_color',    displayLabel: 'Channel A Color', pidLow: 0x00ce, pidHigh: 0x0071, unit: 'count', displayMin: 0, displayMax: 127 },
-  'preset.channel_b_color':    { block: 'preset', name: 'channel_b_color',    displayLabel: 'Channel B Color', pidLow: 0x00ce, pidHigh: 0x0072, unit: 'count', displayMin: 0, displayMax: 127 },
-  'preset.channel_c_color':    { block: 'preset', name: 'channel_c_color',    displayLabel: 'Channel C Color', pidLow: 0x00ce, pidHigh: 0x0073, unit: 'count', displayMin: 0, displayMax: 127 },
-  'preset.channel_d_color':    { block: 'preset', name: 'channel_d_color',    displayLabel: 'Channel D Color', pidLow: 0x00ce, pidHigh: 0x0074, unit: 'count', displayMin: 0, displayMax: 127 },
+  // Channel A/B/C/D LED color pickers. Live on the PATCH register family
+  // (pidLow=0x00CE) but exposed under block:'amp' because AM4-Edit places
+  // them on the Amp > Expert page (Knob C on the Amp Type page). Agents
+  // reach for 'amp.channel_a_color' not 'preset.channel_a_color'.
+  //
+  // Enum table confirmed 2026-06-05 via hardware probe (probe-am4-channel-color.ts)
+  // + device front-panel scroll on Amp Type page: 7 colors in wire-index order.
+  // Wire value is float32(index), same encoding as other PATCH-family enums.
+  'amp.channel_a_color':       { block: 'amp', name: 'channel_a_color',       displayLabel: 'Channel A LED Color', pidLow: 0x00ce, pidHigh: 0x0071, unit: 'enum', displayMin: 0, displayMax: 6, enumValues: { 0: 'Red', 1: 'Orange', 2: 'Yellow', 3: 'Green', 4: 'Cyan', 5: 'Blue', 6: 'Purple' } },
+  'amp.channel_b_color':       { block: 'amp', name: 'channel_b_color',       displayLabel: 'Channel B LED Color', pidLow: 0x00ce, pidHigh: 0x0072, unit: 'enum', displayMin: 0, displayMax: 6, enumValues: { 0: 'Red', 1: 'Orange', 2: 'Yellow', 3: 'Green', 4: 'Cyan', 5: 'Blue', 6: 'Purple' } },
+  'amp.channel_c_color':       { block: 'amp', name: 'channel_c_color',       displayLabel: 'Channel C LED Color', pidLow: 0x00ce, pidHigh: 0x0073, unit: 'enum', displayMin: 0, displayMax: 6, enumValues: { 0: 'Red', 1: 'Orange', 2: 'Yellow', 3: 'Green', 4: 'Cyan', 5: 'Blue', 6: 'Purple' } },
+  'amp.channel_d_color':       { block: 'amp', name: 'channel_d_color',       displayLabel: 'Channel D LED Color', pidLow: 0x00ce, pidHigh: 0x0074, unit: 'enum', displayMin: 0, displayMax: 6, enumValues: { 0: 'Red', 1: 'Orange', 2: 'Yellow', 3: 'Green', 4: 'Cyan', 5: 'Blue', 6: 'Purple' } },
 
   // Scene MIDI EXEC slots (paramId 118..137 — 4 + 16 = 20).
   // XML labels are empty for these — they're PATCH-page editor

@@ -48,11 +48,6 @@ const DESCRIPTION_BUDGET_OVERRIDES: ReadonlyMap<string, number> = new Map([
   // describe_device.agent_guidance is queued but not on this sprint's
   // path. Honest cap until then.
   ['apply_patch', 6000],
-  // axefx3_set_parameter: BETA prefix + raw-wire-value EXCEPTION-TO-
-  // DISPLAY-FIRST callout + GET hypothesis banner inflate the
-  // description. Migration to describe_device.agent_guidance lands when
-  // III moves out of community beta.
-  ['axefx3_set_parameter', 1600],
   // apply_preset: spec-shape, target_location semantics, verify_chain,
   // and the audition-vs-save discipline all live in the description.
   // Migration to describe_device.agent_guidance pending post-announce.
@@ -70,11 +65,56 @@ const DESCRIPTION_BUDGET_OVERRIDES: ReadonlyMap<string, number> = new Map([
   ['get_preset', 1200],
 ]);
 
+interface ToolAnnotations {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
 interface ToolEntry {
   name: string;
   description: string;
   charCount: number;
+  annotations?: ToolAnnotations;
 }
+
+/**
+ * Read/write classification, derived from the same ToolAnnotations the
+ * MCP host (Claude Desktop's Manage Connectors page) uses to split tools
+ * into read vs write groups. Mirrors the buckets asserted by
+ * `scripts/mcp-test-tool-annotations.ts`:
+ *   - 'read'        readOnlyHint: true
+ *   - 'destructive' not read-only AND destructiveHint: true (persists,
+ *                   overwrites, or sends raw bytes)
+ *   - 'write'       everything else (reversible working-buffer edits)
+ */
+type ToolCategory = 'read' | 'write' | 'destructive';
+
+function classify(entry: ToolEntry): ToolCategory {
+  const a = entry.annotations;
+  if (a?.readOnlyHint === true) return 'read';
+  if (a?.destructiveHint === true) return 'destructive';
+  return 'write';
+}
+
+const CATEGORY_SECTIONS: readonly { category: ToolCategory; heading: string; blurb: string }[] = [
+  {
+    category: 'read',
+    heading: '### Read (read-only)',
+    blurb: 'No device state changes. `readOnlyHint: true`. Hosts group these as read tools.',
+  },
+  {
+    category: 'write',
+    heading: '### Write (reversible)',
+    blurb: 'Working-buffer edits and navigation, reversible by switching presets. Not destructive.',
+  },
+  {
+    category: 'destructive',
+    heading: '### Write (destructive)',
+    blurb: 'Persists, overwrites a stored location, or sends raw bytes. `destructiveHint: true`.',
+  },
+];
 
 async function listAllTools(): Promise<ToolEntry[]> {
   const transport = new StdioClientTransport({
@@ -96,7 +136,8 @@ async function listAllTools(): Promise<ToolEntry[]> {
   const listed = await client.listTools();
   const entries: ToolEntry[] = (listed.tools ?? []).map((t) => {
     const description = typeof t.description === 'string' ? t.description : '';
-    return { name: t.name, description, charCount: description.length };
+    const annotations = (t.annotations ?? undefined) as ToolAnnotations | undefined;
+    return { name: t.name, description, charCount: description.length, annotations };
   });
   entries.sort((a, b) => a.name.localeCompare(b.name));
   await client.close();
@@ -123,29 +164,49 @@ function renderToolsMd(all: ToolEntry[]): string {
   const avg = all.length === 0 ? 0 : Math.round(all.reduce((s, t) => s + t.charCount, 0) / all.length);
   const over600 = all.filter((t) => t.charCount > DESCRIPTION_WARN_CHARS).length;
   const over1000 = all.filter((t) => t.charCount > DESCRIPTION_HARD_CAP_CHARS).length;
+  const readCount = all.filter((t) => classify(t) === 'read').length;
+  const writeCount = all.filter((t) => classify(t) === 'write').length;
+  const destructiveCount = all.filter((t) => classify(t) === 'destructive').length;
   lines.push('## Summary');
   lines.push('');
   lines.push(`| Metric | Value |`);
   lines.push('|---|---|');
   lines.push(`| Total tools | ${all.length} |`);
+  lines.push(`| Read (read-only) | ${readCount} |`);
+  lines.push(`| Write (reversible) | ${writeCount} |`);
+  lines.push(`| Write (destructive) | ${destructiveCount} |`);
   lines.push(`| Average description length | ${avg} chars |`);
   lines.push(`| Tools over 600 chars | ${over600} |`);
   lines.push(`| Tools over 1000 chars | ${over1000} |`);
   lines.push('');
   lines.push('## All tools');
   lines.push('');
-  lines.push('| Tool | Description length | First sentence |');
-  lines.push('|---|---|---|');
-  for (const t of all) {
-    const flag = t.charCount > DESCRIPTION_HARD_CAP_CHARS
-      ? ` ⚠️ over ${DESCRIPTION_HARD_CAP_CHARS}`
-      : t.charCount > DESCRIPTION_WARN_CHARS
-        ? ` ⚠`
-        : '';
-    const sentence = firstSentence(t.description).replace(/\|/g, '\\|');
-    lines.push(`| \`${t.name}\` | ${t.charCount}${flag} | ${sentence} |`);
-  }
+  lines.push('Grouped by read/write classification, the same `readOnlyHint` / `destructiveHint` annotations a host (e.g. Claude Desktop\'s Manage Connectors page) uses to split read tools from write tools.');
   lines.push('');
+  for (const section of CATEGORY_SECTIONS) {
+    const inSection = all.filter((t) => classify(t) === section.category);
+    lines.push(section.heading);
+    lines.push('');
+    lines.push(section.blurb);
+    lines.push('');
+    if (inSection.length === 0) {
+      lines.push('_None._');
+      lines.push('');
+      continue;
+    }
+    lines.push('| Tool | Description length | First sentence |');
+    lines.push('|---|---|---|');
+    for (const t of inSection) {
+      const flag = t.charCount > DESCRIPTION_HARD_CAP_CHARS
+        ? ` ⚠️ over ${DESCRIPTION_HARD_CAP_CHARS}`
+        : t.charCount > DESCRIPTION_WARN_CHARS
+          ? ` ⚠`
+          : '';
+      const sentence = firstSentence(t.description).replace(/\|/g, '\\|');
+      lines.push(`| \`${t.name}\` | ${t.charCount}${flag} | ${sentence} |`);
+    }
+    lines.push('');
+  }
   lines.push('## Description budget outliers');
   lines.push('');
   lines.push(`Tools with descriptions over ${DESCRIPTION_HARD_CAP_CHARS} chars. Migration to structured response fields (via \`describe_device.agent_guidance\`) is the planned trim path; each override carries an inline reason in \`scripts/list-tools.ts\`.`);

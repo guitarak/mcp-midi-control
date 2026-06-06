@@ -51,6 +51,16 @@ AxeEdit III, and AM4-Edit. See memory `feedback_capture_methodology`.
 - ipMIDI for *network* MIDI between two real ports, neither of
   which is a Fractal editor. The filtering applies only when the
   Fractal editor is one endpoint.
+- **Full device EMULATION (not bridging), and FM9-Edit specifically.**
+  This entry rules out *interposing* a virtual port between an editor and
+  a *real* device. It does not rule out emulating the device outright. And
+  the gen-3 editor is more permissive than AxeEdit II / AM4-Edit:
+  **FM9-Edit accepts a loopMIDI port whose name carries the `AXE` prefix**
+  (e.g. `AXEloopMIDI Port`) and connects to it with no hardware. This was
+  used to capture the gen-3 editor-write surface with zero hardware. See
+  the [loopMIDI editor-emulation capture guide](../../../capture-guides/loopmidi-editor-emulation.md)
+  and [[gen3-fn01-grid-set-position-insert]]. The driver-class filter
+  documented above still applies to AxeEdit II / AM4-Edit on Windows.
 
 ## Refinement history
 

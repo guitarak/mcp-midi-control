@@ -62,7 +62,8 @@ export function registerNavigationTools(server: McpServer): void {
     description: [
       'DESTRUCTIVE: persist the working buffer to a stored location, optionally renaming first. Call ONLY when the user explicitly said save/store/keep/persist.',
       '- "make me a preset for X" is audition language, not save. When unsure, apply_preset first and ask before persisting.',
-      '- Confirm before overwriting a non-empty location. Z04 is the conventional AM4 scratch slot.',
+      '- OVERWRITE GATE (AM4): if the target location is occupied AND is not the location you are editing, the save refuses and returns the occupying preset name. Confirm with the user, then retry with confirm_overwrite: true. Saving over the active location, or to an empty location, proceeds without the gate.',
+      '- RECEIPT (AM4): on success the response carries saved_snapshot { block_chain, amp_model, drive_model, preset_name }, read back from the device so you can confirm to the user exactly what landed, not just that it acked.',
       '- Optional `name` (<=32 chars) renames the preset before saving.',
     ].join(' '),
     inputSchema: {
@@ -73,10 +74,13 @@ export function registerNavigationTools(server: McpServer): void {
       name: z.string().max(32).optional().describe(
         'Optional new name (up to 32 chars). If supplied, the preset is renamed before saving.',
       ),
+      confirm_overwrite: z.boolean().optional().describe(
+        'Set true to confirm overwriting an occupied, non-active target location. Omit (or false) to be refused (with the occupying preset name surfaced) when the target already holds a preset. Saving to the active location or an empty location does not require this.',
+      ),
     },
-  }, async ({ port, location, name }) => {
+  }, async ({ port, location, name, confirm_overwrite }) => {
     try {
-      const result = await executeSavePreset({ port, location, name });
+      const result = await executeSavePreset({ port, location, name, confirm_overwrite });
       return asText(result);
     } catch (err) {
       return asError(err);
@@ -145,15 +149,7 @@ export function registerNavigationTools(server: McpServer): void {
   // set_mod_route ----------------------------------------------------------
   server.registerTool('set_mod_route', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    description: [
-      'Wire one modulation-matrix route by NAME on a synth with a mod matrix (e.g. Hydrasynth).',
-      'Picks a free matrix slot and writes source + target + depth in one call. The direct way to make env-to-filter, velocity-to-brightness, or LFO-to-pitch on an agent-built patch.',
-      'source/target use the device\'s own labels (source e.g. "Env 2", "LFO 1", "Velocity"; target e.g. "Filt 1 Cutoff", "Mut 1 Depth", "Osc 1 Pitch"). Full lists: list_params({port, block:"modmatrix"}).',
-      'depth is bipolar -128..+128 (0 = no modulation).',
-      'Slot allocation assumes a fresh/INIT patch; on a factory patch pass an explicit slot.',
-      'CONFIRM BY EAR: the front-panel MOD MATRIX page may not redraw to reflect a route set over MIDI, so verify by playing a note and listening, not by the screen.',
-      'Returns capability_not_supported on devices without a mod matrix.',
-    ].join(' '),
+    description: 'Wire one modulation-matrix route by NAME on a synth with a mod matrix (e.g. Hydrasynth): picks a free slot and writes source + target + depth in one call (env-to-filter, velocity-to-brightness, LFO-to-pitch on an agent-built patch). source/target use the device\'s own labels (source e.g. "Env 2", "LFO 1", "Velocity"; target e.g. "Filt 1 Cutoff", "Osc 1 Pitch"); full lists: list_params({port, block:"modmatrix"}). depth is bipolar -128..+128 (0 = no modulation). Slot auto-allocation assumes a fresh/INIT patch; on a factory patch pass an explicit slot. CONFIRM BY EAR: the MOD MATRIX page may not redraw for a route set over MIDI, so verify by playing a note, not by the screen. Returns capability_not_supported on devices without a mod matrix.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       source: z.union([z.string(), z.number()]).describe('Mod source name (e.g. "Env 2", "LFO 1", "Velocity") or its wire value.'),
@@ -172,15 +168,7 @@ export function registerNavigationTools(server: McpServer): void {
   // set_macro_route --------------------------------------------------------
   server.registerTool('set_macro_route', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    description: [
-      'Assign one of a performance Macro\'s destinations by NAME (Hydrasynth macro page: each Macro 1-8 has up to 8 destinations).',
-      'Picks a free destination slot for the macro and writes target + depth. AFTER this, set_macro(macro, value) actually moves that destination on an agent-built patch (an unwired macro is silent).',
-      'target uses the device\'s own destination labels (e.g. "Filt 1 Cutoff", "Reverb Dry/Wet", "Osc 1 Pitch"), the same list as set_mod_route; see list_params({port, block:"macros"}).',
-      'depth is bipolar -128..+128. Mirrors the hardware macro page 1:1.',
-      'Slot allocation assumes a fresh/INIT patch; pass an explicit slot on a factory patch.',
-      'CONFIRM BY EAR: the front-panel macro page may not redraw to reflect a destination set over MIDI; verify by turning the macro (set_macro) and listening.',
-      'Returns capability_not_supported on devices without authorable macro destinations.',
-    ].join(' '),
+    description: 'Assign one of a performance Macro\'s (1-8) destinations by NAME on the Hydrasynth macro page (up to 8 destinations each); allocates a free slot and writes target + depth. After this, set_macro(macro, value) moves that destination; an unwired macro is silent. target uses the device\'s destination labels (e.g. "Filt 1 Cutoff", "Reverb Dry/Wet"), same list as set_mod_route; discover via list_params({port, block:"macros"}). depth is bipolar -128..+128. Auto-allocation assumes a fresh/INIT patch; pass an explicit slot on a factory patch. CONFIRM BY EAR: the front-panel macro page may not redraw for a destination set over MIDI; verify by turning the macro (set_macro) and listening. Returns capability_not_supported on devices without authorable macro destinations.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       macro: z.number().int().min(1).max(8).describe('Macro number 1-8.'),

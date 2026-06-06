@@ -12,13 +12,14 @@ saves/overwrites, acknowledged writes, tempo-first, read-before-write)
 that apply consistently to every device. Generic-MIDI primitives reach
 any USB MIDI device; a first-class tier gets full preset/patch authoring.
 The deepest current support is for the Fractal AM4, Axe-Fx II, and ASM
-Hydrasynth, with the Axe-Fx III in community beta. Consistency across
+Hydrasynth, with the modern Fractal family (Axe-Fx III / FM3 / FM9) and the
+original Axe-Fx Standard/Ultra (gen-1, set + parameter read) in community beta. Consistency across
 devices is a core value, and adding new gear (Line 6 Helix and other
 popular modelers, instruments, and synthesizers are the wanted targets)
 is a descriptor, not new tools.
 
 ## Current Phase
-**Status:** pre-release. AM4 + Hydrasynth functional; Axe-Fx II functional; Axe-Fx III in community beta. See ROADMAP.md.
+**Status:** pre-release. AM4 + Hydrasynth functional; Axe-Fx II functional; the modern Fractal family (Axe-Fx III / FM3 / FM9) in community beta via one shared gen-3 codec factory; the original Axe-Fx Standard/Ultra (gen-1, model 0x01) in community beta, with parameter set + read decoded from the published gen-1 SysEx spec. See ROADMAP.md.
 
 Start a session by reading the maintainer's private operational notes
 (gitignored, not in the public tree): the current-state doc names the
@@ -52,10 +53,13 @@ codec package under `packages/fractal-midi/docs/`.
 | **`fractal-midi`** | `packages/fractal-midi/` | Pure-TypeScript codec. Published to npm. NO MIDI transport, NO MCP server. |
 | **`@mcp-midi-control/core`** | `packages/core/` | Shared dispatcher, param-kind resolver, protocol-generic types. |
 | **`@mcp-midi-control/am4`** | `packages/am4/` | AM4 device descriptor, writer, reader, tools. |
-| **`@mcp-midi-control/axe-fx-ii`** | `packages/axe-fx-ii/` | Axe-Fx II device descriptor, writer, reader, tools. |
-| **`@mcp-midi-control/axe-fx-iii`** | `packages/axe-fx-iii/` | Axe-Fx III device descriptor, writer, reader, tools. |
+| **`@mcp-midi-control/axe-fx-ii`** | `packages/axe-fx-ii/` | Axe-Fx II (gen-2) device descriptor, writer, reader, tools. |
+| **`@mcp-midi-control/axe-fx-gen1`** | `packages/axe-fx-gen1/` | Axe-Fx Standard/Ultra (gen-1) device descriptor. Its **own** nibble-split codec (model `0x01`, fn `0x02`, trailing query(0)/set(1) flag — not gen-2 septet, not gen-3 sub-action), in `fractal-midi/axe-fx-gen1`. **Set + parameter read, community beta**: decoded byte-exactly from the published gen-1 SysEx spec (no hardware). `get_param`/`get_params` query via fn 0x02 (flag 0) → MIDI_PARAM_VALUE (value + device label); whole-patch dump, save/switch/scene/channel omitted. 922 params / 35 blocks generated from the doc. |
+| **`@mcp-midi-control/fractal-modern`** | `packages/fractal-modern/` | Modern Fractal family (gen-3): Axe-Fx III / FM3 / FM9 / VP4. One `createModernFractalDescriptor` factory + per-device configs; they share one codec + block effect IDs, differing by model byte, grid/scene shape, and a **device-true param catalog** (FM3/FM9/VP4 mined from their own editor binaries — `fractal-midi/fm3`,`/fm9`,`/vp4`; the III is the byte-identity anchor). paramIds are device-specific, never reused across the family. VP4 is AM4-shape (serial 4-slot, no amp/cab) and ships reads + mode switch with writes gated. |
 | **`@mcp-midi-control/hydrasynth`** | `packages/hydrasynth/` | Hydrasynth device descriptor, writer, reader, tools. |
 | **`@mcp-midi-control/server-all`** | `packages/server-all/` | MCP server entry point. Composes all device packages. |
+
+**One package per codec family, not per brand.** Devices that share a wire codec live in one package as per-device *configs*, not separate packages. The modern Fractal family (Axe-Fx III / FM3 / FM9, gen-3) is one `fractal-modern` package: `createModernFractalDescriptor(config)` binds the shared codec to a model byte + grid/scene shape. The gen-2 Axe-Fx II is a *different codec*, so it stays its own package. A new brand (Line 6 Helix, Roland) is a new codec → a new package; a new device on an existing codec is a new config file. VP4 (gen-3, model 0x14) is registered as a `fractal-modern` config (`configs/vp4.ts`): AM4-shape (serial 4-slot, 4 scenes, A-Z04), no amp/cab, catalog from `fractal-midi/vp4`. It ships READS + the fn=0x12 mode switch only; every device-state WRITE is gated (`writes_gated`) because the fn=0x01 param/block write path is inferred-not-confirmed and the serial block-placement wire shape is still undecoded.
 
 **Build order matters.** `fractal-midi` builds first (all other packages import from it via `from 'fractal-midi/...'`). The root `npm run build` chains them in dependency order. `npm run preflight` runs build, typecheck, and the full test suite across all packages.
 
@@ -81,6 +85,7 @@ Per-device spec quick-references (read these before WebFetching or speculating a
 - **AM4**: `packages/fractal-midi/docs/devices/am4/SYSEX-MAP.md` + `packages/fractal-midi/docs/devices/am4/param-rename-audit.md`
 - **Axe-Fx II**: `packages/fractal-midi/docs/devices/axe-fx-ii/SYSEX-MAP.md` + `packages/fractal-midi/docs/devices/axe-fx-ii/axeedit-opcode-table.md` (94 wire opcodes)
 - **Axe-Fx III**: `packages/fractal-midi/docs/devices/axe-fx-iii/SYSEX-MAP.md` + `packages/fractal-midi/docs/devices/axe-fx-iii/preset-format-research.md`
+- **Axe-Fx Standard/Ultra (gen-1)**: `packages/fractal-midi/docs/devices/axe-fx-gen1/SYSEX-MAP.md`
 - **Hydrasynth**: `packages/fractal-midi/docs/devices/hydrasynth/SYSEX-MAP.md` + `packages/fractal-midi/docs/devices/hydrasynth/OVERVIEW.md`; the maintainer's private test-tone portfolio for the test set
 
 ## Reverse-engineering workflow
@@ -88,6 +93,27 @@ Per-device spec quick-references (read these before WebFetching or speculating a
 **Before any decode, capture analysis, or new probe script, read [`docs/RE-WORKFLOW.md`](docs/RE-WORKFLOW.md) end-to-end.** It contains the session-start reading order, capture-method preference, scientific discipline rules, 5-check capability-application pre-flight, cross-device transfer reflex, and same-session artifact registration. Skipping it has cost multi-session dead-ends (a 21-capture plan that produced nothing, a WinDbg trap that cannot fire).
 
 The discipline rules in RE-WORKFLOW.md exist because each one closes a specific class of bug that has hit this project at least once. They are not theoretical.
+
+### Hardware probe script design rule
+
+**Probe scripts that ask the maintainer to observe the device MUST be interactive, not timer-based.** Use `readline` to wait for the user to type what they see and press Enter before advancing to the next value. Never use `setTimeout`/`sleep` as the gate for advancing — the maintainer cannot reliably watch a device and note what appeared during an automatic countdown. They may be mid-sentence, looking away, or reading a previous result.
+
+The correct pattern:
+```ts
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+const ask = (q: string) => new Promise<string>(r => rl.question(q, r));
+// ...
+conn.send(buildSetParam(key, i));
+const label = await ask(`  index ${i}: `);  // waits for user to type + Enter
+```
+
+The wrong pattern (do not use):
+```ts
+conn.send(buildSetParam(key, i));
+await sleep(3000);  // user cannot know how long this is or time their observation
+```
+
+This rule applies to every probe script that relies on the maintainer reading the device front panel, AM4-Edit, or any external display. Time-based sweeps are only acceptable when the probe is fully automated with no human observation step (e.g. a read-and-compare script where the script itself validates the result).
 
 ### Always-loaded rules (high-firing, contradict habit)
 
@@ -209,6 +235,38 @@ Estimate wire-round-trip count up front. SysEx is serial: N reads ≈ N × 50 ms
 - New agent-facing tool description or alias → case in `scripts/agent-regression/cases-<device>.ts`
 - New wire builder/parser → golden in `scripts/verify-msg.ts` or `scripts/verify-pack.ts`
 
+## Versioning and releases
+
+Semantic versioning. Pre-1.0 (current line):
+
+- **Patch (`0.0.x`)** bundles bug fixes. Group several fixes and ship them as
+  one patch; it is NOT one-fix-per-patch. Fixes only, no new capability.
+- **Minor (`0.x.0`)** adds entirely new features or new device support.
+- **`1.0.0`** is a one-time maturity milestone, cut after meaningful community
+  adoption and broader device coverage. It is NOT triggered by a breaking
+  change. After 1.0.0, standard semver resumes: a major bump (`2.0.0`) is
+  reserved for breaking changes.
+
+**One squashed commit per release.** Each release is a single commit on top of
+the previous release commit, with development work squashed in at release time
+so there is no progress-noise in history. Every release commit carries, 1:1:
+the version bump, its annotated `v<x.y.z>` tag, one matching `CHANGELOG.md`
+entry, and the GitHub release that the tag push triggers. The result is a clean
+chain where every commit is meaningful and maps to exactly one version / tag /
+release / changelog entry. The 0.1.0 history was collapsed to a single orphan
+commit for the public launch; do NOT re-orphan on later releases, just append
+one squashed release commit each time (parent = the prior release).
+
+**`fractal-midi`'s version tracks the product release.** It is bumped to the
+same `x.y.z` in the SAME release commit as the product (so every remote commit
+maps 1:1 to a version across the whole repo, including the codec package), and
+published to npm as part of cutting that release. The version bump, the
+`v<x.y.z>` tag, the `CHANGELOG.md` entry, the GitHub release, and the
+`fractal-midi` npm publish all ship together. (This supersedes the earlier
+"versioned independently" policy: keeping the OSS codec push and its npm
+publish in lockstep with the product release avoids drift between what's on
+GitHub and what's on npm.)
+
 ## Verification sources of truth
 
 For "what does the device actually hold right now," trust in order:
@@ -249,6 +307,7 @@ The private-tracker rows below describe the maintainer's gitignored operational 
 | **Cookbook** in fractal-midi | An encoding primitive is discovered, refined, or ruled out. Same-session: add the entry + golden case in `scripts/cookbook-verify.ts` |
 | **`fractal-midi/scripts/ghidra/README.md`** | A new Ghidra script is added |
 | **`captured-artifacts.md`** | A new decompile dump or capture-of-interest is produced (public in the codec repo, private here) |
+| **Capture guides** in `packages/fractal-midi/docs/capture-guides/` | A community capture comes in and a gap closes (mark ✅ in the relevant `captures-<device>.md`); a capability lands and testing asks become moot (update or remove the ask in `testing-<device>.md`); device status changes (update the table in `README.md`). The per-device split is: `testing-<device>.md` for no-tools verification asks; `captures-<device>.md` for raw protocol capture asks. |
 
 ## Do Not
 - Do not use AM4-Edit as a dependency or requirement.
@@ -257,4 +316,4 @@ The private-tracker rows below describe the maintainer's gitignored operational 
 - Do not guess parameter names; verify against the manual or sniffed data.
 - Do not issue any preset-store / save-to-location SysEx from `scripts/probe.ts`. Probe is read-only forever.
 - Do not auto-save after `apply_preset`. Saves require an explicit save phrase from the user ("save this", "put it on M03", "keep it"). `apply_preset` is reversible (switching presets discards the working buffer); save is not.
-- Before overwriting a non-empty preset location, read the current contents, surface what's there, and ask. Z04 remains the conventional scratch location, but save-to-inactive-location is a real workflow.
+- Before overwriting a non-empty preset location, read the current contents, surface what's there, and ask. Saving to an inactive location is a real workflow; there is no ubiquitous "scratch" location, so don't assume one.

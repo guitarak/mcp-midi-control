@@ -34,8 +34,9 @@ import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.j
 
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
-import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/axe-fx-iii/descriptor.js';
+import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/descriptor.js';
 import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
+import { AXEFXGEN1_DESCRIPTOR } from '@mcp-midi-control/axe-fx-gen1/descriptor.js';
 
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string): void {
@@ -51,6 +52,7 @@ registerDevice(AXEFX3_DESCRIPTOR);
 registerDevice(AXEFX2_DESCRIPTOR);
 registerDevice(AM4_DESCRIPTOR);
 registerDevice(HYDRASYNTH_DESCRIPTOR);
+registerDevice(AXEFXGEN1_DESCRIPTOR);
 
 // Verbatim source from the 2026-05-23 successful AM4 build (logs id:4).
 // Four amp channels (A/B/C/D), four scenes (Clean/Crunch/Rhythm/Lead).
@@ -473,6 +475,60 @@ console.log('Translator specification invariants');
     'SPEC linear→grid (III target): cab auto-placed',
     cabSlot !== undefined,
     `slots: ${r.applied_spec.slots.map((s) => s.block_type).join(', ')}`,
+  );
+}
+
+// gen-3 enum column: II → gen-3 maps reverb + drive model names to the
+// gen-3 (axeFxIII) vocabulary, while amp stays verbatim (capture-blocked /
+// deferred). This is the cross-device-enums "enums_mapped: 0" bottleneck
+// closing for the bindable families. II names differ from gen-3 (e.g. II
+// "LARGE HALL" vs gen-3 "Hall, Large"), so the mapping is a real
+// substitution that increments enums_mapped — unlike AM4→gen-3, where the
+// names are identical (gen-3 reuses the AM4 reverb/drive strings).
+{
+  // Collect every param value across flat params + all channels of a slot.
+  const slotValues = (slot: { params?: Record<string, unknown>; params_by_channel?: Record<string, Record<string, unknown>> } | undefined): unknown[] => {
+    if (slot === undefined) return [];
+    const vals: unknown[] = [];
+    for (const v of Object.values(slot.params ?? {})) vals.push(v);
+    for (const ch of Object.values(slot.params_by_channel ?? {})) {
+      for (const v of Object.values(ch)) vals.push(v);
+    }
+    return vals;
+  };
+  const source: PresetSpec = {
+    name: 'gen3-enum-probe',
+    slots: [
+      { slot: { row: 2, col: 1 }, block_type: 'drive', params_by_channel: { X: { type: 'RAT DIST' } } },
+      { slot: { row: 2, col: 2 }, block_type: 'amp', params_by_channel: { X: { type: 'SHIVER CLEAN' } } },
+      { slot: { row: 2, col: 3 }, block_type: 'reverb', params_by_channel: { X: { type: 'LARGE HALL' } } },
+    ],
+  };
+  const r = translatePresetSpec(AXEFX2_DESCRIPTOR, source, AXEFX3_DESCRIPTOR);
+  const slotsOf = (bt: string) => r.applied_spec.slots.filter((s) => s.block_type.toLowerCase() === bt);
+  const reverbVals = slotsOf('reverb').flatMap(slotValues);
+  const driveVals = slotsOf('drive').flatMap(slotValues);
+  const ampVals = slotsOf('amp').flatMap(slotValues);
+
+  check(
+    'gen-3 enum: II→gen-3 maps reverb "LARGE HALL" → "Hall, Large"',
+    reverbVals.includes('Hall, Large'),
+    `reverb values: ${JSON.stringify(reverbVals)}`,
+  );
+  check(
+    'gen-3 enum: II→gen-3 maps drive "RAT DIST" → "Rat Distortion"',
+    driveVals.includes('Rat Distortion'),
+    `drive values: ${JSON.stringify(driveVals)}`,
+  );
+  check(
+    'gen-3 enum: amp model stays verbatim (capture-blocked / deferred, not mismapped)',
+    ampVals.includes('SHIVER CLEAN') && !ampVals.some((v) => v !== 'SHIVER CLEAN' && typeof v === 'string'),
+    `amp values: ${JSON.stringify(ampVals)}`,
+  );
+  check(
+    'gen-3 enum: enums_mapped counts the reverb + drive substitutions',
+    r.port_summary.enums_mapped >= 2,
+    `enums_mapped: ${r.port_summary.enums_mapped}`,
   );
 }
 
@@ -1289,8 +1345,8 @@ const SCENARIO_E: PresetSpec = {
     { slot: 4, block_type: 'delay', params: { type: 'Digital Stereo', mix: 18 } },
   ],
   scenes: [
-    { scene: 1, name: 'Rhythm', bypassed: { drive: true, delay: true } },
-    { scene: 2, name: 'Lead', bypassed: { drive: false, delay: false } },
+    { scene: 1, name: 'Rhythm', channels: {}, bypassed: { drive: true, delay: true } },
+    { scene: 2, name: 'Lead', channels: {}, bypassed: { drive: false, delay: false } },
   ],
 };
 
@@ -1659,11 +1715,13 @@ console.log('Translator III specification invariants');
     `scene_collapses: ${r.port_summary.scene_collapses}`,
   );
   // Param values land in the right channel: spot-check amp channel D gain.
+  // The III amp is the DISTORT family; its preamp-gain knob is the canonical
+  // key `drive` (DISTORT_DRIVE), so the source `gain` is aliased to `drive`.
   const ampD = (ampSlot?.params_by_channel as Record<string, Record<string, unknown>> | undefined)?.D;
   check(
-    'III-AM4→III: amp channel D gain value preserved (7.5)',
-    ampD?.gain === 7.5,
-    `amp.D.gain = ${String(ampD?.gain)}`,
+    'III-AM4→III: amp channel D gain value preserved as canonical drive (7.5)',
+    ampD?.drive === 7.5,
+    `amp.D.drive = ${String(ampD?.drive)}`,
   );
   // All AM4 scenes (1-4) survive.
   const sceneNumbers = (r.applied_spec.scenes ?? []).map((sc) => sc.scene).sort();
@@ -1718,18 +1776,20 @@ console.log('Translator III specification invariants');
     ampChannels === 'A,B',
     `amp channels: ${ampChannels}`,
   );
-  // Param values land in remapped channels.
+  // Param values land in remapped channels. The III amp preamp-gain knob is
+  // the canonical key `drive` (DISTORT_DRIVE), so the II source `gain` is
+  // aliased to `drive` on translation.
   const ampA = (ampSlot?.params_by_channel as Record<string, Record<string, unknown>> | undefined)?.A;
   const ampB = (ampSlot?.params_by_channel as Record<string, Record<string, unknown>> | undefined)?.B;
   check(
-    'III-II→III: amp X→A param values preserved (gain=7)',
-    ampA?.gain === 7,
-    `amp.A.gain = ${String(ampA?.gain)}`,
+    'III-II→III: amp X→A param value preserved as canonical drive (7)',
+    ampA?.drive === 7,
+    `amp.A.drive = ${String(ampA?.drive)}`,
   );
   check(
-    'III-II→III: amp Y→B param values preserved (gain=5)',
-    ampB?.gain === 5,
-    `amp.B.gain = ${String(ampB?.gain)}`,
+    'III-II→III: amp Y→B param value preserved as canonical drive (5)',
+    ampB?.drive === 5,
+    `amp.B.drive = ${String(ampB?.drive)}`,
   );
   // No scene collapse: both have 8 scenes.
   check(
@@ -1940,6 +2000,80 @@ console.log('Translator info-loss surfacing');
   );
   // Not asserted yet — gap documented for the next bug-fix pass.
   void _collapseAnnotated;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// gen-1 (Axe-Fx Standard/Ultra) participates in translate_preset.
+//
+// gen-1 is a linear, set-only-write device with NO scenes and NO X/Y or
+// A/B/C/D channels, so its presets are flat (no params_by_channel). The
+// translator is capability-driven, so gen-1 routes like any other device:
+// its core block slugs (amp/drive/delay/reverb/compressor/...) match the
+// shared canonical set. These lock gen-1 as a translate SOURCE into the
+// gen-2 (Axe-Fx II) and AM4 targets. Param/enum vocabulary alignment is
+// incremental (pass-through-with-warning is the designed fallback); the
+// structural contract below must hold regardless.
+// ════════════════════════════════════════════════════════════════════
+
+console.log('');
+console.log('Translator: gen-1 (Standard/Ultra) as a source into II + AM4');
+
+// A 4-block gen-1 lead that fits AM4's 4 linear slots exactly (drive, amp,
+// delay, reverb — the signal core). Flat params, no scenes/channels (gen-1
+// has none).
+const GEN1_SOURCE: PresetSpec = {
+  name: 'Gen1 Lead',
+  slots: [
+    { slot: 1, block_type: 'drive', params: { level: 6 } },
+    { slot: 2, block_type: 'amp', params: { gain: 6.5 } },
+    { slot: 3, block_type: 'delay', params: { time: 500 } },
+    { slot: 4, block_type: 'reverb', params: { mix: 25 } },
+  ],
+};
+
+// gen-1 -> AM4 (linear -> linear). The 4 core blocks fit AM4's 4 slots
+// exactly, so all must survive.
+{
+  const g1ToAm4 = translatePresetSpec(AXEFXGEN1_DESCRIPTOR, GEN1_SOURCE, AM4_DESCRIPTOR);
+  check(
+    'gen1->AM4: translation produces a non-empty spec',
+    g1ToAm4.ok && g1ToAm4.applied_spec.slots.length > 0,
+    `ok=${g1ToAm4.ok} slots=${g1ToAm4.applied_spec.slots.length}`,
+  );
+  const survivors = new Set(g1ToAm4.applied_spec.slots.map((s) => s.block_type.toLowerCase()));
+  for (const core of ['amp', 'drive', 'delay', 'reverb']) {
+    check(
+      `gen1->AM4: core block "${core}" survives`,
+      survivors.has(core),
+      `survivors: ${[...survivors].join(', ')}; dropped: ${JSON.stringify(g1ToAm4.port_summary.blocks_dropped.map((d) => d.block))}`,
+    );
+  }
+}
+
+// gen-1 -> II (linear -> grid). II has a 4x12 grid and a separate cab block;
+// all core blocks fit. They must survive and land on the grid (slot refs
+// become {row, col} objects).
+{
+  const g1ToIi = translatePresetSpec(AXEFXGEN1_DESCRIPTOR, GEN1_SOURCE, AXEFX2_DESCRIPTOR);
+  check(
+    'gen1->II: translation produces a non-empty spec',
+    g1ToIi.ok && g1ToIi.applied_spec.slots.length > 0,
+    `ok=${g1ToIi.ok} slots=${g1ToIi.applied_spec.slots.length}`,
+  );
+  const survivors = new Set(g1ToIi.applied_spec.slots.map((s) => s.block_type.toLowerCase()));
+  for (const core of ['amp', 'drive', 'delay', 'reverb']) {
+    check(
+      `gen1->II: core block "${core}" survives`,
+      survivors.has(core),
+      `survivors: ${[...survivors].join(', ')}`,
+    );
+  }
+  const ampSlot = g1ToIi.applied_spec.slots.find((s) => s.block_type.toLowerCase() === 'amp');
+  check(
+    'gen1->II: amp lands on the grid (slot ref is {row,col})',
+    typeof ampSlot?.slot === 'object' && ampSlot?.slot !== null,
+    `amp slot ref = ${JSON.stringify(ampSlot?.slot)}`,
+  );
 }
 
 // ── Summary ─────────────────────────────────────────────────────────

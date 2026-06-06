@@ -32,6 +32,20 @@
  *     doesn't announce its clean transitions, but the operations that
  *     produce them are unambiguous: loading a stored slot or saving
  *     the buffer to a slot.
+ *   - **AM4** has no device broadcast (HW-107) and no transport-layer
+ *     send classifier, so it fires `markDirty` at its writer /
+ *     applyExecutor / presetRestore edit call sites (one per acked
+ *     edit-class write) and `markClean` on save / switch. The AM4
+ *     working-buffer dump is non-deterministic (~20% byte drift on a
+ *     zero-mutation re-dump), so a fingerprint comparison is NOT used —
+ *     that approach false-refused a real user immediately after a clean
+ *     save (2026-06-03). NOTE: the AM4 *navigation gate* now prefers a
+ *     device-true "edited" bit (GET_PATCH `byte[21] & 0x04`, hardware-
+ *     confirmed 2026-06-03) over this in-memory flag — that bit DOES see
+ *     out-of-band front-panel / AM4-Edit edits and clears on a front-panel
+ *     save. This `markDirty`/`isDirty` tracker is the fallback when the
+ *     device read fails. See `packages/am4/src/tools/safeEdit.ts` +
+ *     `shared/readOps.ts:readActiveBufferEditedBit`.
  *
  * Fail mode: if the user presses SAVE on the device's own front panel
  * (rather than via the agent), we don't see the clean transition. The

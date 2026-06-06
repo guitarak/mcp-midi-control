@@ -213,10 +213,13 @@ packages/axe-fx-ii/src/
   params.ts           ← KNOWN_PARAMS registry
   tools.ts            ← device-namespaced tools (code preserved, not registered)
 
-packages/axe-fx-iii/src/
-  descriptor.ts       ← Axe-Fx III descriptor (community beta, betaRefusals
-                          on write ops pending capture)
-  device.ts           ← exports AXEFX3_DESCRIPTOR + midi side-effect
+packages/fractal-modern/src/
+  factory.ts          ← createModernFractalDescriptor (gen-3 family: III/FM3/FM9)
+  catalog.ts          ← createModernCatalog (shared block roster + per-device params)
+  configs/            ← per-device configs (axe-fx-iii, fm3, fm9)
+  device.ts           ← exports AXEFX3_DESCRIPTOR / FM3_DESCRIPTOR / FM9_DESCRIPTOR
+                          (community beta: write ops attempt the wire and surface
+                          any device rejection inline rather than refusing)
 
 packages/hydrasynth/src/
   descriptor.ts       ← Hydrasynth DeviceDescriptor

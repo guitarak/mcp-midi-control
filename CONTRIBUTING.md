@@ -1,21 +1,27 @@
 # Contributing
 
-Thanks for your interest. There are three contribution paths, ordered
-from "no code" to "deep RE work":
+Thanks for your interest. There are two kinds of help, and you do not
+need to write any code for the first one.
 
-1. **Test what's shipped and report back.** You own a supported device,
-   install the server, run a small list of tool calls, and report
-   whether the front panel matches the response. Five minutes per
-   device, no developer setup. **This is the most valuable
-   contribution right now**, especially for Axe-Fx III owners. See
-   [`docs/AXEFX3-BETA-TESTING.md`](docs/AXEFX3-BETA-TESTING.md)
-   for the III test menu. Same shape works for any device: pick a
-   handful of tool calls, run them, paste the JSON.
-2. **Add a device.** Write a `DeviceDescriptor` for a new piece of MIDI
-   gear. The unified tool surface is device-agnostic; adding FM9, FM3,
-   or a new vendor's synth is a TypeScript object, not new MCP tools.
+## Help confirm hardware (no code)
+
+You own a supported device, and you confirm the protocol on real
+hardware. **This is the most valuable contribution right now**,
+especially for Axe-Fx III / FM9 / FM3 owners. Three ways, easiest first:
+run a one-command read-only probe, paste back a few chat responses, or
+record a short capture. None require a developer setup.
+
+→ Everything you need is in **[`packages/fractal-midi/docs/capture-guides/`](packages/fractal-midi/docs/capture-guides/README.md)**:
+per-device pages with the probe, a report-from-a-chat menu, and the exact
+captures still needed.
+
+## Contribute code
+
+1. **Add a device.** Write a `DeviceDescriptor` for a new piece of MIDI
+   gear. The unified tool surface is device-agnostic; adding a new
+   vendor's modeler or synth is a TypeScript object, not new MCP tools.
    See [Adding a new device](#path-2-add-a-device) below.
-3. **Decode a protocol.** Capture wire traffic from a device, decode
+2. **Decode a protocol.** Capture wire traffic from a device, decode
    the envelope, and add a byte-exact golden. See
    [Capturing MIDI traffic](#capturing-midi-traffic) below.
 
@@ -117,8 +123,8 @@ response says. That's it.
 
 The Axe-Fx III is the most-wanted target for this right now. The wire
 shapes are decoded from public captures but no III owner has confirmed
-end-to-end. See [`docs/AXEFX3-BETA-TESTING.md`](docs/AXEFX3-BETA-TESTING.md)
-for a concrete 5 to 30 minute test menu.
+end-to-end. See [`packages/fractal-midi/docs/capture-guides/testing-axe-fx-iii.md`](packages/fractal-midi/docs/capture-guides/testing-axe-fx-iii.md)
+for the probe, a report-from-a-chat menu, and the captures still needed.
 
 ## Recipes need your ears
 
@@ -146,28 +152,37 @@ writing a **`DeviceDescriptor`**, a TypeScript object that describes
 the device's capabilities, blocks, and wire adapters. No new MCP tools
 are needed.
 
-### Step 1: Create a new package
+### Step 1: Create a new package (or a config on an existing codec)
 
-Copy the Axe-Fx III package as a template:
+A device that shares a wire codec with an existing family does NOT get
+its own package: it gets a per-device **config**. The modern Fractal
+gen-3 devices (Axe-Fx III / FM3 / FM9 / VP4) all live in
+`packages/fractal-modern/` as configs under `src/configs/`. Each config
+binds the shared codec to a model byte, grid/scene shape, and param
+catalog by calling `createModernFractalDescriptor()`:
 
 ```
-packages/axe-fx-iii/    ← copy this entire directory
-packages/<your-device>/ ← rename and adjust
+packages/fractal-modern/src/configs/axe-fx-iii.ts   ← the canonical config example
+packages/fractal-modern/src/configs/<your-device>.ts ← copy and adjust
 ```
 
-Key files to update:
+A device on a brand-new codec (a different vendor or a fundamentally
+different wire shape) gets its own package; copy the structure of an
+existing device package and update:
 
 | File | What to change |
 |---|---|
 | `package.json` | `name`, `description` |
-| `src/descriptor.ts` | Block roster, capabilities, `port_match` regex, beta-warning banners for unverified ops |
-| `src/midi.ts` | Port-discovery needles, connection helper |
-| `src/device.ts` | No changes needed; it exports `DESCRIPTOR` cleanly |
+| the descriptor entry point | Block roster, capabilities, `port_match` regex, beta-warning banners for unverified ops |
+| the MIDI helper | Port-discovery needles, connection helper |
+| the device export | Exposes `DESCRIPTOR` cleanly |
 
-`packages/axe-fx-iii/src/descriptor.ts` is the **canonical template**:
-it demonstrates how to ship community-beta ops with a warning banner,
-how to populate `DeviceCapabilities`, how to write a `coerceLocation`
-adapter, and how to structure `agent_guidance`.
+`packages/fractal-modern/src/configs/axe-fx-iii.ts` is the **canonical
+template** for a config-based device: it demonstrates how to ship
+community-beta ops with a warning banner, how to populate
+`DeviceCapabilities`, how to write a `coerceLocation` adapter, and how to
+structure `agent_guidance`. Note there is no longer a single
+`src/descriptor.ts` in that package; each device is its own config file.
 
 ### Step 2: Register the descriptor
 
@@ -274,14 +289,16 @@ discipline, SysEx extraction, and the citation expectations for any
 decode that goes into `docs/SYSEX-MAP*.md`. This is the maintainer's
 default workflow for any unknown editor-write op.
 
-### What goes in `samples/`, what goes in `docs/captures/`
+### What goes in `samples/`, what gets committed
 
 `samples/` is gitignored; that's local scratch for analysis. The
 project doesn't ship multi-megabyte `.pcapng` files; capture your own
-to decode something new. Tiny canonical `.syx` snippets (a few hundred
-bytes) that demonstrate a specific wire shape can live under
-`docs/captures/` with a companion `.md` decode note. Those are the
-ones contributors can read alongside the goldens to understand the
+to decode something new. What DOES get committed is the distilled
+result: a decode written up in the relevant per-device protocol doc
+under `packages/fractal-midi/docs/devices/<device>/` (the
+`SYSEX-MAP.md` and its companions), with the canonical byte example
+quoted inline and a matching golden added to the test suite. Those are
+what contributors read alongside the goldens to understand the
 envelope.
 
 ### Regenerating committed extractor output

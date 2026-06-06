@@ -43,6 +43,34 @@ export function requireDevice(port: string): DeviceDescriptor {
 }
 
 /**
+ * Multi-instance gate. Devices that don't advertise
+ * `capabilities.has_block_instances` (AM4, Hydrasynth) cannot address a
+ * second instance of a block type; passing `instance > 1` to them would
+ * be silently dropped and the write would land on instance 1. Refuse it
+ * loudly instead. `instance` of undefined / 1 is always allowed, so the
+ * single-instance contract is unchanged.
+ *
+ * `path` is an optional caller label (e.g. `ops[3] amp.gain`) folded into
+ * the error so batch callers can point at the offending entry.
+ */
+export function assertInstanceSupported(
+  descriptor: DeviceDescriptor,
+  instance: number | undefined,
+  path?: string,
+): void {
+  if (instance === undefined || instance === 1) return;
+  if (descriptor.capabilities.has_block_instances) return;
+  throw new DispatchError(
+    'capability_not_supported',
+    descriptor.display_name,
+    `${path ? `${path}: ` : ''}${descriptor.display_name} has a single instance of each block type, ` +
+      `so instance ${instance} is not addressable (only instance 1). Drop the \`instance\` arg ` +
+      `(or pass instance: 1). Multi-instance addressing is available on grid Fractal devices ` +
+      `(Axe-Fx II / III / FM3 / FM9).`,
+  );
+}
+
+/**
  * Open the MIDI handle for a descriptor and bundle it into the
  * `DispatchCtx` envelope the writer / reader sees. Step-5 of the
  * dispatcher's 6-step lifecycle.

@@ -1,0 +1,21 @@
+{
+  "name": "@mcp-midi-control/axe-fx-gen1",
+  "version": "0.2.0",
+  "description": "Fractal Axe-Fx Standard/Ultra (gen-1) device descriptor, writer, reader for the unified MCP surface.",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    "./*": "./dist/*"
+  },
+  "dependencies": {
+    "@mcp-midi-control/core": "*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "fractal-midi": "0.2.0",
+    "midi": "^2.0.0",
+    "zod": "^4.4.2"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

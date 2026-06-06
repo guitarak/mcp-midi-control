@@ -22,6 +22,8 @@
 import { KNOWN_PARAMS as AXE_FX_II_KNOWN_PARAMS } from 'fractal-midi/axe-fx-ii';
 import { CACHE_PARAMS as AM4_CACHE_PARAMS } from 'fractal-midi/am4';
 import { PARAM_BY_KEY as AXE_FX_III_PARAM_BY_KEY } from 'fractal-midi/axe-fx-iii';
+import { FM3_PARAMS_BY_FAMILY } from 'fractal-midi/fm3';
+import { FM9_PARAMS_BY_FAMILY } from 'fractal-midi/fm9';
 
 import {
   PITCH_RECIPES,
@@ -30,6 +32,11 @@ import {
   resolveWahRecipe,
   FILTER_RECIPES,
   resolveFilterRecipe,
+  AMP_RECIPES,
+  resolveAmpRecipe,
+  REVERB_RECIPES,
+  resolveReverbRecipe,
+  summarizeRecipesForPort,
   BLOCK_STACK_RECIPES,
   materializeBlockStackRecipe,
   HYDRA_PATCH_RECIPES,
@@ -40,6 +47,39 @@ import {
 } from '../packages/core/src/protocol-generic/recipes/index.js';
 import { findPatchOffset } from '@mcp-midi-control/hydrasynth/patchEncoder.js';
 import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
+import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
+import { MODERN_FRACTAL_DESCRIPTORS } from '@mcp-midi-control/fractal-modern/device.js';
+import { collectApplyPresetErrors } from '@mcp-midi-control/core/protocol-generic/dispatcher/preflight.js';
+import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
+
+// Descriptors for EVERY recipe port, so each recipe can be materialized and
+// run through the REAL apply_preset preflight. This is the mechanical guard
+// that catches recipe values drifting from a descriptor's block keys / enum
+// labels (e.g. a slot block_type "parametric eq" that resolves on no device,
+// or an amp label renamed in params.ts). Without it, broken recipes only
+// surface when an agent picks one and the apply NACKs.
+//
+// MUST cover the full RecipePort union (am4 | axe-fx-ii | axe-fx-iii | fm3 |
+// fm9) — a partial map silently SKIPS preflight for the omitted ports, which
+// is how the gen3_* block-stack recipes (III/FM3/FM9) would go unchecked.
+const modernById = new Map<string, DeviceDescriptor>(
+  MODERN_FRACTAL_DESCRIPTORS.map((d) => [d.id, d]),
+);
+const RECIPE_PREFLIGHT_DESCRIPTORS: Record<RecipePort, DeviceDescriptor | undefined> = {
+  am4: AM4_DESCRIPTOR,
+  'axe-fx-ii': AXEFX2_DESCRIPTOR,
+  'axe-fx-iii': modernById.get('axe-fx-iii'),
+  fm3: modernById.get('fm3'),
+  fm9: modernById.get('fm9'),
+};
+// Fail loudly if any recipe port lacks a descriptor — that would silently
+// drop preflight coverage for that whole device.
+for (const port of Object.keys(RECIPE_PREFLIGHT_DESCRIPTORS) as RecipePort[]) {
+  if (RECIPE_PREFLIGHT_DESCRIPTORS[port] === undefined) {
+    throw new Error(`verify-recipe-tables: no descriptor wired for recipe port "${port}" — recipe preflight would silently skip it.`);
+  }
+}
 
 const HYDRA_CATEGORIES: readonly HydraCategory[] = [
   'Ambient', 'Arp', 'Bass', 'BassLead', 'Brass', 'Chord', 'Drum', 'E-piano',
@@ -61,7 +101,7 @@ function hydraMacroTargetResolves(macro: number, name: string): boolean {
   try { schema.encode(name); return true; } catch { return false; }
 }
 
-const ALL_PORTS: readonly RecipePort[] = ['am4', 'axe-fx-ii', 'axe-fx-iii'] as const;
+const ALL_PORTS: readonly RecipePort[] = ['am4', 'axe-fx-ii', 'axe-fx-iii', 'fm3', 'fm9'] as const;
 
 // Per-device "param name in this block exists?" predicates. Each recipe
 // stores params by the device's canonical lowercase param name (II,
@@ -84,10 +124,23 @@ function hasIIIParam(family: string, name: string): boolean {
   return Object.prototype.hasOwnProperty.call(AXE_FX_III_PARAM_BY_KEY, key);
 }
 
+// FM3 / FM9 carry their own device-true catalogs keyed by family; the recipe
+// param names are the III's SCREAMING_SNAKE symbols (shared gen-3 naming).
+function hasFamilyParam(
+  byFamily: Readonly<Record<string, readonly { name: string }[]>>,
+  family: string,
+  name: string,
+): boolean {
+  const fam = byFamily[family.toUpperCase()] ?? [];
+  return fam.some((p) => p.name.toUpperCase() === name.toUpperCase());
+}
+
 // Per-port "is this param name known on this block?" router.
 function paramExists(port: RecipePort, block: string, name: string): boolean {
   if (port === 'axe-fx-ii') return hasIIParam(block, name);
   if (port === 'am4') return hasAM4Param(block, name);
+  if (port === 'fm3') return hasFamilyParam(FM3_PARAMS_BY_FAMILY, block, name);
+  if (port === 'fm9') return hasFamilyParam(FM9_PARAMS_BY_FAMILY, block, name);
   return hasIIIParam(block, name);
 }
 
@@ -105,13 +158,21 @@ function check(label: string, ok: boolean, detail?: string): void {
 // `pitch`/`wah`/`filter`; III uses uppercase family symbols PITCH/WAH/
 // FILTER.
 const BLOCK_NAME: Readonly<Record<string, Readonly<Record<RecipePort, string>>>> = {
-  pitch:  { am4: 'pitch',  'axe-fx-ii': 'pitch',  'axe-fx-iii': 'PITCH'  },
-  wah:    { am4: 'wah',    'axe-fx-ii': 'wah',    'axe-fx-iii': 'WAH'    },
-  filter: { am4: 'filter', 'axe-fx-ii': 'filter', 'axe-fx-iii': 'FILTER' },
+  pitch:  { am4: 'pitch',  'axe-fx-ii': 'pitch',  'axe-fx-iii': 'PITCH',   fm3: 'PITCH',   fm9: 'PITCH'   },
+  wah:    { am4: 'wah',    'axe-fx-ii': 'wah',    'axe-fx-iii': 'WAH',     fm3: 'WAH',     fm9: 'WAH'     },
+  filter: { am4: 'filter', 'axe-fx-ii': 'filter', 'axe-fx-iii': 'FILTER',  fm3: 'FILTER',  fm9: 'FILTER'  },
+  // amp recipes are gen-3-only; the III/FM3/FM9 amp block maps to the
+  // DISTORT family. am4/ii entries are required by the type but never read
+  // (the param-existence check only runs for a recipe's applicable_devices).
+  amp:    { am4: 'amp',    'axe-fx-ii': 'amp',    'axe-fx-iii': 'DISTORT', fm3: 'DISTORT', fm9: 'DISTORT' },
+  // reverb recipes are gen-3-only; the III/FM3/FM9 reverb block maps to the
+  // REVERB family. am4/ii entries are required by the type but never read
+  // (the param-existence check only runs for a recipe's applicable_devices).
+  reverb: { am4: 'reverb', 'axe-fx-ii': 'reverb', 'axe-fx-iii': 'REVERB',  fm3: 'REVERB',  fm9: 'REVERB'  },
 };
 
 interface RecipeEntry {
-  readonly category: 'pitch' | 'wah' | 'filter';
+  readonly category: 'pitch' | 'wah' | 'filter' | 'amp' | 'reverb';
   readonly name: string;
   readonly applicable_devices: readonly RecipePort[];
   readonly params_per_device: Readonly<Partial<Record<RecipePort, Readonly<Record<string, number | string>>>>>;
@@ -150,6 +211,34 @@ function walkRecipes(): RecipeEntry[] {
       resolve: resolveFilterRecipe,
     });
   }
+  for (const [name, spec] of Object.entries(AMP_RECIPES)) {
+    entries.push({
+      category: 'amp',
+      name,
+      applicable_devices: spec.applicable_devices,
+      params_per_device: spec.params_per_device,
+      // resolveAmpRecipe returns { params } (no modifier); adapt to the
+      // shared RecipeEntry.resolve shape.
+      resolve: (recipeName, port) => ({
+        ...resolveAmpRecipe(recipeName, port),
+        modifier_needed: false,
+      }),
+    });
+  }
+  for (const [name, spec] of Object.entries(REVERB_RECIPES)) {
+    entries.push({
+      category: 'reverb',
+      name,
+      applicable_devices: spec.applicable_devices,
+      params_per_device: spec.params_per_device,
+      // resolveReverbRecipe returns { params } (no modifier); adapt to the
+      // shared RecipeEntry.resolve shape.
+      resolve: (recipeName, port) => ({
+        ...resolveReverbRecipe(recipeName, port),
+        modifier_needed: false,
+      }),
+    });
+  }
   return entries;
 }
 
@@ -160,9 +249,13 @@ console.log(`\nVerifying ${entries.length} recipe(s) across ${ALL_PORTS.length} 
 const pitchCount = Object.keys(PITCH_RECIPES).length;
 const wahCount = Object.keys(WAH_RECIPES).length;
 const filterCount = Object.keys(FILTER_RECIPES).length;
+const ampCount = Object.keys(AMP_RECIPES).length;
+const reverbCount = Object.keys(REVERB_RECIPES).length;
 console.log(`  pitch  : ${pitchCount} recipe(s)`);
 console.log(`  wah    : ${wahCount} recipe(s)`);
-console.log(`  filter : ${filterCount} recipe(s)\n`);
+console.log(`  filter : ${filterCount} recipe(s)`);
+console.log(`  amp    : ${ampCount} recipe(s)`);
+console.log(`  reverb : ${reverbCount} recipe(s)\n`);
 
 // Coverage assertions: the BK-061/BK-062 task statement lists 7 pitch
 // + 6 wah/filter recipes. Catch silent regressions if a recipe is
@@ -170,6 +263,32 @@ console.log(`  filter : ${filterCount} recipe(s)\n`);
 check('pitch category ships >= 7 recipes', pitchCount >= 7, `got ${pitchCount}`);
 check('wah category ships >= 3 recipes', wahCount >= 3, `got ${wahCount}`);
 check('filter category ships >= 3 recipes', filterCount >= 3, `got ${filterCount}`);
+check('amp category ships >= 3 recipes (gen-3)', ampCount >= 3, `got ${ampCount}`);
+check('reverb category ships >= 3 recipes (gen-3)', reverbCount >= 3, `got ${reverbCount}`);
+
+// Gen-3 recipe surfacing: summarizeRecipesForPort must return the amp +
+// reverb recipes for III / FM3 / FM9 (guards the port allow-list that
+// previously hard-rejected fm3/fm9). am4/ii must NOT surface them.
+for (const port of ['axe-fx-iii', 'fm3', 'fm9'] as const) {
+  const ampOnPort = summarizeRecipesForPort(port).filter((r) => r.family === 'amp');
+  check(
+    `summarizeRecipesForPort('${port}') surfaces all ${ampCount} amp recipes`,
+    ampOnPort.length === ampCount,
+    `got ${ampOnPort.length}`,
+  );
+  const reverbOnPort = summarizeRecipesForPort(port).filter((r) => r.family === 'reverb');
+  check(
+    `summarizeRecipesForPort('${port}') surfaces all ${reverbCount} reverb recipes`,
+    reverbOnPort.length === reverbCount,
+    `got ${reverbOnPort.length}`,
+  );
+}
+for (const port of ['am4', 'axe-fx-ii'] as const) {
+  const ampOnPort = summarizeRecipesForPort(port).filter((r) => r.family === 'amp');
+  check(`summarizeRecipesForPort('${port}') surfaces no amp recipes (gen-3 only)`, ampOnPort.length === 0, `got ${ampOnPort.length}`);
+  const reverbOnPort = summarizeRecipesForPort(port).filter((r) => r.family === 'reverb');
+  check(`summarizeRecipesForPort('${port}') surfaces no reverb recipes (gen-3 only)`, reverbOnPort.length === 0, `got ${reverbOnPort.length}`);
+}
 
 for (const entry of entries) {
   console.log(`\n[${entry.category}] ${entry.name}`);
@@ -359,6 +478,20 @@ for (const [name, recipe] of Object.entries(BLOCK_STACK_RECIPES)) {
         `materialized=${materialized.slots.length} authored=${slots.length}`,
       );
 
+      // Preflight the materialized recipe against the real descriptor: a
+      // recipe applied verbatim (no overrides) MUST produce zero validation
+      // errors. Catches block_type that resolves on no device + enum labels
+      // that drifted from params.ts (the djent/recto recipe bug, 2026-06-06).
+      const preflightDescriptor = RECIPE_PREFLIGHT_DESCRIPTORS[port];
+      if (preflightDescriptor !== undefined) {
+        const errors = collectApplyPresetErrors(materialized, preflightDescriptor);
+        check(
+          `${name}[${port}] materializes with ZERO preflight errors (verbatim apply is valid)`,
+          errors.length === 0,
+          errors.map((e) => `${e.path}: ${e.error}`).join(' | '),
+        );
+      }
+
       // Overrides merge sanity: take the first override-able knob and
       // confirm it took effect. Skip when slot[0] has no params or
       // params is channel-nested (unusual for recipes).
@@ -412,6 +545,43 @@ for (const [name, recipe] of Object.entries(BLOCK_STACK_RECIPES)) {
       `materialize(${name}, ${port}) throws recipe_not_applicable (port not in applicable_devices)`,
       threw && code === 'recipe_not_applicable',
       threw ? `code='${code}'` : 'no error thrown',
+    );
+  }
+}
+
+// ── gen-3 block_stack coverage + gating contract ────────────────────
+//
+// gen-3 (III / FM3 / FM9) block_stack recipes are MODEL-AGNOSTIC numeric
+// voicings: amp/reverb/comp models are enum set-by-name gated, so a gen-3
+// slot must NEVER carry an enum model string (`type` / `effect_type`).
+// This guards the contract two ways: (a) a coverage floor so gen-3 recipes
+// can't silently regress to zero, and (b) no slot leaks a gated enum-by-name
+// param that apply_preset would refuse.
+console.log('\n[block_stack] gen-3 coverage + no-enum-model gating');
+for (const port of ['axe-fx-iii', 'fm3', 'fm9'] as const) {
+  const gen3Recipes = Object.values(BLOCK_STACK_RECIPES).filter((r) =>
+    r.applicable_devices.includes(port),
+  );
+  check(
+    `${port}: at least 3 block_stack recipes (coverage floor)`,
+    gen3Recipes.length >= 3,
+    `got ${gen3Recipes.length}`,
+  );
+  for (const recipe of gen3Recipes) {
+    const slots = recipe.slots_per_device[port] ?? [];
+    const enumLeaks: string[] = [];
+    for (const slot of slots) {
+      for (const knob of Object.keys(slot.params ?? {})) {
+        // `type` / `effect_type` are the enum model selectors, gated on gen-3.
+        if (knob === 'type' || knob === 'effect_type') {
+          enumLeaks.push(`${slot.block_type}.${knob}`);
+        }
+      }
+    }
+    check(
+      `${recipe.name}[${port}] sets NO gated enum model string (type/effect_type)`,
+      enumLeaks.length === 0,
+      enumLeaks.length > 0 ? `leaked: ${enumLeaks.join(', ')}` : undefined,
     );
   }
 }

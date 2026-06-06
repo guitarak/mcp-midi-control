@@ -27,7 +27,7 @@ async function main() {
   const transport = new StdioClientTransport({
     command: 'node',
     args: [SERVER_ENTRY],
-    env: { ...process.env, MCP_TOOLS_PROFILE: 'full' },
+    env: { ...process.env },
   });
 
   const client = new Client({ name: 'output-sentinel-probe', version: '0.0.1' }, {

@@ -103,7 +103,9 @@ export const CONCEPT_KEYS: Readonly<Record<string, ConceptKeyMap>> = Object.free
   'amp.preamp_gain': {
     'axe-fx-ii': 'input_drive',
     am4: 'gain',
-    'axe-fx-iii': 'gain',
+    // gen-3 amp is the DISTORT family; its input-drive knob is DISTORT_DRIVE
+    // (stripped key `drive`). The `gain` display word resolves via the alias table.
+    'axe-fx-iii': 'drive',
   },
   'amp.power_amp_master': {
     'axe-fx-ii': 'master_volume',
@@ -145,7 +147,9 @@ export const CONCEPT_KEYS: Readonly<Record<string, ConceptKeyMap>> = Object.free
   'drive.gain': {
     'axe-fx-ii': 'gain',
     am4: 'drive',
-    'axe-fx-iii': 'gain',
+    // gen-3 drive pedal is the FUZZ family; its gain knob is FUZZ_DRIVE
+    // (stripped key `drive`).
+    'axe-fx-iii': 'drive',
   },
   'drive.color_tone': {
     'axe-fx-ii': 'tone',
@@ -282,7 +286,7 @@ export const CONCEPT_KEYS: Readonly<Record<string, ConceptKeyMap>> = Object.free
     'axe-fx-iii': 'type',
   },
   'compressor.threshold': {
-    'axe-fx-ii': 'treshold',
+    'axe-fx-ii': 'threshold',
     am4: 'threshold',
     'axe-fx-iii': 'thresh',
   },

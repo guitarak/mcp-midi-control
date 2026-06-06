@@ -28,7 +28,8 @@ import { buildPresetShape } from '@mcp-midi-control/core/protocol-generic/tools/
 
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
-import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/axe-fx-iii/descriptor.js';
+import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/descriptor.js';
+import { FM3_DESCRIPTOR, FM9_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/device.js';
 import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
 
 let failed = 0;
@@ -45,6 +46,8 @@ function check(label: string, ok: boolean, detail?: string): void {
 // Axe-Fx III then II then AM4 then Hydra.
 clearRegistry();
 registerDevice(AXEFX3_DESCRIPTOR);
+registerDevice(FM3_DESCRIPTOR);
+registerDevice(FM9_DESCRIPTOR);
 registerDevice(AXEFX2_DESCRIPTOR);
 registerDevice(AM4_DESCRIPTOR);
 registerDevice(HYDRASYNTH_DESCRIPTOR);
@@ -59,6 +62,10 @@ const cases: DeviceCase[] = [
   { port: 'am4', descriptor: AM4_DESCRIPTOR, expectScenes: true },
   { port: 'axe-fx-ii', descriptor: AXEFX2_DESCRIPTOR, expectScenes: true },
   { port: 'axe-fx-iii', descriptor: AXEFX3_DESCRIPTOR, expectScenes: true },
+  // The whole modern family, not just the III stand-in: FM3/FM9 must
+  // carry the same tempo-first + example_spec parity.
+  { port: 'fm3', descriptor: FM3_DESCRIPTOR, expectScenes: true },
+  { port: 'fm9', descriptor: FM9_DESCRIPTOR, expectScenes: true },
   { port: 'hydrasynth', descriptor: HYDRASYNTH_DESCRIPTOR, expectScenes: false },
 ];
 
@@ -168,6 +175,46 @@ for (const c of cases) {
     );
   }
 }
+
+// ── channel_blocks contract ─────────────────────────────────────────
+// Every entry in capabilities.channel_blocks must be a canonical block
+// key that exists in descriptor.blocks (NOT a display-form name like
+// "graphic eq" or "volume/pan"), and the list must be duplicate-free.
+// Agents key the params-vs-params_by_channel apply decision off this
+// list; a display-form or duplicated entry causes a failed first apply.
+console.log('\nchannel_blocks contract (canonical keys, deduped):');
+for (const c of cases) {
+  const list = c.descriptor.capabilities.channel_blocks;
+  if (list === undefined) continue;
+  check(
+    `${c.port} channel_blocks has no duplicates`,
+    new Set(list).size === list.length,
+    `list: ${JSON.stringify(list)}`,
+  );
+  for (const key of list) {
+    check(
+      `${c.port} channel_blocks entry "${key}" is a canonical key in descriptor.blocks`,
+      c.descriptor.blocks[key] !== undefined,
+      `descriptor.blocks keys (first 12): ${Object.keys(c.descriptor.blocks).slice(0, 12).join(', ')}`,
+    );
+  }
+}
+
+// Pin the Axe-Fx II XL+ curated X/Y set (Fractal wiki "Channels" page,
+// XL/XL+ row, intersected with bypassable blocks the executor accepts).
+// If this drifts, the descriptor author re-confirms against the wiki and
+// updates both the set and this golden in the same commit.
+const EXPECTED_AXEFX2_CHANNEL_BLOCKS = [
+  'amp', 'cab', 'chorus', 'compressor', 'delay', 'drive', 'flanger',
+  'gateexpander', 'graphiceq', 'pantrem', 'parametriceq', 'phaser',
+  'pitch', 'reverb', 'rotary', 'wah',
+];
+check(
+  'axe-fx-ii channel_blocks matches the curated XL+ X/Y set',
+  JSON.stringify(AXEFX2_DESCRIPTOR.capabilities.channel_blocks) ===
+    JSON.stringify(EXPECTED_AXEFX2_CHANNEL_BLOCKS),
+  `got: ${JSON.stringify(AXEFX2_DESCRIPTOR.capabilities.channel_blocks)}`,
+);
 
 console.log('');
 if (failed > 0) {

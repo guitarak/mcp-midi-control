@@ -65,9 +65,13 @@ const DESTRUCTIVE_TOOLS = new Set([
   'apply_preset',
   'apply_patch',
   'send_sysex',
+  // import_preset replaces the entire working buffer with a backup (and can
+  // overwrite a stored location with save_authorized).
+  'import_preset',
 ]);
 
-// Names that MUST NOT be destructiveHint: true (working-buffer writes).
+// Names that MUST NOT be destructiveHint: true (working-buffer writes +
+// additive local-file writes that never touch the hardware destructively).
 const ADDITIVE_TOOLS = new Set([
   'set_param',
   'set_params',
@@ -81,6 +85,9 @@ const ADDITIVE_TOOLS = new Set([
   'init_patch',
   'send_chord',
   'send_sequence',
+  // export_preset writes a NEW timestamped .syx backup file; it reads the
+  // device and never writes to the hardware or overwrites a stored preset.
+  'export_preset',
 ]);
 
 // Tools that MUST declare an outputSchema (bucket 6 set).

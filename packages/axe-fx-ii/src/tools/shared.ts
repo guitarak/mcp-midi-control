@@ -38,7 +38,7 @@ import {
   type DirtyGuardResult as SharedDirtyGuardResult,
   type OnEditedMode as SharedOnEditedMode,
 } from '@mcp-midi-control/core/server-shared/safeEdit.js';
-import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
+import { DispatchError, type DispatchCtx } from '@mcp-midi-control/core/protocol-generic/types.js';
 
 export const AXEFX_DIRTY_LABEL = 'axe-fx-ii';
 
@@ -132,8 +132,8 @@ export function findBlock(input: string | number): AxeFxIIBlock {
       `Unknown block "${input}". Pass either an effectId (e.g. 106) or a display name like "Amp 1" / "Reverb 1" / "Delay 1".`,
       {
         valid_options: sampleNames,
-        valid_options_tool: 'axefx2_list_block_types',
-        retry_action: 'Re-invoke with one verbatim name from the valid_options list or call axefx2_list_block_types for the complete catalog.',
+        valid_options_tool: 'describe_device',
+        retry_action: 'Re-invoke with one verbatim name from the valid_options list, or call describe_device({ port: "axefx2" }) and read block_types for the complete catalog.',
       },
     );
   }
@@ -175,6 +175,11 @@ export type DirtyGuardResult = SharedDirtyGuardResult;
  */
 export async function guardActiveBufferOrSave(
   mode: OnEditedMode,
+  // The dispatcher-supplied connection (parity with AM4 + the modern
+  // family, which read the dirty-state through ctx.conn rather than a
+  // module-global handle). Falls back gracefully: if the read fails the
+  // warning just omits the concrete preset name.
+  conn: DispatchCtx['conn'],
 ): Promise<DirtyGuardResult> {
   if (!isDirty(AXEFX_DIRTY_LABEL)) {
     return { proceed: true };
@@ -182,7 +187,7 @@ export async function guardActiveBufferOrSave(
   if (mode === 'discard') {
     return { proceed: true };
   }
-  const c = ensureConn();
+  const c = conn;
   // Read the active preset's number + name so the warning is concrete.
   let activeWire: number | undefined;
   let activeName: string | undefined;
@@ -218,8 +223,8 @@ export async function guardActiveBufferOrSave(
         `  • "discard" → call this tool again with on_active_preset_edited="discard" ` +
         `(silently loses the edits).\n` +
         `\n` +
-        `If the user wants to save to a DIFFERENT slot than ${activeDescriptor}, ` +
-        `call axefx2_save_preset({ slot: <slot> }) directly first, then retry this tool.`,
+        `If the user wants to save to a DIFFERENT location than ${activeDescriptor}, ` +
+        `call save_preset({ port: "axefx2", location: <location> }) directly first, then retry this tool.`,
     };
   }
 
@@ -229,7 +234,7 @@ export async function guardActiveBufferOrSave(
       proceed: false,
       warningText:
         `Could not read the active preset number, refusing to navigate to avoid losing edits silently.\n` +
-        `Try axefx2_reconnect_midi, then retry. If the device is in an unusual state, ` +
+        `Try reconnect_midi, then retry. If the device is in an unusual state, ` +
         `the user can save manually on the front panel before this tool retries.`,
     };
   }
@@ -263,3 +268,22 @@ export async function guardActiveBufferOrSave(
 }
 
 export const ON_EDITED_SCHEMA = SHARED_ON_EDITED_SCHEMA;
+
+/**
+ * Startup-banner helper: describes whether an Axe-Fx II output port is
+ * visible right now, without opening it. Consumed by the server boot
+ * log (server-all). Lives here (not in a tool file) because the
+ * device-namespaced tool surface was removed; the unified surface is the
+ * only tool layer for the Axe-Fx II.
+ */
+export function describeAxeFxIIPortStatus(): string {
+  try {
+    const outputs = listAxeFxIIOutputs();
+    const axe = outputs.find((p) => p.looksLikeAxeFxII);
+    if (axe) return `Axe-Fx II detected at output [${axe.index}]: "${axe.name}"`;
+    if (outputs.length === 0) return 'no MIDI outputs visible';
+    return `Axe-Fx II not visible among ${outputs.length} output(s)`;
+  } catch (err) {
+    return `port scan failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}

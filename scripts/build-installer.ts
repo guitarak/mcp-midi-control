@@ -138,6 +138,8 @@ async function main() {
   //   │       ├── core/{package.json,dist/}        (copied from packages/core)
   //   │       ├── am4/{package.json,dist/}         (copied from packages/am4)
   //   │       ├── axe-fx-ii/{package.json,dist/}
+  //   │       ├── axe-fx-gen1/{package.json,dist/}
+  //   │       ├── fractal-modern/{package.json,dist/}
   //   │       ├── hydrasynth/{package.json,dist/}
   //   │       └── server-all/{package.json,dist/}
   //   ├── LICENSE, NOTICE
@@ -158,7 +160,8 @@ async function main() {
     'core',
     'am4',
     'axe-fx-ii',
-    'axe-fx-iii',
+    'axe-fx-gen1',
+    'fractal-modern',
     'hydrasynth',
     'server-all',
   ] as const;
@@ -233,7 +236,7 @@ async function main() {
   // working-tree state can be either LF or CRLF depending on the
   // contributor's git autocrlf setting; the shipped bundle is always
   // CRLF regardless.
-  for (const f of ['setup.cmd', 'uninstall.cmd', 'verify-midi.cmd', 'update.cmd', 'instructions.txt']) {
+  for (const f of ['setup.cmd', 'uninstall.cmd', 'verify-midi.cmd', 'update.cmd', 'fm9-probe.cmd', 'fm3-probe.cmd', 'axefx3-probe.cmd', 'fm9-verify.cmd', 'fm3-verify.cmd', 'axefx3-verify.cmd', 'instructions.txt']) {
     copyAsCrlf(path.join(PROJECT_ROOT, 'installer', f), path.join(STAGING, f));
   }
   // PowerShell helpers go under install/ to keep the root tidy.

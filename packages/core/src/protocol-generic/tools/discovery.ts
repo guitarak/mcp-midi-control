@@ -41,14 +41,7 @@ export function registerDiscoveryTools(server: McpServer): void {
 
   server.registerTool('list_params', {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
-    description: [
-      'Enumerate a device\'s parameters with units and display ranges. Pure introspection, no MIDI I/O.',
-      'Call before set_param when unsure of an enum spelling or knob range.',
-      '- `block` and `name` accept a single string (`"amp"`) OR an array (`["amp","drive","reverb"]`). A lone string is coerced to a one-element array. Batch multiple blocks in one call for multi-block surveys.',
-      '- No filter: every (block, name) the device exposes. With `block`: scoped to those blocks. With both `block` and `name`: full enum table for enum-typed params across every (block × name) combination requested.',
-      '- `include_descriptions: true` attaches a Blocks-Guide / Owner\'s-Manual excerpt per param; default false.',
-      '- For `amp.type` and `drive.type`, the response carries `enum_value_loudness_offsets_db`, per-model dB offsets vs the reference amp/drive (Twin Reverb at master=6 = 0 dB; T808 OD at level=7 = +6 dB). Add these on top of the conventional scene-leveling spread when balancing per-amp loudness.',
-    ].join(' '),
+    description: 'Enumerate a device\'s params with units and display ranges. Pure introspection, no MIDI I/O. Call before set_param when unsure of an enum spelling or knob range. Filters: no filter = every (block, name); `block` = those blocks; `block`+`name` = full enum tables across each (block × name). Both args take a string or array; batch multiple blocks/names in one call to save turns. `include_descriptions: true` adds a Blocks-Guide / Owner\'s-Manual excerpt per param (default false). For `amp.type`/`drive.type` the response carries `enum_value_loudness_offsets_db`: per-model dB offsets vs the reference (Twin Reverb master=6 = 0 dB; T808 OD level=7 = +6 dB). Add these on top of conventional scene-leveling when balancing per-amp loudness.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       block: z.union([z.string(), z.array(z.string()).min(1)]).optional().describe(
@@ -76,13 +69,7 @@ export function registerDiscoveryTools(server: McpServer): void {
 
   server.registerTool('find_compatible_types', {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
-    description: [
-      'Given a block + knob names you plan to write, return the subset of block.type values that expose EVERY listed knob (AND-semantics).',
-      'Call before apply_preset / set_param when "long-decay reverb" or "Vox with master" combines a tone vocabulary with a specific knob requirement. Prevents the silent-no-op trap where a fixed-decay reverb.type drops writes to `time`.',
-      '- Example: find_compatible_types({port:"am4", block:"reverb", params:["time"]}) returns Plate / Echo / SFX variants (Hall / Room variants drop because they\'re fixed-decay).',
-      '- Empty result: no type exposes all listed knobs. Drop a knob.',
-      '- If applicability_known=false: device has no structured per-type data; result is the full type list, fall back to list_params + applies_only_when.',
-    ].join(' '),
+    description: 'Returns the subset of block.type values that expose EVERY knob you list (AND-semantics). Call before apply_preset / set_param when a tone request pairs a vocabulary word with a knob requirement ("long-decay reverb", "Vox with master"). Prevents the silent-no-op trap where a fixed-decay reverb.type drops writes to `time`. - Example: {block:"reverb", params:["time"]} returns Plate / Echo / SFX (Hall / Room drop, fixed-decay). - Empty result: no type exposes all listed knobs; drop a knob. - applicability_known=false: no per-type data; result is the full type list, fall back to list_params + applies_only_when.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       block: z.string().describe('Block name (e.g. "reverb", "amp", "delay").'),
@@ -100,15 +87,7 @@ export function registerDiscoveryTools(server: McpServer): void {
 
   server.registerTool('lookup_lineage', {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
-    description: [
-      'Look up authored lineage data for a block type: what real hardware it models, manufacturer notes, developer/forum quotes. Pure data lookup, no MIDI I/O.',
-      'Three call shapes (pick one):',
-      '- forward: { block_type, name } where `name` is ALWAYS an array of canonical model names (e.g. `["USA IIC+"]` for one, `["USA IIC+","Deluxe Verb Normal"]` for two). Returns `{ entries: [...] }`. There is no single-string form; pass `["X"]` for N=1.',
-      '- reverse: { block_type, real_gear } substring search across basedOn / description / quotes. Use for "1176", "Tube Screamer", "Keith Urban tone". Returns flat shape.',
-      '- structured: { block_type, manufacturer?, model? } exact-match structured fields. Returns flat shape.',
-      'LOUDNESS DATA. When forward-querying an amp or drive, each entry carries a structured `loudness` field with master_sweet_spot_display + relative_loudness_dB for amps, or default_level_display + boost_response_dB for drives. Call before apply_preset when authoring solo/lead scenes so the level compensation is computed from data, not guessed.',
-      'Devices without lineage refuse via a capability error; see describe_device.capabilities.supports_lineage.',
-    ].join(' '),
+    description: 'Look up authored lineage for a block type: real hardware modeled, manufacturer notes, developer/forum quotes. Pure data, no MIDI I/O. Pick one call shape: - forward { block_type, name }: `name` is ALWAYS an array, even for one (`["USA IIC+"]`); no single-string form. Batch all names in one call (`["USA IIC+","Deluxe Verb Normal"]`) to save turns. Returns `{ entries: [...] }`. - reverse { block_type, real_gear }: substring search over basedOn/description/quotes (`"1176"`, `"Tube Screamer"`, `"Keith Urban tone"`). Flat shape. - structured { block_type, manufacturer?, model? }: exact-match. Flat shape. Forward amp/drive entries carry a `loudness` field (amps: master_sweet_spot_display + relative_loudness_dB; drives: default_level_display + boost_response_dB). Call before apply_preset on solo/lead scenes so level compensation is data-driven, not guessed. No-lineage devices refuse with a capability error; check describe_device.capabilities.supports_lineage.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       block_type: z.string().describe(

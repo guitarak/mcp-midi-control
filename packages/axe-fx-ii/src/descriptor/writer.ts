@@ -104,7 +104,9 @@ import {
 } from '../tools/applyExecutor.js';
 import { checkAudibility } from '../tools/audibility.js';
 import { findParamFuzzy } from 'fractal-midi/axe-fx-ii';
-import { guardActiveBufferOrSave } from '../tools/shared.js';
+import { guardActiveBufferOrSave, AXEFX_DIRTY_LABEL } from '../tools/shared.js';
+import { restorePresetBinaryAxeFxII } from './presetRestore.js';
+import { markClean, markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
 
 import { findBlockBySlug, parseAxeFxIILocation } from './schema.js';
 
@@ -114,7 +116,7 @@ const DEVICE_LABEL = 'Fractal Axe-Fx II XL+';
 // continuous/knob params. These blocks use fn=0x02 (SET with wire
 // integer) for ALL param types. Hardware-confirmed 2026-05-26:
 // compressor.effect_type already rejected fn=0x2e (Session 125); alpha.7
-// field test showed all compressor knobs (treshold, ratio, attack,
+// field test showed all compressor knobs (threshold, ratio, attack,
 // release, level) also no-op via fn=0x2e while fn=0x02 lands correctly
 // for effect_type on the same block. Extending fn=0x02 to all CPR params.
 const FN02_ONLY_GROUPS = new Set(['CPR']);
@@ -355,6 +357,10 @@ export const writer: DeviceWriter = {
       );
     }
     ctx.conn.send(bytes);
+    // Unified-surface edit: ctx.conn bypasses the transport-layer
+    // isEditOutbound detection the legacy axefx2_* tools rely on, so mark
+    // the working buffer dirty explicitly (parity with AM4 + modern family).
+    markDirty(AXEFX_DIRTY_LABEL);
     // Axe-Fx II SET is fire-and-forget — no wire ack. We surface
     // acked: true to match the AM4 descriptor's success shape and let
     // the warning carry the no-ack semantics.
@@ -453,6 +459,11 @@ export const writer: DeviceWriter = {
     const n = parseAxeFxIILocation(location);
     const slot = n + 1;
     ctx.conn.send(buildSwitchPreset(n));
+    // Switching loads a stored preset → the working buffer matches flash →
+    // clean. Explicit markClean (belt-and-suspenders with the connection's
+    // isCleanOutbound hook; and the only markClean under MCP_MOCK_TRANSPORT,
+    // whose mock connection has no outbound hook).
+    markClean(AXEFX_DIRTY_LABEL);
     // Switch is fire-and-forget; no ack from the device. Settle window
     // matches the legacy axefx2_apply_preset behavior.
     await new Promise((res) => setTimeout(res, CHANNEL_SWITCH_SETTLE_MS));
@@ -486,9 +497,21 @@ export const writer: DeviceWriter = {
       STORE_RESPONSE_TIMEOUT_MS,
     );
     ctx.conn.send(buildStorePreset(n));
+    // The store envelope going out transitions the buffer to clean — same as
+    // the connection's isCleanOutbound hook, which fires on send (not ack). So
+    // this also works under MCP_MOCK_TRANSPORT, whose mock connection has no
+    // outbound hook and doesn't synthesize the STORE ack.
+    markClean(AXEFX_DIRTY_LABEL);
     try {
       const ack = await ackPromise;
       const parsed = parseStorePresetResponse(ack);
+      if (!parsed.ok && process.env.MCP_MOCK_TRANSPORT === undefined) {
+        // The STORE send already marked the buffer clean (outbound hook +
+        // explicit markClean above), but the device REJECTED the store, so the
+        // edits did not persist. Re-dirty on real hardware so the safe-edit
+        // gate keeps protecting the unsaved edits on the next navigation.
+        markDirty(AXEFX_DIRTY_LABEL);
+      }
       return {
         op: 'save_preset',
         target: String(slot),
@@ -500,15 +523,23 @@ export const writer: DeviceWriter = {
           : undefined,
         warning: parsed.ok
           ? undefined
-          : `Device returned result code 0x${parsed.resultCode.toString(16)}; save likely rejected.`,
+          : `Device returned result code 0x${parsed.resultCode.toString(16)}; save likely rejected. The working buffer is left marked unsaved so the edits aren't lost.`,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      // Timed out waiting for the STORE ack: the clean-on-send was premature and
+      // the save state is unknown. Re-dirty on real hardware so a failed save
+      // can't silently drop the edits on the next switch. Under MCP_MOCK_TRANSPORT
+      // no STORE ack is synthesized, so the timeout is expected and the buffer
+      // stays clean (the dirty-gate regression relies on clean-on-send there).
+      if (process.env.MCP_MOCK_TRANSPORT === undefined) {
+        markDirty(AXEFX_DIRTY_LABEL);
+      }
       return {
         op: 'save_preset',
         target: String(slot),
         acked: false,
-        warning: `No STORE_PRESET ack within ${STORE_RESPONSE_TIMEOUT_MS}ms: ${msg}. Save state unknown; verify on the device.`,
+        warning: `No STORE_PRESET ack within ${STORE_RESPONSE_TIMEOUT_MS}ms: ${msg}. Save state unknown; the working buffer is left marked unsaved so edits aren't lost. Verify on the device.`,
       };
     }
   },
@@ -579,7 +610,10 @@ export const writer: DeviceWriter = {
     if (change.block_type === 'none' || change.block_type === 'empty') {
       blockId = 0;
     } else {
-      const target = resolveBlockOrThrow(change.block_type);
+      // instance selects which block of the type (Amp 2, Reverb 3, …);
+      // undefined / 1 returns the base block, so existing placements are
+      // byte-identical.
+      const target = resolveBlockWithInstance(change.block_type, change.instance);
       blockId = target.id;
     }
     const bytes = buildSetGridCell({ row, col, blockId });
@@ -588,6 +622,9 @@ export const writer: DeviceWriter = {
       GRID_CELL_RESPONSE_TIMEOUT_MS,
     );
     ctx.conn.send(bytes);
+    // Structural edit dirties the working buffer (ctx.conn bypasses the
+    // transport isEditOutbound detection, so mark it here).
+    markDirty(AXEFX_DIRTY_LABEL);
     try {
       const ack = await ackPromise;
       const parsed = parseSetGridCellResponse(ack);
@@ -623,6 +660,7 @@ export const writer: DeviceWriter = {
       );
     }
     ctx.conn.send(buildSetBlockBypass(block.id, bypassed));
+    markDirty(AXEFX_DIRTY_LABEL); // bypass edit dirties the working buffer
     return {
       op: 'set_bypass',
       target: `${block.name}:${bypassed ? 'bypassed' : 'engaged'}`,
@@ -989,8 +1027,12 @@ export const writer: DeviceWriter = {
    * sourced dirty signal (0x74 state-broadcast triple) for authoritative
    * dirty tracking.
    */
-  async guardActiveBufferOrSave(_ctx, mode) {
-    return guardActiveBufferOrSave(mode);
+  async guardActiveBufferOrSave(ctx, mode) {
+    return guardActiveBufferOrSave(mode, ctx.conn);
+  },
+
+  async restorePresetBinary(ctx, bytes, options) {
+    return restorePresetBinaryAxeFxII(ctx, bytes, options);
   },
 };
 
