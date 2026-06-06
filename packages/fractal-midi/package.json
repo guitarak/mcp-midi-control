@@ -27,6 +27,10 @@
     "./axe-fx-iii": {
       "types": "./dist/axe-fx-iii/index.d.ts",
       "default": "./dist/axe-fx-iii/index.js"
+    },
+    "./fm9": {
+      "types": "./dist/fm9/index.d.ts",
+      "default": "./dist/fm9/index.js"
     }
   },
   "files": [

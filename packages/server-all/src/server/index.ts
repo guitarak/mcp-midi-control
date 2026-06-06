@@ -61,6 +61,7 @@ import { registerMidiPrimitiveTools } from './tools/midi-primitives.js';
 // import { registerAM4Tools } from '@mcp-midi-control/am4/tools/index.js';
 import { describeAxeFxIIPortStatus } from '@mcp-midi-control/axe-fx-ii/tools.js';
 import { describeAxeFxIIIPortStatus } from '@mcp-midi-control/axe-fx-iii/tools.js';
+import { describeFM9PortStatus } from '@mcp-midi-control/fm9/midi.js';
 import { registerHydrasynthTools, describeHydrasynthPortStatus } from '@mcp-midi-control/hydrasynth/server.js';
 
 // Unified tool surface — descriptor registration. The dispatcher
@@ -72,6 +73,7 @@ import { registerUnifiedTools } from '@mcp-midi-control/core/protocol-generic/to
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
 import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/axe-fx-iii/device.js';
+import { FM9_DESCRIPTOR } from '@mcp-midi-control/fm9/device.js';
 import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
 
 // -- Server setup -----------------------------------------------------------
@@ -158,9 +160,11 @@ registerHydrasynthTools(server);    // Hydra-specific tools not yet on unified s
 // tiebreaking favors the narrower pattern.
 //
 //   1. Axe-Fx III  /axe-?fx ?iii/i   (most specific — wins on "Axe-Fx III")
-//   2. Axe-Fx II   /axe-?fx/i        (would also match III if III didn't win first)
-//   3. AM4         /Fractal/i        (catch-all for the modern Fractal family)
-//   4. Hydrasynth  /hydrasynth/i     (different vendor — order doesn't matter for it)
+//   2. FM9         /fm-?9/i          (distinct token; must precede AM4's catch-all,
+//                                     e.g. a port named "Fractal Audio FM9")
+//   3. Axe-Fx II   /axe-?fx/i        (would also match III if III didn't win first)
+//   4. AM4         /Fractal/i        (catch-all for the modern Fractal family)
+//   5. Hydrasynth  /hydrasynth/i     (different vendor — order doesn't matter for it)
 //
 // Axe-Fx III is a community-beta descriptor: scaffolded from Fractal's
 // published v1.4 PDF and AxeEdit III editor assets, but NOT yet hardware-
@@ -168,6 +172,11 @@ registerHydrasynthTools(server);    // Hydra-specific tools not yet on unified s
 // refuse with structured "pending capture" errors until a community
 // contributor runs the USBPcap workflow.
 registerMcpDevice(AXEFX3_DESCRIPTOR);
+// FM9 is a foundation-verification scaffold: identification +
+// switch_preset + switch_scene only, cloned from the III. Registered
+// BEFORE AM4 so its /fm-?9/i pattern wins over AM4's /Fractal/i
+// catch-all on ports like "Fractal Audio FM9".
+registerMcpDevice(FM9_DESCRIPTOR);
 registerMcpDevice(AXEFX2_DESCRIPTOR);
 registerMcpDevice(AM4_DESCRIPTOR);
 // Hydrasynth registers after the Fractal devices — its port_match
@@ -258,6 +267,15 @@ async function main(): Promise<void> {
     console.error(`Axe-Fx III port scan: ${describeAxeFxIIIPortStatus()}.`);
   } catch (err) {
     console.error(`Axe-Fx III port scan failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  // FM9 port-scan banner — 🟡 foundation-verification scaffold.
+  // Surfaces the device's presence + scaffold status so users see in
+  // the MCP log panel that the FM9 is registered and what tier of
+  // support ships today.
+  try {
+    console.error(`FM9 port scan: ${describeFM9PortStatus()}.`);
+  } catch (err) {
+    console.error(`FM9 port scan failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

@@ -1,21 +1,15 @@
 {
-  "name": "@mcp-midi-control/server-all",
+  "name": "@mcp-midi-control/fm9",
   "version": "0.1.0",
-  "description": "MCP server entry point composing all device packages.",
+  "description": "Fractal FM9 device descriptor (foundation-verification scaffold, cloned from Axe-Fx III).",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
-  "main": "./dist/server/index.js",
   "exports": {
     "./*": "./dist/*"
   },
   "dependencies": {
-    "@mcp-midi-control/am4": "*",
-    "@mcp-midi-control/axe-fx-ii": "*",
-    "@mcp-midi-control/axe-fx-iii": "*",
     "@mcp-midi-control/core": "*",
-    "@mcp-midi-control/fm9": "*",
-    "@mcp-midi-control/hydrasynth": "*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "fractal-midi": "0.1.0-alpha.11",
     "midi": "^2.0.0",
