@@ -486,7 +486,9 @@ const reader: DeviceReader = {
       warnings.push('GET SCENE timed out; active scene omitted.');
     }
 
-    const slots: PresetSnapshotSlot[] = entries.map((e, i) => {
+    let nonGridFiltered = 0;
+    const slots: PresetSnapshotSlot[] = [];
+    for (const e of entries) {
       const resolved = resolveBlockByEffectId(e.effectId);
       if (resolved === undefined) {
         warnings.push(
@@ -494,25 +496,51 @@ const reader: DeviceReader = {
             'known FM9 block range — reported as unknown block. Candidates per ' +
             'blockTypes.ts: Effects Loop / EQ Match (IDs unconfirmed).',
         );
-        return {
-          slot: i,
+        slots.push({
+          slot: slots.length,
           block_type: `unknown_0x${e.effectId.toString(16)}`,
           bypassed: e.bypassed,
-          channel: String.fromCharCode(65 + e.channel),
-        };
+        });
+        continue;
       }
       const { block, instance } = resolved;
-      return {
-        slot: i,
-        block_type: blockSlug(block),
-        instance,
-        bypassed: e.bypassed,
-        // channelCount 0/1 means the block has no channel concept —
-        // omit channel rather than reporting a meaningless 'A'.
-        channel: e.channelCount > 1 ? String.fromCharCode(65 + e.channel) : undefined,
-        channel_status: 'active' as const,
-      };
-    });
+      // Non-addressable entities (Preset FC 200/201, Controllers,
+      // Scene MIDI, FC) ride in the STATUS_DUMP but are NOT grid
+      // blocks — FM9-Edit's grid doesn't show them (cross-checked
+      // against preset 413, 2026-06-06). Filter them from slots.
+      if (block.addressable === false) {
+        nonGridFiltered += 1;
+        continue;
+      }
+      // Per the PresetSnapshotSlot convention, the active channel
+      // letter rides as the `params` nesting key (empty record —
+      // param VALUES are omitted until calibration). channelCount
+      // 0/1 means the block has no channel concept; those slots get
+      // no params nest and no channel_status.
+      if (e.channelCount > 1) {
+        slots.push({
+          slot: slots.length,
+          block_type: blockSlug(block),
+          instance,
+          bypassed: e.bypassed,
+          params: { [String.fromCharCode(65 + e.channel)]: {} },
+          channel_status: 'active' as const,
+        });
+      } else {
+        slots.push({
+          slot: slots.length,
+          block_type: blockSlug(block),
+          instance,
+          bypassed: e.bypassed,
+        });
+      }
+    }
+    if (nonGridFiltered > 0) {
+      warnings.push(
+        `${nonGridFiltered} non-grid per-preset entit${nonGridFiltered === 1 ? 'y' : 'ies'} ` +
+          '(Preset FC config) reported by STATUS_DUMP were omitted from slots.',
+      );
+    }
 
     warnings.push(
       'Slot numbers are STATUS_DUMP ordinals, not grid coordinates (the dump ' +
@@ -686,11 +714,11 @@ export const FM9_DESCRIPTOR: DeviceDescriptor = {
   ],
   capabilities: {
     slot_model: 'grid',
-    // 6×14 measured from FM9-Edit's own GridUnitSkin (fieldGrid
+    // 6×14: measured from FM9-Edit's GridUnitSkin (fieldGrid
     // 1264×366 px; blockSpacing 91×60; block 55×41 → exactly 14
-    // columns × 6 rows fit). Note: docs/FRACTAL-PRESET-SCHEMA.md
-    // says 4×14 — superseded by this asset measurement, pending a
-    // final visual confirm in FM9-Edit.
+    // columns × 6 rows) and VISUALLY CONFIRMED in FM9-Edit
+    // (2026-06-06). docs/FRACTAL-PRESET-SCHEMA.md's 4×14 figure is
+    // wrong for current FM9 firmware.
     grid: { rows: 6, cols: 14 },
     has_scenes: true,
     // 8 scenes per FM9-Edit's own Scene 1..Scene 8 controller rows +

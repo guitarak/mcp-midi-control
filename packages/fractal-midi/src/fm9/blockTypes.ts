@@ -39,14 +39,20 @@
  * in `mine-axeedit3-xml-labels.ts`'s header). Fixing the III is out
  * of scope here; flagged for upstream.
  *
+ * ── Resolved by the FM9-Edit cross-check (2026-06-06, preset 413) ──
+ *   - **IDs 200/201 are NOT grid blocks.** FM9-Edit's grid for 413
+ *     shows exactly the 21 named blocks and nothing else, yet the
+ *     STATUS_DUMP reports 200 and 201 (channelCount=1, never
+ *     bypassed). 200 is the III appendix's `ID_PRESET_FC` (per-preset
+ *     foot-controller config — a per-preset, non-grid entity); 201 is
+ *     a second per-preset FC entity on the FM9 (more onboard
+ *     switches than the III). Modeled as Preset FC instances 1-2,
+ *     non-addressable; `get_preset` filters them out of slots.
+ *
  * ── Open items (deferred, do NOT guess) ────────────────────────────
  *   - **Effects Loop** (FM9-specific block; FM9-Edit section
- *     `EffectsLoop`, zero params): no known effect ID. The 413
- *     STATUS_DUMP contains two otherwise-unmapped IDs, 200 and 201
- *     (channelCount=1). 200 collides with the III appendix's
- *     `ID_PRESET_FC`; 201 is beyond the appendix entirely. Candidate:
- *     FX Loop 1/2 in a live 4CM preset. Resolve via the FM9-Edit
- *     grid cross-check of preset 413, not by assumption.
+ *     `EffectsLoop`, zero params): no known effect ID — none placed
+ *     in preset 413, so the cross-check couldn't bind one.
  *   - **EQ Match** (FM9-Edit section `EQMatch`, zero params): the
  *     FM9's cousin of the III's Tone Match (TMA 170). No FM9
  *     corroboration for ID 170 → firstId null until verified.
@@ -136,11 +142,11 @@ export const FM9_BLOCKS: readonly FM9Block[] = [
   { firstId: 191,  instances: 4, name: 'Multiplexer',          groupCode: 'MUX', family: 'MULTIPLEXER', confidence: 'iii-appendix-shared' },
   { firstId: 195,  instances: 4, name: 'IR Player',            groupCode: 'IRP', family: 'IRPLAYER',    confidence: 'fm9-edit-asset' },
   { firstId: 199,  instances: 1, name: 'Foot Controller',      groupCode: 'FC',  family: 'FC',          confidence: 'iii-appendix-shared', addressable: false },
+  // Per-preset FC config entities, NOT grid blocks (see header).
+  // STATUS_DUMP reports them; FM9-Edit's grid does not show them.
+  { firstId: 200,  instances: 2, name: 'Preset FC',            groupCode: 'PFC',                        confidence: 'hardware-corroborated', addressable: false },
 
   // ── Open items (see header; do not guess IDs) ──────────────────
-  // STATUS_DUMP IDs 200 + 201 (channelCount=1) are unmapped. 200 is
-  // the III appendix's ID_PRESET_FC; 201 is past the appendix. The
-  // FM9-Edit grid cross-check of preset 413 resolves what they are.
   { firstId: null, instances: 2, name: 'Effects Loop',         groupCode: 'EFL',                        confidence: 'pending' },
   { firstId: null, instances: 1, name: 'EQ Match',             groupCode: 'EQM',                        confidence: 'pending' },
 ] as const;

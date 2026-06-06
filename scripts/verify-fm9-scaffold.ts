@@ -116,8 +116,10 @@ checkTrue('resolveBlockByEffectId(66) → Reverb instance 1', (() => {
   const r = resolveBlockByEffectId(66);
   return r?.block.name === 'Reverb' && r?.instance === 1;
 })());
-checkTrue('resolveBlockByEffectId(201) → undefined (unmapped, see blockTypes header)',
-  resolveBlockByEffectId(201) === undefined);
+checkTrue('resolveBlockByEffectId(201) → Preset FC instance 2 (non-grid; cross-checked vs FM9-Edit)', (() => {
+  const r = resolveBlockByEffectId(201);
+  return r?.block.name === 'Preset FC' && r?.instance === 2 && r?.block.addressable === false;
+})());
 checkTrue('fn=0x01 SET builder round-trips through the parser', (() => {
   const parsed = parseSetGetParameterResponse(buildSetParameter(58, 5, 1234));
   return parsed.kind === 'set_echo' && parsed.effectId === 58 && parsed.paramId === 5 && parsed.value === 1234;
