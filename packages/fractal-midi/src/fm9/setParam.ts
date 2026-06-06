@@ -70,6 +70,22 @@ export const FN_MULTIPURPOSE_RESPONSE = 0x64;
 /** Query sentinel — when this is the value byte, the device responds with current state. */
 export const QUERY_SENTINEL = 0x7f;
 
+/**
+ * 0x01 PARAMETER_SETGET — the family's parameter read/write opcode.
+ * Cloned from the III codec (where the SET shape is byte-verified
+ * against 10 public captures; see the III's `setParam.ts` for the
+ * full evidence chain). On the FM9 both directions are 🟡 untested:
+ *   - SET: not exercised — FM9 writes are gated until the
+ *     calibration step.
+ *   - GET: hypothesized shape (SET layout with value zeroed), same
+ *     hypothesis as the III. Read-only — safe to attempt; a silent
+ *     timeout means "GET not supported," not an error.
+ */
+export const FN_PARAMETER_SETGET = 0x01;
+
+/** Parameter SETGET sub-action codes (pos 6-7 of the envelope). */
+const SUB_ACTION_SET_TYPED: readonly [number, number] = [0x09, 0x00];
+
 // ── Encoding helpers ───────────────────────────────────────────────
 
 /**
@@ -116,6 +132,117 @@ export function buildEnvelopeWithModel(
   const body = [SYSEX_START, ...FRACTAL_MFR_PREFIX, modelId, fn, ...payload];
   const checksum = fractalChecksum(body);
   return [...body, checksum, SYSEX_END];
+}
+
+// ── 0x01 PARAMETER_SETGET ──────────────────────────────────────────
+
+/**
+ * Pack a 16-bit unsigned value into the wire's three 7-bit septets
+ * (low 7, next 7, top 2). Family-shared encoding; see the III codec
+ * for capture provenance.
+ */
+export function packValue16(value: number): [number, number, number] {
+  if (!Number.isInteger(value) || value < 0 || value > 0xffff) {
+    throw new Error(`packValue16 input out of range: ${value}`);
+  }
+  return [
+    value & 0x7f,
+    (value >> 7) & 0x7f,
+    (value >> 14) & 0x03,
+  ];
+}
+
+/** Inverse of `packValue16`. Inputs may have unused upper bits — masked. */
+export function unpackValue16(b0: number, b1: number, b2: number): number {
+  return ((b0 & 0x7f)) | ((b1 & 0x7f) << 7) | ((b2 & 0x03) << 14);
+}
+
+/**
+ * SET PARAMETER (function 0x01, sub-action 09 00 — typed input).
+ * 23-byte envelope, cloned from the III's byte-verified builder with
+ * the FM9 model byte. 🟡 NOT yet exercised against FM9 hardware —
+ * writes are gated until the calibration step; this builder exists so
+ * goldens and the calibration pass have a stable target.
+ */
+export function buildSetParameter(
+  effectId: number,
+  paramId: number,
+  value: number,
+): number[] {
+  return buildEnvelope(FN_PARAMETER_SETGET, [
+    ...SUB_ACTION_SET_TYPED,
+    ...encode14(effectId),
+    ...encode14(paramId),
+    0x00, 0x00, 0x00,
+    ...packValue16(value),
+    0x00, 0x00, 0x00,
+  ]);
+}
+
+/**
+ * GET PARAMETER (function 0x01, sub-action 09 00 with value=0).
+ * 🟡 Hypothesis (same as the III's — no public GET capture exists for
+ * either device). Read-only. Treat a missing response within ~800 ms
+ * as "GET not supported on this firmware," not a tool error.
+ */
+export function buildGetParameter(effectId: number, paramId: number): number[] {
+  return buildEnvelope(FN_PARAMETER_SETGET, [
+    ...SUB_ACTION_SET_TYPED,
+    ...encode14(effectId),
+    ...encode14(paramId),
+    0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00,
+  ]);
+}
+
+/** Predicate: inbound fn=0x01 PARAMETER frame (any sub-action). */
+export function isSetGetParameterResponse(bytes: readonly number[]): boolean {
+  return isFm9Frame(bytes, FN_PARAMETER_SETGET);
+}
+
+/** Discriminator for `parseSetGetParameterResponse` results. */
+export type FM9ParameterFrameKind = 'set_echo' | 'state_broadcast';
+
+/**
+ * Parse an inbound fn=0x01 PARAMETER frame. Two shapes (family-shared
+ * layout, see the III codec for capture provenance):
+ *   • sub-action `09 00` / `52 00`: SET/GET echo — effectId at payload
+ *     pos 2-3, paramId at 4-5, value at 9-11 (packValue16).
+ *   • sub-action `04 01`: STATE_BROADCAST — no paramId slot; value at
+ *     pos 6-7 as a 2-septet pair. paramId reported as 0.
+ */
+export function parseSetGetParameterResponse(bytes: readonly number[]): {
+  kind: FM9ParameterFrameKind;
+  effectId: number;
+  paramId: number;
+  value: number;
+  subAction: number;
+} {
+  if (!isSetGetParameterResponse(bytes)) {
+    throw new Error(`parseSetGetParameterResponse: not a fn=0x01 frame (len=${bytes.length})`);
+  }
+  const payload = bytes.slice(6, -2);
+  if (payload.length < 15) {
+    throw new Error(`parseSetGetParameterResponse: payload too short (${payload.length}B; expected ≥15)`);
+  }
+  const subAction = (payload[0] & 0x7f) | ((payload[1] & 0x7f) << 7);
+  if (payload[0] === 0x04 && payload[1] === 0x01) {
+    return {
+      kind: 'state_broadcast',
+      effectId: decode14(payload[2], payload[3]),
+      paramId: 0,
+      value: decode14(payload[6], payload[7]),
+      subAction,
+    };
+  }
+  return {
+    kind: 'set_echo',
+    effectId: decode14(payload[2], payload[3]),
+    paramId: decode14(payload[4], payload[5]),
+    value: unpackValue16(payload[9], payload[10], payload[11]),
+    subAction,
+  };
 }
 
 // ── Universal Device Inquiry (MIDI standard, not Fractal-specific) ──

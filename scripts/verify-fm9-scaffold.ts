@@ -26,6 +26,15 @@ import {
   buildSwitchPresetPC,
   isQueryPatchNameResponse,
   parseFractalFrame,
+  FM9_BLOCKS,
+  FM9_FAMILIES,
+  FM9_UNRESOLVED_PARAMS,
+  PARAMS,
+  PARAMS_BY_FAMILY,
+  resolveBlockByEffectId,
+  resolveEffectId,
+  buildSetParameter,
+  parseSetGetParameterResponse,
 } from 'fractal-midi/fm9';
 import {
   AXE_FX_III_MODEL_ID,
@@ -90,7 +99,30 @@ const inspected = parseFractalFrame(iiiStyleFrame);
 checkTrue('parseFractalFrame reports modelId of an arbitrary family frame', inspected?.modelId === AXE_FX_III_MODEL_ID);
 checkTrue('parseFractalFrame validates the checksum', inspected?.checksumOk === true);
 
-console.log('=== Descriptor structure (foundation scaffold) ===');
+console.log('=== Mined catalog (FM9-Edit XML + III-shared addressing) ===');
+checkTrue(`44 families present (got ${FM9_FAMILIES.length})`, FM9_FAMILIES.length === 44);
+checkTrue(`catalog carries >1500 params (got ${PARAMS.length})`, PARAMS.length > 1500);
+checkTrue(`4 unresolved FM9-divergent params (got ${FM9_UNRESOLVED_PARAMS.length})`, FM9_UNRESOLVED_PARAMS.length === 4);
+checkTrue('Amp block binds the DISTORT family', FM9_BLOCKS.find((b) => b.name === 'Amp')?.family === 'DISTORT');
+checkTrue('Drive block binds the FUZZ family', FM9_BLOCKS.find((b) => b.name === 'Drive')?.family === 'FUZZ');
+checkTrue('DISTORT family has the amp knobs (MASTER present)',
+  (PARAMS_BY_FAMILY['DISTORT'] ?? []).some((p) => p.name === 'DISTORT_MASTER'));
+checkTrue("resolveEffectId('Amp', 1) === 58", resolveEffectId('Amp', 1) === 58);
+checkTrue("resolveEffectId('Drive', 2) === 119", resolveEffectId('Drive', 2) === 119);
+checkTrue("resolveEffectId('Delay', 2) === 71", resolveEffectId('Delay', 2) === 71);
+checkTrue('resolveBlockByEffectId(66) → Reverb instance 1', (() => {
+  const r = resolveBlockByEffectId(66);
+  return r?.block.name === 'Reverb' && r?.instance === 1;
+})());
+checkTrue('resolveBlockByEffectId(201) → undefined (unmapped, see blockTypes header)',
+  resolveBlockByEffectId(201) === undefined);
+checkTrue('fn=0x01 SET builder round-trips through the parser', (() => {
+  const parsed = parseSetGetParameterResponse(buildSetParameter(58, 5, 1234));
+  return parsed.kind === 'set_echo' && parsed.effectId === 58 && parsed.paramId === 5 && parsed.value === 1234;
+})());
+checkTrue('fn=0x01 SET frame checksum validates', parseFractalFrame(buildSetParameter(58, 5, 1234))?.checksumOk === true);
+
+console.log('=== Descriptor structure (catalog stage) ===');
 checkTrue("id === 'fm9'", FM9_DESCRIPTOR.id === 'fm9');
 checkTrue("preset_class === 'layout'", FM9_DESCRIPTOR.preset_class === 'layout');
 const matches = (name: string): boolean =>
@@ -101,17 +133,36 @@ checkTrue("port_match matches 'Fractal Audio FM9'", matches('Fractal Audio FM9')
 checkTrue("port_match matches 'FM-9'", matches('FM-9'));
 checkTrue("port_match does NOT match 'Axe-Fx III MIDI'", !matches('Axe-Fx III MIDI'));
 checkTrue("port_match does NOT match 'Fractal AM4'", !matches('Fractal AM4'));
-checkTrue('blocks map is EMPTY (no catalog mined yet)', Object.keys(FM9_DESCRIPTOR.blocks).length === 0);
-checkTrue('grid is 4×14 (per FRACTAL-PRESET-SCHEMA.md, column count unverified)',
-  FM9_DESCRIPTOR.capabilities.grid?.rows === 4 && FM9_DESCRIPTOR.capabilities.grid?.cols === 14);
+const blockCount = Object.keys(FM9_DESCRIPTOR.blocks).length;
+checkTrue(`blocks schema populated (${blockCount} blocks)`, blockCount >= 40);
+checkTrue("amp block exposes 'master' + 'presence' (DISTORT family)",
+  'master' in (FM9_DESCRIPTOR.blocks['amp']?.params ?? {}) && 'presence' in (FM9_DESCRIPTOR.blocks['amp']?.params ?? {}));
+checkTrue("drive block exposes 'drive' (FUZZ family)", 'drive' in (FM9_DESCRIPTOR.blocks['drive']?.params ?? {}));
+checkTrue("reverb block exposes 'time' + 'mix'",
+  'time' in (FM9_DESCRIPTOR.blocks['reverb']?.params ?? {}) && 'mix' in (FM9_DESCRIPTOR.blocks['reverb']?.params ?? {}));
+checkTrue('effects_loop block has empty params (no FM9-Edit params)',
+  Object.keys(FM9_DESCRIPTOR.blocks['effects_loop']?.params ?? { x: 1 }).length === 0);
+// Every block_params_summary entry must resolve on its block's schema.
+const summaryBad: string[] = [];
+for (const [slug, names] of Object.entries(FM9_DESCRIPTOR.block_params_summary ?? {})) {
+  const schema = FM9_DESCRIPTOR.blocks[slug];
+  if (!schema) { summaryBad.push(`${slug} (no such block)`); continue; }
+  for (const n of names) if (!(n in schema.params)) summaryBad.push(`${slug}.${n}`);
+}
+checkTrue(`block_params_summary entries all resolve${summaryBad.length ? ' — BAD: ' + summaryBad.join(', ') : ''}`, summaryBad.length === 0);
+checkTrue('grid is 6×14 (measured from FM9-Edit GridUnitSkin)',
+  FM9_DESCRIPTOR.capabilities.grid?.rows === 6 && FM9_DESCRIPTOR.capabilities.grid?.cols === 14);
 checkTrue('8 scenes, channels A..D', FM9_DESCRIPTOR.capabilities.scene_count === 8
   && (FM9_DESCRIPTOR.capabilities.channel_names ?? []).join('') === 'ABCD');
+checkTrue('atomic_read enabled (get_preset via STATUS_DUMP)', FM9_DESCRIPTOR.capabilities.atomic_read === true);
 checkTrue('writer.buildSwitchPreset(5) emits the PC sequence',
   hex(FM9_DESCRIPTOR.writer.buildSwitchPreset!(5)) === 'b00000b02000c005');
 checkTrue('writer.buildSwitchScene(1) emits scene wire 0',
   hex(FM9_DESCRIPTOR.writer.buildSwitchScene!(1)) === 'f0000174120c001bf7');
-checkTrue('writer.buildSetParam refuses (no catalog)', (() => {
-  try { FM9_DESCRIPTOR.writer.buildSetParam('amp', 'gain', 0); return false; } catch { return true; }
+checkTrue('writer.buildSetParam(amp.master) builds a 23-byte fn=0x01 frame',
+  FM9_DESCRIPTOR.writer.buildSetParam('amp', 'master', 100).length === 23);
+checkTrue('writer.setParam (execute) refuses — writes gated until calibration', await (async () => {
+  try { await FM9_DESCRIPTOR.writer.setParam!(null as never, 'amp', 'master', 100); return false; } catch { return true; }
 })());
 
 if (failures > 0) {
