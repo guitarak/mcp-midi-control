@@ -1,60 +1,68 @@
 /**
  * FM9 device-true enum overrides (read-leg {broadcast ordinal -> name}).
  *
- * The gen-3 family shares one effect codec, but the amp model roster (the
- * DISTORT block's type selector) is device-specific: FM9 amp ordinals do NOT
- * match the III/FM3 or AM4 tables, so the family-shared overlay deliberately
- * leaves DISTORT_TYPE numeric. These points were captured from real FM9
- * hardware (fw 11.00) and verified: each label was read off the
- * `fn=0x1F -> 0x75` block bulk-read (record[paramId]) while the matching
- * `fn=0x01 sub=0x1a` poll reported the same current-value name, and the names
- * match the tester's own notes. See
- * `docs/_private/FM9-CAPTURE-RECEIVE+SWEEP-2026-06-04.md` and the cookbook
- * entry `gen3-enum-label-septet-stream`.
+ * The gen-3 family shares one effect codec, but the model rosters (amp / drive
+ * selectors) are device-specific: FM9 ordinals do NOT match the III/FM3 or AM4
+ * tables. The amp and drive (FUZZ) rosters below are the FM9's OWN model lists,
+ * mined from the FM9-Edit `effectDefinitions` cache (firmware 11.0) and emitted
+ * by `scripts/gen-fm9-rosters-from-cache.ts`. Each is VALIDATED at generation
+ * time against the FM9 hardware ordinal anchors:
+ *   - amp: 65=SV Bass 2, 179=Texas Star Clean, 264=SV Bass 1
+ *   - FUZZ/drive: 15=Blues OD, 36=Blackglass 7K
+ * and each carries a self-validating `uint32` entry-count prefix in the cache
+ * (amp 331 / drive 86). The broadcast ordinal IS the discrete-SET value (a select
+ * sends float32(ordinal)), so these are both read labels AND settable by name
+ * across the whole roster, not just the captured anchor points.
  *
- * PARTIAL by construction: only the amp models the tester actually selected
- * are bound. The catalog's decode labels these ordinals and passes every
- * other ordinal through as a raw number; it never fabricates a name. The full
- * roster needs a Type-dropdown capture (or an editor-binary roster mine).
+ * REVERB_TYPE binds the device-true FM9 reverb roster (79) too. The cache gives
+ * the FM9's own adjective-first form ("Medium Spring", "Music Hall"), what an
+ * FM9 user reads on the unit and in FM-Edit. This SUPERSEDES the prior read-leg
+ * fallback that borrowed AM4 REVERB_TYPES' noun-first names ("Spring, Medium",
+ * "Hall, Music"), which mislabeled FM9 read-backs. The ordinal join is intact
+ * (gen-3 ordinal N == AM4 REVERB_TYPES[N] semantically; only the display word
+ * order differs), and set-by-name stays tolerant of BOTH forms via the
+ * word-order-tolerant resolver, so "Spring, Medium" and "Medium Spring" both
+ * still resolve to ordinal 16. III/FM3 keep the AM4-borrowed names until their
+ * own device caches arrive.
  *
- * READ-LEG ONLY. These are broadcast ordinals, NOT the typed-SET raw enum id
- * (a different number for the same name), so set-by-name stays gated. Do not
- * reuse an ordinal here as a SET value.
+ * DISTORT_FBTYPE (amp voicing) and FILTER_TYPE remain PARTIAL hardware-captured
+ * points: only the ordinals the tester selected are bound; the catalog passes
+ * every other ordinal through as a raw number and never fabricates a name. Their
+ * full rosters await a cache mine or a Type-dropdown capture.
+ *
+ * Provenance for the full rosters: the community FM9 cache set archived
+ * 2026-06-09 (D. MacVicar); decode + adversarial validation in
+ * `samples/captured/fm9-community-2026-06-09/FINDINGS.md`. Partial points:
+ * `docs/_private/FM9-CAPTURE-RECEIVE+SWEEP-2026-06-04.md` and the cookbook entry
+ * `gen3-enum-label-septet-stream`.
  */
+import { FM9_AMP_ROSTER, FM9_DRIVE_ROSTER, FM9_REVERB_TYPE_ROSTER } from './rosters.generated.js';
+
 export const FM9_ENUM_OVERRIDES: Readonly<Record<string, Readonly<Record<number, string>>>> = {
   // DISTORT block = the gen-3 AMP (effect id 58), paramId 10 = amp model.
-  DISTORT_TYPE: {
-    65: 'SV Bass 2',
-    179: 'Texas Star Clean',
-    264: 'SV Bass 1',
-  },
+  // Full 331-model FM9 roster (cache-mined, hardware-anchored at 65/179/264).
+  DISTORT_TYPE: FM9_AMP_ROSTER,
 
-  // DISTORT block, paramId 43 = voicing selector. Ordinals from the
-  // fn=0x1F->0x75 block bulk-read + sub=0x1a current-value label poll,
-  // FM9 hw fw 11.00. READ-LEG ONLY (broadcast ordinals, not SET raw-ids).
-  // Source: FM9-CAPTURE-RECEIVE+SWEEP-2026-06-04.
+  // FUZZ block = the gen-3 Drive/Fuzz pedal (effect id 118), paramId 0.
+  // Full 86-model FM9 roster (cache-mined, hardware-anchored at 15/36).
+  FUZZ_TYPE: FM9_DRIVE_ROSTER,
+
+  // REVERB block (effect id 66), paramId 10 = reverb type.
+  // Full 79-type FM9 roster (cache-mined, anchored at 16=Medium Spring / 45=Music Hall).
+  // Device-true adjective-first labels; supersedes AM4-borrowed noun-first names.
+  REVERB_TYPE: FM9_REVERB_TYPE_ROSTER,
+
+  // DISTORT block, paramId 43 = voicing selector. PARTIAL: ordinals from the
+  // fn=0x1F->0x75 block bulk-read + sub=0x1a current-value label poll, FM9 hw
+  // fw 11.00. Broadcast ordinal = the discrete-SET value, so settable by name.
   DISTORT_FBTYPE: {
     0: 'BASSGUY',
     39: 'TX STAR',
     53: 'FAS CLASSIC',
   },
 
-  // FUZZ block = the gen-3 Drive/Fuzz pedal (effect id 118), paramId 0.
-  // Ordinals from sub=0x09 SET echo (Blues OD, Drive TYPE change) and
-  // fn=0x1F->0x75 block bulk-read (Blackglass 7K, appeared via re-poll).
-  // FM9 hw fw 11.00. READ-LEG ONLY.
-  // Blues OD: high confidence (byte-confirmed SET frame + cross-check).
-  // Blackglass 7K: medium confidence (fn=0x1F re-poll only, no captured SET).
-  // Source: FM9-CAPTURE3-DECODE-2026-06-03 + FM9-CAPTURE-RECEIVE+SWEEP-2026-06-04.
-  FUZZ_TYPE: {
-    15: 'Blues OD',
-    36: 'Blackglass 7K',
-  },
-
-  // FILTER block (effect id 114), paramId 0.
-  // Ordinal from sub=0x1a current-value label poll, hand-reproduced.
-  // FM9 hw fw 11.00. READ-LEG ONLY.
-  // Source: FM9-CAPTURE-RECEIVE+SWEEP-2026-06-04.
+  // FILTER block (effect id 114), paramId 0. PARTIAL: ordinal from sub=0x1a
+  // current-value label poll, hand-reproduced, FM9 hw fw 11.00.
   FILTER_TYPE: {
     6: 'Peaking',
   },

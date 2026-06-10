@@ -65,6 +65,7 @@ export {
   buildGetAllParams,
   buildReadParam,
   buildRequestActiveBufferDump,
+  buildRequestStoredPresetDump,
   isCommandAck,
   isWriteEcho,
   isReadResponse,

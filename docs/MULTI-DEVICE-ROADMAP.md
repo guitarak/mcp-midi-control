@@ -103,7 +103,6 @@ mcp-midi-control                       (single repo)
     │       ├── locations.ts
     │       ├── setParam.ts          wire-byte builders
     │       ├── applicability.ts
-    │       ├── factoryBank.ts
     │       ├── ir/                  preset IR + transpiler
     │       ├── safety/              fingerprint, location classification
     │       └── tools/               apply executor, navigation, safeEdit

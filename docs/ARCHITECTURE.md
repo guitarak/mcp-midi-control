@@ -200,7 +200,6 @@ packages/am4/src/
   locations.ts        ← A01..Z04 ↔ index conversion
   setParam.ts         ← wire-byte builders (buildSetParam, buildSetBlockType…)
   applicability.ts    ← type-gated knob applicability
-  factoryBank.ts      ← factory preset restore bytes
   tools/
     applyExecutor.ts  ← apply_preset core logic (validation + wire-send)
     navigation.ts     ← switch_preset / save_preset / scan_locations

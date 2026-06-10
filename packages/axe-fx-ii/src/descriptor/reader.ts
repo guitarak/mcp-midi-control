@@ -29,7 +29,6 @@ import type {
   ScannedLocation,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
-import { fractalChecksum } from 'fractal-midi/shared';
 import { formatUnknownParamError } from '@mcp-midi-control/core/protocol-generic/dispatcher/errorFormat.js';
 import { resolveParamKind } from '@mcp-midi-control/core/protocol-generic/paramKind.js';
 
@@ -80,6 +79,7 @@ import {
 } from '../lineageLookup.js';
 import { checkAudibility } from '../tools/audibility.js';
 import { findParamFuzzy } from 'fractal-midi/axe-fx-ii';
+import { buildEditBufferDumpRequest } from 'fractal-midi/axe-fx-ii';
 
 import { findBlockBySlug, parseAxeFxIILocation } from './schema.js';
 
@@ -417,35 +417,30 @@ async function readActiveBlockStates(
   return byId;
 }
 
-// ── Byte-exact preset backup (fn 0x03 PATCH_DUMP → 66-frame stream) ──
+// ── Byte-exact preset backup (fn 0x03 EDIT-BUFFER dump → 66 frames) ──
 //
-// Backs export_preset. The device replies to a PATCH_DUMP request with a
-// 66-message stream (1× 0x77 header + 64× 0x78 chunks + 1× 0x79 footer)
-// totaling 12,951 bytes. The concatenated frames ARE a valid `.syx` file:
-// the same bytes push back to the working buffer unchanged (the
-// axefx2_restore_preset path; 0 NACKs hardware-verified Session 115). We
-// dump the active working buffer here, so we read the active preset number
-// first and request a dump of it. The bytes are opaque to us — this is a
-// blob backup, not a decode.
+// Backs export_preset. The device replies to a fn 0x03 request carrying
+// the `0x7F 0x7F` sentinel payload with a 66-message stream (1× 0x77
+// header + 64× 0x78 chunks + 1× 0x79 footer) totaling 12,951 bytes,
+// dumped from the WORKING BUFFER. The concatenated frames ARE a valid
+// `.syx` file: the same bytes push back to the working buffer unchanged.
+// The bytes are opaque to us — this is a blob backup, not a decode.
+//
+// SOURCE SEMANTICS (hardware-confirmed Q8.02, 2026-06-10, HW-132):
+//   - fn 0x03 + preset number = the STORED flash copy, and the request
+//     RELOADS that copy into the working buffer (destroys unsaved
+//     edits). Never use the slot-addressed form for an "active" export.
+//   - fn 0x03 + 0x7F 0x7F sentinel = the EDIT BUFFER: tracks live
+//     buffer edits, has NO reload side effect, and round-trips back to
+//     the device cleanly. This is the export path below.
+// Builders + full evidence notes live in fractal-midi/axe-fx-ii
+// (buildEditBufferDumpRequest / buildPatchDumpRequest).
 
-const FN_PATCH_DUMP = 0x03;
 const FN_PATCH_HEADER = 0x77;
 const FN_PATCH_CHUNK = 0x78;
 const FN_PATCH_FOOTER = 0x79;
 const PATCH_DUMP_FRAME_COUNT = 66;
 const PATCH_DUMP_TIMEOUT_MS = 5000;
-
-/**
- * Build the fn 0x03 PATCH_DUMP request for a wire preset number. MSB-first
- * per the buildSwitchPreset convention; LSB-first silently fails for any
- * preset ≥ 128 (Session 115).
- */
-function buildPatchDumpRequest(wirePreset: number): number[] {
-  const hi = (wirePreset >> 7) & 0x7f;
-  const lo = wirePreset & 0x7f;
-  const head = [0xf0, 0x00, 0x01, 0x74, AXE_FX_II_XL_PLUS_MODEL_ID, FN_PATCH_DUMP, hi, lo];
-  return [...head, fractalChecksum(head), 0xf7];
-}
 
 function isPatchFrame(b: number[]): boolean {
   return (
@@ -530,7 +525,10 @@ export const reader: DeviceReader = {
         'no_ack',
         DEVICE_LABEL,
         `get_param: no response from device within ${GET_RESPONSE_TIMEOUT_MS}ms — ${err instanceof Error ? err.message : String(err)}. ` +
-        `Likely causes: block '${block.name}' not placed on the active preset grid (device silently absorbs reads on absent blocks), or a stale MIDI handle (try reconnect_midi).`,
+        `Likely causes: block '${block.name}' not placed on the active preset grid (device silently absorbs reads on absent blocks), ` +
+        `a stale MIDI handle (try reconnect_midi), or another program holding the device's MIDI IN port ` +
+        `(a second MCP server instance from another Claude session, a stale node.exe, or a manufacturer editor — ` +
+        `if reconnect_midi doesn't recover, close those or fully restart the host app).`,
       );
     }
     const parsed = parseGetBlockParameterResponse(response);
@@ -580,23 +578,21 @@ export const reader: DeviceReader = {
   },
 
   async dumpActivePresetBinary(ctx: DispatchCtx): Promise<PresetBinaryDump> {
-    // 1. Which preset is loaded? We back up the active working buffer, so
-    //    request a PATCH_DUMP of the currently-active preset number.
-    let wirePreset: number;
+    // 1. Active preset number, for the source string's display-slot
+    //    context only (the dump itself is buffer-addressed).
+    let wirePreset: number | undefined;
     try {
       const numPromise = ctx.conn.receiveSysExMatching(isGetPresetNumberResponse, GET_RESPONSE_TIMEOUT_MS);
       ctx.conn.send(buildGetPresetNumber());
       wirePreset = parseGetPresetNumberResponse(await numPromise).presetNumber;
-    } catch (err) {
-      throw new DispatchError(
-        'no_ack',
-        DEVICE_LABEL,
-        `export_preset: could not read the active preset number — ${err instanceof Error ? err.message : String(err)}. Check the Axe-Fx II is connected and AxeEdit isn't holding the port (try reconnect_midi).`,
-      );
+    } catch {
+      wirePreset = undefined;
     }
-    // 2. Request + collect the 66-frame dump. Subscribe before send.
+    // 2. Request + collect the 66-frame EDIT-BUFFER dump (fn 0x03 with
+    //    the 0x7F 0x7F sentinel; hardware-confirmed buffer-true with no
+    //    reload side effect, HW-132). Subscribe before send.
     const framesPromise = collectPatchDump(ctx);
-    ctx.conn.send(buildPatchDumpRequest(wirePreset));
+    ctx.conn.send(buildEditBufferDumpRequest());
     let frames: number[][];
     try {
       frames = await framesPromise;
@@ -604,21 +600,23 @@ export const reader: DeviceReader = {
       throw new DispatchError(
         'no_ack',
         DEVICE_LABEL,
-        `export_preset: ${err instanceof Error ? err.message : String(err)}`,
+        `export_preset: ${err instanceof Error ? err.message : String(err)}. Check the Axe-Fx II is connected and AxeEdit isn't holding the port (try reconnect_midi).`,
       );
     }
     if (frames.length !== PATCH_DUMP_FRAME_COUNT) {
       throw new DispatchError(
         'no_ack',
         DEVICE_LABEL,
-        `export_preset: PATCH_DUMP returned ${frames.length} frames; expected ${PATCH_DUMP_FRAME_COUNT}.`,
+        `export_preset: edit-buffer dump returned ${frames.length} frames; expected ${PATCH_DUMP_FRAME_COUNT}.`,
       );
     }
     // 3. Flatten the frames into the verbatim .syx byte stream.
     const flat: number[] = [];
     for (const f of frames) for (const b of f) flat.push(b);
     const bytes = Uint8Array.from(flat);
-    // 4. Best-effort preset name for the backup filename.
+    // 4. Working-buffer name for the backup filename. The sentinel dump
+    //    has no reload side effect, so this still reads the buffer the
+    //    file contains.
     let name: string | undefined;
     try {
       const namePromise = ctx.conn.receiveSysExMatching(isGetPresetNameResponse, GET_RESPONSE_TIMEOUT_MS);
@@ -633,7 +631,7 @@ export const reader: DeviceReader = {
       frame_count: frames.length,
       format: 'axe-fx-ii-patch-dump',
       name,
-      source: `active working buffer (display slot ${wirePreset + 1})`,
+      source: `active working buffer (edit-buffer dump, includes unsaved edits${wirePreset !== undefined ? `; device at display slot ${wirePreset + 1}` : ''})`,
     };
   },
 
@@ -902,8 +900,8 @@ export const reader: DeviceReader = {
         // channel-blocked dump indexed by paramId. (II distinctness across X/Y
         // is arithmetic-confirmed 236 = 118x2 + structural transfer from the
         // AM4 live read; pending a paired II X!=Y hardware confirmation.)
-        let yChannelParams: Record<string, number | string> | undefined;
-        if (includeChannelState && block.canBypass && triple.itemCount > 0 && triple.itemCount % 2 === 0) {
+        const decodeYQuarter = (): Record<string, number | string> | undefined => {
+          if (!(triple.itemCount > 0 && triple.itemCount % 2 === 0)) return undefined;
           const stride = triple.itemCount / 2;
           const groupCode = BLOCK_BY_ID[block.effectId].groupCode;
           const paramIndex = buildGroupParamIndex(groupCode);
@@ -928,18 +926,26 @@ export const reader: DeviceReader = {
             }
             yParams[p.name] = display;
           }
-          yChannelParams = yParams;
-        }
+          return yParams;
+        };
+        const yChannelParams = (includeChannelState && block.canBypass)
+          ? decodeYQuarter()
+          : undefined;
 
         // Shape decision:
         //   - non-channel block: flat `params: {...}`, channel_status omitted.
         //   - channel block + both channels read (include_channel_state):
         //     `params_by_channel: {X: {...}, Y: {...}}` so the snapshot
         //     round-trips through apply_preset's schema.
-        //   - channel block + active only (default): `params_by_channel:
-        //     {X: {...}}` (X = quarter 0 of the dump).
+        //   - channel block + active only (default): `params_by_channel`
+        //     keyed by the ACTIVE channel from the fn 0x0E map — quarter 0
+        //     of the dump when it's X, quarter 1 when it's Y. (The 0.3.0
+        //     dev test caught the prior behavior: quarter 0 was always
+        //     emitted as `{X}` labeled 'active' even when the scene had the
+        //     block on Y, so agents state-anchored edits against the wrong
+        //     channel's values.)
         //   - channel block + active channel unresolved: fall back to flat
-        //     `params` with channel_status='unknown'.
+        //     `params` (the X quarter) with channel_status='unknown'.
         // X = quarter 0 and Y = quarter 1 of the channel-blocked fn 0x1F dump,
         // FIXED order (not sliding-with-active), so both are labelled directly
         // without an active-channel read.
@@ -954,7 +960,21 @@ export const reader: DeviceReader = {
           params = undefined;
           paramsByChannel = { X: flatParams, Y: yChannelParams };
           channelStatus = 'all_channels';
-        } else if (activeChannel !== undefined) {
+        } else if (activeChannel === 'Y') {
+          const yActive = decodeYQuarter();
+          if (yActive !== undefined) {
+            params = undefined;
+            paramsByChannel = { Y: yActive };
+            channelStatus = 'active';
+          } else {
+            // Y quarter undecodable (odd itemCount — not expected on channel
+            // blocks). The X quarter would be the WRONG channel, so label it
+            // honestly rather than as active.
+            params = flatParams;
+            paramsByChannel = undefined;
+            channelStatus = 'unknown';
+          }
+        } else if (activeChannel === 'X') {
           params = undefined;
           paramsByChannel = { X: flatParams };
           channelStatus = 'active';
@@ -1055,7 +1075,7 @@ export const reader: DeviceReader = {
     // doesn't have to already know it exists (alpha.17 finding).
     const hasChannelBearing = placed.some((p) => p.canBypass);
     const channelStateHint = (!includeChannelState && hasChannelBearing)
-      ? 'Only the active channel (X) is included. Pass include_channel_state:true to get_preset for the full X/Y per-channel read (decoded from the same fn 0x1F dump; no extra round-trips).'
+      ? "Only each block's ACTIVE channel (per the current scene) is included — see the params_by_channel key on each slot. Pass include_channel_state:true to get_preset for the full X/Y per-channel read (decoded from the same fn 0x1F dump; no extra round-trips)."
       : undefined;
     return {
       name: presetName,
@@ -1071,6 +1091,10 @@ export const reader: DeviceReader = {
         both_channels_read: includeChannelState,
         read_duration_ms: Date.now() - readStartedMs,
         ...(channelStateHint !== undefined ? { channel_state_hint: channelStateHint } : {}),
+        // Partial-snapshot honesty: blocks that failed to read are OMITTED
+        // from slots[]; name them so the agent can't mistake a partial
+        // snapshot for the whole preset (0.3.0 final-signoff finding).
+        ...(errors.length > 0 ? { blocks_failed: errors } : {}),
       },
     };
   },

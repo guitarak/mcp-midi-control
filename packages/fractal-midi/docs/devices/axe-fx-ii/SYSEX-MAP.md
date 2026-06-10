@@ -135,6 +135,7 @@ verification status against the founder's XL+ where applicable:
 |----|---------------|-----------|---------------|
 | 0x01 | GET_BLOCK_PARAMETERS_LIST | both | 🟡 wiki |
 | 0x02 | GET / SET_BLOCK_PARAMETER_VALUE | both | 🟢 hardware-verified Q8.02, GET is channel-aware (respects fn=0x11). SET is also channel-aware for writes (confirmed 2026-05-26: compressor X/Y independently addressable). SET uses 16-bit wire integer via 3x7-bit septets; required for enum/select params where fn=0x2e no-ops. Bypass (paramId=255) is block-global (same on X/Y). |
+| **0x03** | **SYSEX_PATCH_DUMP** (request) | req | **🟢 hardware-verified Q8.02 (2026-06-10), TWO addressing forms.** (1) `[preset_hi, preset_lo]` MSB-first: dumps that slot's STORED flash contents as the 66-frame 0x77/0x78/0x79 chain, **and RELOADS the stored preset into the edit buffer as a side effect** (live probe: an fn 0x09 buffer rename was lost the moment the request was answered) — destructive to unsaved edits. (2) **`0x7F 0x7F` sentinel (AM4-style): dumps the EDIT BUFFER** — confirmed three ways in the same probe session: two sentinel dumps across a live buffer rename differ (tracks the buffer), the rename SURVIVES the request (no reload side effect), and pushing the 66-frame response back to the device restored the dumped buffer state (round-trip verified by name re-read). All three dump responses carry 0x77 header payload `[0x7f, 0x00, 0x00, 0x20]` regardless of addressing. Captures: `samples/captured/hw132/`. Builders: `buildPatchDumpRequest` / `buildEditBufferDumpRequest` in `src/axe-fx-ii/setParam.ts` (goldens in the consumer repo's `verify-axe-fx-ii-encoding.ts`). |
 | **0x06** | **SET_CELL_ROUTING** (undocumented) | req | **🟢 hardware-decoded on Q8.02 XL+ (2026-05-13)**: 3-byte payload `[src_cell, dst_cell, connect]` adds/removes a cable between adjacent-column cells. Byte-exact golden in `scripts/verify-axe-fx-ii-encoding.ts`. See § 5c. |
 | **0x07** | **GET / SET_MODIFIER_VALUE** | both | **🟢 modifier READ decoded (Ares 2.00 capture).** The field-indexed modifier read channel: device reply = `F0 00 01 74 07 07 [effId:2][slot:2][field:2][value16:3][ASCII label] 00 [cs] F7`. field 0x00=source, 0x01/0x02=min/max, 0x03..0x06=start/mid/end/slope, 0x07=damping, 0x08=target effectId, 0x09=target paramId, 0x0a..0x0e=toggles+scale/offset. Source enum (partial): 0 NONE, 1 LFO 1A, 4 LFO 2B, 5 ADSR 1, 26 SCENE 1, 27 SCENE 2. THIS is how modifiers are read, not fn 0x18. See cookbook [[ii-fn07-modifier-read]] + § 5i. |
 | 0x08 | GET_FIRMWARE_VERSION | both | 🟡 wiki |
@@ -157,7 +158,7 @@ verification status against the founder's XL+ where applicable:
 | **0x20** | **GET_GRID_LAYOUT_AND_ROUTING** | both | **🟢 wire-confirmed XL+ Q8.02 ( captures, 2026-05-12)**: 200-byte frame, 192-byte payload, column-major (12 cols × 4 rows × 4 bytes/cell). Each cell `[blockId_lo, blockId_hi, routing_mask, byte3]`. See § 5c. |
 | **0x21** | **SYSEX_RESYNC / FRONT_PANEL_CHANGE_DETECTED** | resp | **🟢 confirmed via passive capture.** Device-emitted state-changed broadcast. Sending this from host triggers the device to push current state as `0x74/0x75/0x76` state-broadcast triples per placed block (which we already decode). Likely usable as an atomic-read primitive without further capture work. AxeEdit name `SYSEX_RESYNC`; wiki name `FRONT_PANEL_CHANGE_DETECTED`. |
 | 0x23 | MIDI_LOOPER_STATUS_ENABLE / MIDI_LOOPER_STATUS | both | 🟡 wiki |
-| **0x28** | **SYSEX_GET_PARAM_STRINGS** (AxeEdit name) | both | **🟢 hardware-verified XL+ Q8.02 ( probe, 2026-05-20).** Runtime enum-value label query. Device returns NULL-delimited 7-bit ASCII strings filling the SysEx payload (2048-byte cap observed under node-midi). 154 amp-type labels captured for paramId=0, matched the catalog at 150/154 entries, surfaced **4 wiki transcription errors** the catalog had been carrying. See § 5h. |
+| **0x28** | **SYSEX_GET_PARAM_STRINGS** (AxeEdit name) | both | **🟢 hardware-verified XL+ Q8.02 ( probe, 2026-05-20).** Runtime enum-value label query. Device returns NULL-delimited 7-bit ASCII strings filling the SysEx payload. Early captures stopped at ~2048 bytes; root-caused 2026-06-09 to our receive path dropping node-midi's WinMM continuation fragments (not a device or node-midi truncation), fixed by fragment reassembly. 154 amp-type labels captured for paramId=0 pre-fix, matched the catalog at 150/154 entries, surfaced **4 wiki transcription errors** the catalog had been carrying. See § 5h. |
 | 0x29 | GET / SET_SCENE_NUMBER | both | 🟡 wiki, scene 0..7 (8 scenes) |
 | 0x2A | GET_PRESET_EDITED_STATUS | both | 🟡 wiki |
 | 0x2E | SET_TYPED_BLOCK_PARAMETER_VALUE | req | 🟡 wiki, 32-bit float variant for typed-input edits |
@@ -638,10 +639,19 @@ standard XOR-7F over `F0`..last payload byte).
   dependent (one is often a `1.0` sentinel: 0..10 knob max is G3, a dB
   param max is G2). Labeling each needs a per-param display-range
   cross-ref.
-- **Enum count 265 vs catalog 259.** The device reports 265 in G2
-  (reconfirmed live), but the fn 0x28 label dump truncates at 155 labels
-  under the node-midi 2048-byte SysEx receive cap, so allocated-count
-  versus 6-missing-models is unresolved until the buffer is raised.
+- ~~**Enum count 265 vs catalog 259.**~~ RESOLVED (2026-06-09): the
+  Axe-Edit `effectDefinitions_07.cache` (real-device sync) carries the
+  complete amp table: 266 names, ordinals 0..265. It agrees with the
+  shipped catalog at all 259 prior ordinals (0 mismatches) and supplies
+  the 7 the wire dump lost to the receive cap: 259 FRIEDMAN BE C45,
+  260 FRIEDMAN 2018, 261 PLEXI 2204, 262 FRIEDMAN HBEC45, 263 PORTA-BASS,
+  264 SV BASS 2, 265 SKULL CRUSHER (now in `AMP_EFFECT_TYPE_VALUES`).
+  The G2 "265" reading was the max ordinal. Cache grammar: see the
+  cookbook entry `editor-cache-section-record-grammar`.
+  HARDWARE-CONFIRMED 2026-06-09: the post-reassembly-fix fn 0x28 re-run
+  captured all 266 labels in one untruncated frame, 266/266 display-equal
+  vs the catalog, 0 mismatches
+  (samples/captured/probe-axefx2-enum-dump-findings.md).
 
 Note that the float fields are firmware-internal DSP units for
 non-display-mapped params; for display calibration the wire 0..65534
@@ -684,11 +694,21 @@ F0 00 01 74 07 28 [STR_0\0 STR_1\0 STR_2\0 ... STR_N\0] [cksum] F7
 - 7-bit ASCII (no septet packing, letters / digits / space / dash
   / `+` all fit in `0x00..0x7F`).
 - Each string is NULL-terminated (`0x00`).
-- The payload fills the SysEx response up to a transport buffer cap.
-  Observed cap under node-midi: 2048-byte frame, ~154 amp-type
-  strings, the response was truncated mid-string (the catalog has
-  259 amp models total, so the device intends to send more frames or
-  a larger single payload that node-midi truncates).
+- The device sends the full table in ONE SysEx message. The
+  2026-05-20 capture stopped at 2048 bytes / ~154 amp-type strings
+  because node-midi's WinMM backend fragments any SysEx longer than
+  RT_SYSEX_BUFFER_SIZE (2048 bytes, `midi/binding.gyp`) into multiple
+  `message` events, and our receive paths at the time dropped the
+  continuation fragments (they don't start with F0). Root-caused +
+  fixed 2026-06-09: the Axe-Fx II transport
+  (`packages/axe-fx-ii/src/midi.ts`) and the enum-dump probe now
+  reassemble fragments via the shared `createSysExAssembler`
+  (`packages/core/src/midi/transport.ts`), so the full ~3.5 KB
+  266-entry amp table arrives intact. Re-run DONE on hardware
+  2026-06-09: 266/266 labels in one untruncated frame, 0 mismatches
+  vs the catalog. The 7 names past the old cap were independently
+  recovered from the Axe-Edit `effectDefinitions_07.cache` first and
+  confirmed by the re-run (see § 5g resolution note above).
 
 **Validation against the wiki-sourced catalog (`AMP_EFFECT_TYPE_VALUES`):**
 
@@ -713,8 +733,9 @@ match hardware ground truth.
 
 **Action items:**
 
-1. Patch `AMP_EFFECT_TYPE_VALUES` (idx 22 / 44 / 45 / 65) to match
-   hardware. Validate via the next fn 0x28 probe re-run.
+1. ~~Patch `AMP_EFFECT_TYPE_VALUES` (idx 22 / 44 / 45 / 65) to match
+   hardware.~~ DONE earlier; validated 2026-06-09 by the post-fix
+   re-run (266/266 device-emitted labels match the catalog).
 2. Run a per-paramId fn 0x28 sweep on `AMP 1` to dump remaining
    enum-bearing knobs (input drive tonestack types, output trim
    modes, etc).
@@ -722,9 +743,13 @@ match hardware ground truth.
    `DLY`, `CHO`, `PHA`, `FLG`) with their respective enum paramIds
    to extract every enum table the device exposes. **One probe
    sweep = full Rosetta-stone refresh of II enum vocabulary.**
-4. Re-write the probe to chain multiple SysEx frames so the full
-   259-string AMP_EFFECT_TYPE_VALUES set is captured in one run
-   (current node-midi truncation cap = 2048 bytes per inbound frame).
+4. ~~Re-write the probe to chain multiple SysEx frames so the full
+   AMP_EFFECT_TYPE_VALUES set is captured in one run.~~ DONE
+   2026-06-09: no chaining needed, the device already sends one big
+   frame; the probe and the II transport now reassemble node-midi's
+   2048-byte WinMM fragments (`createSysExAssembler`). Re-run
+   `scripts/_research/probe-axefx2-enum-dump.ts` to confirm the full
+   266-string table lands in one capture.
 
 **Probe runner:** `scripts/_research/probe-axefx2-new-opcodes.ts`
 (in `mcp-midi-control`). Decoders:

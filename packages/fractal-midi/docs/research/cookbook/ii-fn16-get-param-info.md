@@ -83,21 +83,29 @@ roles:
 
 ## What is partial-N1 (path to matched)
 
-- **G2/G3 internal-vs-display split for continuous params.** Which of
-  G2/G3 holds the display max versus an internal/normalized extent is
-  param-class-dependent, and one of the two is frequently a `1.0`
-  sentinel. Labeling each continuous param precisely needs a per-param
-  catalog cross-ref (the known display range per paramId). The enum case
-  is settled (count in G2, G3 = 1.0).
-- **fn 0x28 full enumeration is tooling-blocked.** The device reports
-  amp.effect_type count 265 in G2 (reconfirmed live), and that device
-  figure is the authoritative count. The fn 0x28 label dump truncates at
-  155 labels under the node-midi 2048-byte SysEx receive cap, and the
-  `midi` package (v2.0.0) exposes no buffer-size config, so the full
-  label list cannot be captured with the current tooling. Resolving
-  265-vs-259 (allocated/reserved slot count versus 6 catalog models
-  missing) needs either a patched node-midi SysEx buffer or routing the
-  read through the server transport's chunk-reassembler.
+- ~~**G2/G3 internal-vs-display split for continuous params.**~~ RESOLVED
+  2026-06-10 by a full knob audit across the user-facing blocks
+  (`probe-ii-fn16-catalog-audit`): **G1/G2 are the param's INTERNAL/SI
+  extent, not the display range.** Knobs read 0..1 (display = internal x
+  scale, e.g. amp.bass 0..1 -> 0..10), bipolar pan/balance read -1..1
+  (-> -100..100), time reads SECONDS (delay.time 0.001..8 -> 1..8000 ms),
+  and dB levels read display-equal because dB IS the internal unit
+  (amp.level -80..20 = display, the anchor that proved the decode). So
+  fn 0x16 gives a device-true range AFTER applying the param's unit scale;
+  it confirmed the II compressor-level divergence (internal/display dB
+  -20..20, not the convention's -80..20) and showed most catalog DISPLAY
+  ranges are right (the apparent "divergences" are just internal x scale).
+  A few non-clean-scaling reads (amp.low_res device 0..24 vs catalog 0..10,
+  amp.cathode_resist 0..4, cab.room_size 0.1..1) are genuine candidates for
+  the catalog-range review. The enum case is settled (count in G2, G3 = 1.0).
+- ~~**fn 0x28 full enumeration is tooling-blocked.**~~ RESOLVED
+  2026-06-09: the receive path now reassembles node-midi's 2048-byte
+  WinMM fragments (`createSysExAssembler`), and the post-fix fn 0x28
+  re-run captured the full amp table in one untruncated frame: 266
+  labels (ordinals 0..265), 266/266 display-equal vs the shipped
+  catalog. The G2 "265" reading was the max ordinal, not the count.
+  See [[fn28-enum-dump]] and [[editor-cache-section-record-grammar]]
+  (the cache roster independently confirmed the 7 once-missing names).
 
 ## Where it does NOT apply
 
@@ -133,3 +141,9 @@ roles:
   (needs a per-param display-range cross-ref), and the fn 0x28 full
   enumeration (still capped at 155 labels by the 2048-byte receive
   buffer).
+- 2026-06-09: the fn 0x28 enumeration gap closed. The 2048-byte "cap"
+  was node-midi WinMM fragmentation, now reassembled in the transport;
+  the re-run returned all 266 amp labels untruncated and the G2 reading
+  is settled as the max ordinal (265) of a 266-entry table. Remaining
+  open for this entry: only the continuous-param G2/G3
+  internal-vs-display split.

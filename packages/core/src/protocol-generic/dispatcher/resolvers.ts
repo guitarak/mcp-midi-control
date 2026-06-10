@@ -230,48 +230,6 @@ export function encodeValue(
       }),
     );
   }
-  // Read-leg-only enum gate: labels decode the device's broadcast/GET, but
-  // the name→wire mapping is uncaptured, so setting BY NAME is refused. A
-  // numeric value is still allowed (raw wire, caller's responsibility); only
-  // a non-numeric string is blocked. Runs BEFORE encode so the message is
-  // surfaced verbatim instead of the dispatcher's "unknown enum value …
-  // did you mean?" reformat (which would imply set-by-name works).
-  if (
-    schema.enum_display_only === true
-    && typeof value === 'string'
-    && (value.trim() === '' || !Number.isFinite(Number(value)))
-  ) {
-    // A subset of labels may have a captured write-leg encoding
-    // (`enum_settable_names`); let those through to `encode`. Everything else
-    // stays gated. Match is tolerant of case/whitespace AND of word order around
-    // a single comma ("Medium Spring" vs the canonical "Spring, Medium"), to
-    // mirror the enum-resolution tolerance so this gate and `encode` agree.
-    const norm = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, ' ');
-    const labelForms = (s: string): string[] => {
-      const n = norm(s);
-      const out = [n, norm(n.replace(/,/g, ' '))];
-      const ci = s.indexOf(',');
-      if (ci >= 0 && s.indexOf(',', ci + 1) < 0) out.push(norm(`${s.slice(ci + 1)} ${s.slice(0, ci)}`));
-      return out;
-    };
-    const valueForms = new Set(labelForms(value));
-    const settable = schema.enum_settable_names ?? [];
-    const isSettableByName = settable.some((n) => labelForms(n).some((f) => valueForms.has(f)));
-    if (!isSettableByName) {
-      const settableHint =
-        settable.length > 0
-          ? ` Names that CAN be set on this device (write-leg captured): ${settable.map((n) => `"${n}"`).join(', ')}.`
-          : '';
-      throw new DispatchError(
-        'capability_not_supported',
-        descriptor.display_name,
-        `set_param: ${block}.${name} on ${descriptor.display_name}: this enum's labels are ` +
-          `display-only (read leg). The current value reads back as a name, but setting it by name ` +
-          `("${value}") is not supported yet: this device's name→wire mapping for this value has not ` +
-          `been captured. Change it on the device, or pass the numeric wire value if you know it.${settableHint}`,
-      );
-    }
-  }
   try {
     return schema.encode(value);
   } catch (err) {

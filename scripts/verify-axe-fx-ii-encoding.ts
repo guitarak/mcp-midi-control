@@ -28,6 +28,8 @@ import {
     buildStateBroadcastTriple,
     buildStateBroadcastTripleMessages,
     buildGetPresetNumber,
+    buildPatchDumpRequest,
+    buildEditBufferDumpRequest,
     buildSetCellRouting,
     buildSetGridCell,
     buildStorePreset,
@@ -75,6 +77,27 @@ function eqBytes(actual: number[], expected: number[]): boolean {
 
 function hex(bs: number[]): string {
     return bs.map((b) => b.toString(16).padStart(2, '0')).join(' ');
+}
+
+// ── fn 0x03 dump requests (HW-132, hardware-confirmed 2026-06-10) ────
+//
+// Slot-addressed form returns the STORED preset (and reloads it into
+// the working buffer — destructive to unsaved edits). The 0x7F 0x7F
+// sentinel form returns the EDIT BUFFER with no side effect, tracks
+// live buffer edits, and round-trips back to the device cleanly.
+{
+    const stored = buildPatchDumpRequest(7);
+    check(
+        'buildPatchDumpRequest(7) — slot-addressed (STORED) dump request',
+        eqBytes(stored, [0xf0, 0x00, 0x01, 0x74, 0x07, 0x03, 0x00, 0x07, 0x06, 0xf7]),
+        hex(stored),
+    );
+    const eb = buildEditBufferDumpRequest();
+    check(
+        'buildEditBufferDumpRequest() — 7F 7F sentinel (EDIT BUFFER) dump request',
+        eqBytes(eb, [0xf0, 0x00, 0x01, 0x74, 0x07, 0x03, 0x7f, 0x7f, 0x01, 0xf7]),
+        hex(eb),
+    );
 }
 
 // ── Value packing — wiki worked example ───────────────────────────────

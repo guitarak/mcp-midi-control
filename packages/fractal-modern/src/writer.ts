@@ -26,6 +26,7 @@ import type {
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
 import { resolveEffectId, parseGen3SetValueEcho, ROUTING_OP_CONNECT, ROUTING_OP_DISCONNECT, type ModernFractalCodec } from 'fractal-midi/axe-fx-iii';
+import { parseLocationCode } from 'fractal-midi/am4';
 import type { ModernCatalog } from './catalog.js';
 import { makeGuard } from './guard.js';
 
@@ -59,6 +60,13 @@ export interface WriterShape {
    * placement wire shape undecoded). Reads are unaffected. Defaults false.
    */
   writesGated?: boolean;
+  /**
+   * When `writesGated` is true, these op names are EXEMPT from the gate (they
+   * have a hardware-confirmed wire shape). e.g. VP4 allows `set_bypass` and
+   * `save_preset` (decoded byte-exact from a community capture) while every other
+   * write stays refused. Empty/undefined ⇒ all writes gated (the prior behavior).
+   */
+  writeAllowlist?: readonly string[];
 }
 
 export function makeWriter(opts: {
@@ -87,24 +95,43 @@ export function makeWriter(opts: {
    */
   function gateWrite(op: string): void {
     if (!shape.writesGated) return;
+    if (shape.writeAllowlist?.includes(op)) return;
+    const allowed = shape.writeAllowlist?.length
+      ? ` Confirmed writes on this device: ${shape.writeAllowlist.join(', ')}.`
+      : '';
     throw new DispatchError(
       'capability_not_supported',
       deviceLabel,
-      `${shape.id} ${op}: device-state writes are GATED on ${deviceLabel}. The parameter/block ` +
-        `write path is inferred from the gen-3 codec but is not yet confirmed on this device's ` +
-        `hardware, and its block-placement wire shape is undecoded. Reads (get_param / get_preset) ` +
-        `work; writes refuse until a hardware capture lands. ${BETA_WARNING}`,
+      `${shape.id} ${op}: this write is GATED on ${deviceLabel}. Its wire shape is not yet ` +
+        `decoded/confirmed on this device's hardware (block placement and per-param value ` +
+        `calibration are still undecoded). Reads work; this write refuses until a capture lands.` +
+        `${allowed} ${BETA_WARNING}`,
     );
   }
 
   function parseLocation(location: LocationRef): number {
     const max = shape.preset_count - 1;
-    const n = typeof location === 'number' ? location : Number(location);
+    // Serial AM4-shape devices (VP4) name locations A01..Z04 (the
+    // descriptor's own preset_location_format and canonical_terms spelling),
+    // so accept that form alongside the integer index. Grid devices
+    // (III/FM3/FM9) address presets by integer only.
+    let n: number;
+    if (
+      typeof location === 'string' &&
+      shape.slot_count !== undefined &&
+      /^[A-Za-z]0?\d$/.test(location.trim())
+    ) {
+      n = parseLocationCode(location);
+    } else {
+      n = typeof location === 'number' ? location : Number(location);
+    }
     if (!Number.isInteger(n) || n < 0 || n > max) {
       throw new DispatchError(
         'bad_location',
         deviceLabel,
-        `${shape.id}: preset location '${location}' is invalid (expected integer 0..${max}).`,
+        `${shape.id}: preset location '${location}' is invalid (expected ` +
+          (shape.slot_count !== undefined ? `A01..Z04 or integer 0..${max}` : `integer 0..${max}`) +
+          ').',
       );
     }
     return n;
@@ -224,10 +251,10 @@ export function makeWriter(opts: {
    * Turn a SET value-echo's normalized float ([0,1]) into a display-unit
    * value via the param's catalog schema. Continuous params normalize as
    * wire16/65534, so the device-quantized wire is `round(normalized*65534)`
-   * and we decode that. Enum / display-only params normalize as
-   * `index/(count-1)`, which doesn't invert cleanly without the vocab size,
-   * so for those we return undefined and the caller falls back to decoding
-   * the value it sent.
+   * and we decode that. Discrete (enum/type) params are sent as
+   * float32(ordinal), not a normalized knob, so the [0,1]→wire16 inversion
+   * does not apply; for those we return undefined and the caller decodes the
+   * ordinal it sent.
    */
   function echoToDisplay(
     blockSlug: string,
@@ -250,11 +277,34 @@ export function makeWriter(opts: {
     return schema !== undefined ? schema.decode(wireValue) : wireValue;
   }
 
+  /**
+   * Build the gen-3 SET frame for a param, choosing the wire form from its
+   * schema. DISCRETE (enum/type selectors): the encoded `wireValue` is the
+   * read-roster ordinal → `float32(ordinal)` via sub 09 00. CONTINUOUS (knobs):
+   * the encoded `wireValue` is the 0..65534 wire → normalized to [0,1] and sent
+   * as `float32(normalized)` via sub 52 00. Both ride a 5-septet float32 at pos
+   * 12; only the sub-action + value semantics differ. Default (no schema /
+   * uncatalogued param) is continuous, the common gen-3 param shape.
+   */
+  function buildSetForKind(
+    effectId: number,
+    paramId: number,
+    wireValue: number,
+    kind: 'discrete' | 'continuous' | undefined,
+  ): number[] {
+    if (kind === 'discrete') {
+      return codec.buildSetParameter(effectId, paramId, wireValue);
+    }
+    const normalized = Math.min(1, Math.max(0, wireValue / 65534));
+    return codec.buildSetParameterContinuous(effectId, paramId, normalized);
+  }
+
   const writer: DeviceWriter = {
     buildSetParam(block: string, name: string, wireValue: number): number[] {
       const { effectId } = resolveBlockOrThrow(block, deviceLabel);
       const { param } = resolveParamOrThrow(block, name, deviceLabel);
-      return codec.buildSetParameter(effectId, param.paramId, wireValue);
+      const kind = catalog.blocks[block]?.params[name]?.wire_kind;
+      return buildSetForKind(effectId, param.paramId, wireValue, kind);
     },
 
     buildSwitchPreset(location: LocationRef): number[] {
@@ -277,7 +327,20 @@ export function makeWriter(opts: {
       gateWrite('set_param');
       const { effectId } = resolveBlockOrThrow(blockSlugIn, deviceLabel, instance);
       const { param } = resolveParamOrThrow(blockSlugIn, name, deviceLabel);
-      const bytes = codec.buildSetParameter(effectId, param.paramId, wireValue);
+      const kind = catalog.blocks[blockSlugIn]?.params[name]?.wire_kind;
+      let bytes: number[];
+      try {
+        bytes = buildSetForKind(effectId, param.paramId, wireValue, kind);
+      } catch (err) {
+        // A device-specific builder may refuse a wire form it has no captured
+        // evidence for (e.g. VP4 has no discrete-param SET) — surface it as a
+        // clean capability refusal, not an internal error.
+        throw new DispatchError(
+          'capability_not_supported',
+          deviceLabel,
+          `${shape.id} set_param ${blockSlugIn}.${name}: ${err instanceof Error ? err.message : String(err)} ${BETA_WARNING}`,
+        );
+      }
       const response = await sendAndWatchSetResponse(ctx, bytes, effectId, param.paramId);
       // fn=0x01 is dual-purpose with no byte-level SET/GET discriminator,
       // so SET handlers mark dirty explicitly; GET handlers don't.
@@ -299,22 +362,44 @@ export function makeWriter(opts: {
             BETA_WARNING,
         };
       }
-      // Accepted. Prefer the device's quantized value-echo when one arrived
-      // (display units via calibration); otherwise confirm with the value we
-      // sent, decoded to display units.
-      const echoDisplay =
-        response.kind === 'echo'
-          ? echoToDisplay(blockSlugIn, name, response.normalizedValue)
-          : undefined;
+      // A device value-echo is a real acknowledgement: report acked + the
+      // device's own quantized value in display units.
+      if (response.kind === 'echo') {
+        const echoDisplay = echoToDisplay(blockSlugIn, name, response.normalizedValue);
+        return {
+          op: 'set_param',
+          target: `${blockSlugIn}.${name}`,
+          block: blockSlugIn,
+          name,
+          wire_value: echoDisplay?.wire ?? wireValue,
+          display_value: echoDisplay?.display ?? sentToDisplay(blockSlugIn, name, wireValue),
+          acked: true,
+          warning: BETA_WARNING,
+        };
+      }
+      // response.kind === 'accept' — SILENT timeout: the write was sent and not
+      // rejected, but no value-echo came back, so we have NOT confirmed it. We
+      // now emit the device-true wire (discrete sub 09 00 = float32(ordinal);
+      // continuous sub 52 00 = float32(normalized)), confirmed byte-exact against
+      // FM3/FM9 captures; but our SERVER-issued frame drawing a device echo is
+      // not yet hardware-confirmed end to end. Reporting this as acked would be a
+      // wire-ack-not-audible false success, so we report it honestly as
+      // sent-but-unconfirmed (acked:false), distinct from a 0x64 rejection.
       return {
         op: 'set_param',
         target: `${blockSlugIn}.${name}`,
         block: blockSlugIn,
         name,
-        wire_value: echoDisplay?.wire ?? wireValue,
-        display_value: echoDisplay?.display ?? sentToDisplay(blockSlugIn, name, wireValue),
-        acked: true,
-        warning: BETA_WARNING,
+        wire_value: wireValue,
+        display_value: sentToDisplay(blockSlugIn, name, wireValue),
+        acked: false,
+        unconfirmed: true,
+        warning:
+          `${deviceLabel} did not confirm set_param ${blockSlugIn}.${name}: the write was sent ` +
+          `and not rejected, but no device value-echo returned, so it is UNVERIFIED (it may have ` +
+          `landed). Confirm on the front panel. The gen-3 SET wire is byte-confirmed against device ` +
+          `captures; the server-issued frame drawing an echo is not yet hardware-confirmed end to end. ` +
+          `${BETA_WARNING}`,
       };
     },
 
@@ -473,8 +558,12 @@ export function makeWriter(opts: {
         acked: true,
         display_value: bypassed ? 'bypassed' : 'engaged',
         warning:
-          `🟡 ${shape.id} set_bypass: spec-documented (function 0x0A). Targets the ACTIVE ` +
-          'scene only; per spec, the modern family has no per-scene bypass write. ' + BETA_WARNING,
+          (shape.id === 'vp4'
+            ? `🟡 vp4 set_bypass: decoded byte-exact from a community capture (fn=0x01, paramId 3; ` +
+              `enable=0.0 / bypass replicated verbatim). The device emitted no rejection, but this is ` +
+              `UNTESTED on VP4 hardware — confirm on the front panel. `
+            : `🟡 ${shape.id} set_bypass: spec-documented (function 0x0A). Targets the ACTIVE ` +
+              'scene only; per spec, the modern family has no per-scene bypass write. ') + BETA_WARNING,
       };
     },
 
@@ -486,7 +575,14 @@ export function makeWriter(opts: {
     ): Promise<ApplyResult> {
       gateWrite('apply_preset');
       const writes: WriteResult[] = [];
+      // `anyFailed` = a write was REJECTED (0x64) or errored — a real failure
+      // that makes the apply not-ok. `anyUnconfirmed` = a write was sent and not
+      // rejected but drew no device echo (gen-3 per-param SET on this beta wire):
+      // the preset may well have applied, we just could not verify it, so it must
+      // NOT flip `ok`/`saved` to failure — it surfaces as a "verify on device"
+      // note. Conflating the two made working applies report failure to the agent.
       let anyFailed = false;
+      let anyUnconfirmed = false;
 
       // Total-burst budget: each write can wait its full reject window, so a
       // device that goes silent mid-burst would otherwise stack N waits into a
@@ -737,7 +833,7 @@ export function makeWriter(opts: {
                 const wireValue = catalog.encodeParamOrThrow(blockSlugLocal, paramName, value, deviceLabel);
                 const result = await writer.setParam!(ctx, blockSlugLocal, paramName, wireValue, undefined, slotSpec.instance);
                 writes.push({ ...result, target: `${blockSlugLocal}.${upper}.${paramName}` });
-                if (!result.acked) anyFailed = true;
+                if (!result.acked) { if (result.unconfirmed) anyUnconfirmed = true; else anyFailed = true; }
               } catch (err) {
                 writes.push({
                   op: 'set_param',
@@ -761,7 +857,7 @@ export function makeWriter(opts: {
             const wireValue = catalog.encodeParamOrThrow(blockSlugLocal, paramName, value, deviceLabel);
             const result = await writer.setParam!(ctx, blockSlugLocal, paramName, wireValue, undefined, slotSpec.instance);
             writes.push(result);
-            if (!result.acked) anyFailed = true;
+            if (!result.acked) { if (result.unconfirmed) anyUnconfirmed = true; else anyFailed = true; }
           } catch (err) {
             writes.push({
               op: 'set_param',
@@ -792,7 +888,13 @@ export function makeWriter(opts: {
           anyFailed = true;
         }
       }
-      if (!budgetExceeded && target !== undefined) {
+      // The store (sub=0x26) leg is a DESTRUCTIVE flash overwrite, so it fires
+      // ONLY when the caller authorized a save (options.save, set from
+      // save_authorized at the dispatcher). A target_location WITHOUT
+      // save_authorized is an audition (switch + apply to that location's
+      // buffer, reversible by navigating away) and must NOT store. Mirrors AM4.
+      const shouldSave = target !== undefined && options?.save === true;
+      if (!budgetExceeded && shouldSave) {
         try {
           const result = await writer.savePreset!(ctx, target);
           writes.push(result);
@@ -807,16 +909,22 @@ export function makeWriter(opts: {
           anyFailed = true;
         }
       }
+      // landingScene / no_save_on_done not yet wired (options.save handled above).
 
-      void options; // landingScene / no_save_on_done not yet wired
-
-      const failedStepIdx = writes.findIndex((w) => !w.acked);
+      // A failed step is a REAL failure (rejection/error), not a merely-
+      // unconfirmed write — so `failed_step` points the agent at something that
+      // actually went wrong, never at a sent-but-unechoed continuous-param write.
+      const failedStepIdx = writes.findIndex((w) => !w.acked && !w.unconfirmed);
       // Only name the envelopes actually emitted on this path. The store
       // (sub=0x26) leg runs solely when a target was given and the burst did
       // not abort on budget; advertising it on a non-saving audition apply
       // would tell a tester a save envelope went out when none did.
       const envelopes = ['block-insert (fn=0x01 sub=0x32)', 'SET_PARAMETER', 'SET_PRESET_NAME'];
-      if (!budgetExceeded && target !== undefined) envelopes.push('store (fn=0x01 sub=0x26)');
+      if (!budgetExceeded && shouldSave) envelopes.push('store (fn=0x01 sub=0x26)');
+      const ackedCount = writes.filter((w) => w.acked).length;
+      const unconfirmedCount = writes.filter((w) => !w.acked && w.unconfirmed).length;
+      // `ok` and `saved` reflect REAL failures only. Unconfirmed writes do not
+      // fail the apply (the preset likely applied); they add a "verify" note.
       return {
         ok: !anyFailed,
         steps: writes.length,
@@ -828,9 +936,16 @@ export function makeWriter(opts: {
         } : undefined,
         warning:
           `🟡 ${shape.id} apply_preset: composed of ${envelopes.join(' / ')} envelopes. ` +
-          'Confirm the audible / visible result on the device. ' +
-          `${writes.length} step(s) attempted; ${writes.filter((w) => w.acked).length} acked.`,
-        saved: target !== undefined ? !anyFailed : undefined,
+          `${writes.length} step(s) attempted; ${ackedCount} acked` +
+          (unconfirmedCount > 0
+            ? `, ${unconfirmedCount} sent but UNCONFIRMED (no device echo — the preset likely ` +
+              `applied; this gen-3 beta wire cannot confirm continuous-param writes). `
+            : '. ') +
+          (anyUnconfirmed && !anyFailed
+            ? 'Treat this as applied-pending-verification, not a failure: confirm the audible / ' +
+              'visible result on the device.'
+            : 'Confirm the audible / visible result on the device.'),
+        saved: shouldSave ? !anyFailed : undefined,
       };
     },
 
@@ -895,11 +1010,15 @@ export function makeWriter(opts: {
         acked: true,
         display_value: String(n),
         warning:
-          `🟡 ${shape.id} save_preset: sent the gen-3 editor store envelope (fn=0x01 sub=0x26, ` +
-          `destination preset at the 14-bit arg slot). Wire shape is captured byte-exact from the ` +
-          `editor, but device persistence is not yet hardware-verified. Device emitted no rejection. ` +
-          `CONFIRM by switching to a different preset and back: if the saved state survived, the ` +
-          `save landed. ` + BETA_WARNING,
+          (shape.id === 'vp4'
+            ? `🟡 vp4 save_preset: sent the VP4 store command (fn=0x01 tc=0x1b), byte-identical to ` +
+              `the captured save. Saves the ACTIVE preset in place (no destination arg — VP4 ` +
+              `save-in-place vs index is undecoded). Untested persistence. `
+            : `🟡 ${shape.id} save_preset: sent the gen-3 editor store envelope (fn=0x01 sub=0x26, ` +
+              `destination preset at the 14-bit arg slot). Wire shape is captured byte-exact from the ` +
+              `editor, but device persistence is not yet hardware-verified. `) +
+          `Device emitted no rejection. CONFIRM by switching to a different preset and back: if the ` +
+          `saved state survived, the save landed. ` + BETA_WARNING,
       };
     },
 

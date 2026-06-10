@@ -419,6 +419,33 @@ export function connect(opts: ConnectOptions): MidiConnection {
   input.openPort(inputPort);
   output.openPort(outputPort);
 
+  // openPort() does NOT throw on failure: RtMidi prints the error to
+  // stderr ("MidiInWinMM::openPort: error creating Windows MM MIDI
+  // input port.") and leaves the port closed, after which every send
+  // goes nowhere and every read times out while the tool layer reports
+  // fire-and-forget success (2026-06-10 incident: 169 writes into a
+  // dead port returned ok:true). isPortOpen() is the native truth —
+  // assert it and fail LOUDLY with the exclusive-hold diagnosis.
+  if (!input.isPortOpen() || !output.isPortOpen()) {
+    const failedSide = !input.isPortOpen()
+      ? (!output.isPortOpen() ? 'input + output ports' : 'input port')
+      : 'output port';
+    try { input.closePort(); } catch { /* best-effort */ }
+    try { output.closePort(); } catch { /* best-effort */ }
+    throw new Error(
+      `MIDI ${failedSide} found but could NOT be opened (the OS refused the open). ` +
+      'Windows MIDI ports are exclusive: another process is almost certainly holding the port. ' +
+      'Common holders: a second MCP server instance (another Claude Code or Claude Desktop ' +
+      'session with this server configured), a stale node process from an earlier session ' +
+      '(check Task Manager for leftover node.exe), or a manufacturer editor (AxeEdit / ' +
+      'AM4-Edit / FM-Edit / Fractal-Bot). Close the holder, then retry or call reconnect_midi. ' +
+      'If this error REPEATS right after a reconnect_midi on a quiet bus, the holder may be THIS ' +
+      "server's own previous handle (the Windows driver does not always release a handle that " +
+      'died mid-send): restarting the server process is the reliable recovery — fully quit the ' +
+      'host app (Claude Desktop: system tray, Quit) and relaunch.',
+    );
+  }
+
   // Track send errors on a separate cell so the `send` arrow can read /
   // write without TS forward-reference issues; the conn object exposes
   // the cell via a getter so callers see live state.

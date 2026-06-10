@@ -75,6 +75,41 @@ we don't own.
 - **Cookbook**: may surface III analogs of II primitives if their
   decode work overlaps
 
+### VP4 fw 4.03 editor-poll capture (read path)
+- **Source**: community capture, Kevin Iudicello (Reddit u/AggressiveFeckless),
+  emailed 2026-06-08. VP4 firmware 4.03, "Y1: Main Bank", 4CM preset
+  (WAH/DRV/4CM/PHR/DLY), VP4-Edit open. MIDI Monitor (macOS) spying capture.
+- **Artifact**: `samples/captured/vp4-edit-preset-sync-poll-fw403-kevin-iudicello-2026-06-08.mmon`
+  (gitignored). Decode + scripts: `samples/captured/decoded/vp4-403/` (`FINDINGS.md`).
+- **Locks**: VP4 `fn=0x01` PARAMETER GET read path (query + response shape, no
+  sub-action), effectId == shared gen-3 block table, device-true paramId catalog —
+  all byte-confirmed on real VP4 hardware. 1000 frames, 100% checksum-valid.
+- **Does NOT lock**: any write path (read-only editor poll — no SET/bypass/scene/
+  block-move frames). Full GET value calibration + the `0x1f` routing-blob layout
+  remain open.
+- **Decode doc**: [`docs/devices/vp4/SYSEX-MAP.md`](../devices/vp4/SYSEX-MAP.md).
+- **Cookbook**: applies [[../research/cookbook/xor-7f-envelope-checksum]] +
+  [[../research/cookbook/septet-14bit]].
+- **Status**: ✅ read path locked; ⛔ writes still gated.
+
+### VP4 fw 4.03 edit-session capture (WRITE path)
+- **Source**: community capture, Kevin Iudicello, 2026-06-09. VP4 fw 4.03, preset
+  "Y1: Virtual Pedalboard", VP4-Edit open, MIDI Monitor buffer raised so the full session
+  was retained. Annotated edit sequence: block move, param drag (Delay feedback 15%→~-45%),
+  save, scene 1→3, reverb bypass/enable, save.
+- **Artifact**: `samples/captured/vp4-edit-edit-session-fw403-kevin-iudicello-2026-06-09.mmon`
+  (gitignored). Decode: `samples/captured/decoded/vp4-403-v2/FINDINGS.md`. 27,104 frames,
+  100% `fn=0x01`, all checksum-valid; 69 write frames isolated.
+- **Locks**: VP4 `fn=0x01` SET frame (21-byte, `tc` sub-opcode), the value codec (5-septet
+  LE float32, top two septets swapped, normalized [0,1]), the **synchronous per-write echo**
+  (+ the 16-byte SAVE completion ack), and the SAVE / continuous-param-SET / bypass frames —
+  byte-exact, mapped to known actions. Strong-evidence: `set_bypass`, `save_preset`.
+- **Does NOT lock**: generic discrete `set_param` (zero captured evidence), block-placement
+  value→slot math (frames known, encoding open), scene value mapping, and continuous-param
+  display calibration (single-point/noisy).
+- **Decode doc**: [`docs/devices/vp4/SYSEX-MAP.md`](../devices/vp4/SYSEX-MAP.md) (PARAMETER SET section).
+- **Status**: ✅ write path decoded (param/save/bypass); ⛔ block placement still gated.
+
 ### General purpose: any Fractal envelope from a third party
 - Apply [[../research/cookbook/xor-7f-envelope-checksum]], universal
   Fractal envelope checksum across II, III, AM4.
@@ -97,8 +132,12 @@ manifest.
 - **Output (gitignored)**: `samples/captured/probe-axefx2-enum-dump-findings.md`
   + `.syx`
 - **Contents**: every Axe-Fx II enum table dumped via fn 0x28 (device-
-  emitted labels). 145 probes, 1112 strings captured, 1/145
-  truncated (amp.effect_type, node-midi 2048-byte cap)
+  emitted labels). Original sweep: 145 probes, 1112 strings, 1/145
+  truncated (amp.effect_type) by node-midi's 2048-byte WinMM
+  fragmentation. That receive cap is FIXED (the transport reassembles
+  fragments via `createSysExAssembler`); the 2026-06-09 re-run captured
+  the full 266-entry amp table in one untruncated frame, 266/266
+  display-equal vs the shipped catalog.
 - **Mined**: 54 ENUM_VALUE_OVERRIDES + 4 wiki transcription
   corrections (CORNCOB → CORNFED) shipped in fractal-midi.
   Re-running probe against shipped catalog: 0 mismatches after
@@ -116,11 +155,13 @@ These sections live in the consumer repo's founder-private manifest
 
 - **(a) Decompile dumps + binary extracts**: Ghidra output from
   AxeEdit, AM4-Edit, AxeEdit III binaries. ~30 files totaling ~4.3 MB
-  per the synthesis pass 2026-05-22 inventory. **The III preset binary
-  envelope spec is sitting decoded in
-  `ghidra-axe-edit-iii-dump-descriptors.txt` (lines 7-23): byte-
-  identical shape to the II envelope spec recently decoded via hardware
-  probes.** A 100-line TS parser closes that without hardware.
+  per the synthesis pass 2026-05-22 inventory. **The III preset-binary
+  envelope spec is decoded from `ghidra-axe-edit-iii-dump-descriptors.txt`
+  and is byte-identical to the II envelope spec, record for record**
+  (0x77/0x78/0x79 descriptor tables; the dump's opening tables, once
+  mislabeled as the preset envelope, are actually the fn=0x75
+  broadcast-body tables). The 0x79 footer is a 16-bit XOR-fold of the
+  body words, validated by the editor's own receive path.
 - **(b) USBpcap + Wireshark captures (.pcapng)**: founder USB
   captures of editor → device write paths
 - **(c) Factory default .syx + reference dumps**: vendor-provided or

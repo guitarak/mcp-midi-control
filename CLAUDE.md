@@ -37,6 +37,42 @@ SYSEX-MAP, capture guides, Ghidra scripts, encoding cookbook) lives in
 the [`fractal-midi`](https://github.com/TheAndrewStaker/fractal-midi)
 codec package under `packages/fractal-midi/docs/`.
 
+## Shipping bar: evidence, not hardware (read this before deferring anything)
+
+**The bar for shipping a capability is EVIDENCE, not a device key-press.** If the
+wire/decode logic is derived from evidence we can actually check, SHIP IT and mark
+it untested — do not withhold or discount it for lack of hardware verification.
+Withholding likely-correct capability is the failure mode this project keeps hitting;
+it holds us back and confuses what the product can actually do.
+
+Judge work on **two independent axes**, and never collapse them into one "unverified":
+
+1. **Evidence strength** — is the logic grounded in something checkable?
+   - STRONG: byte-exact against a real capture we hold; self-validating (the device's
+     own CRC/checksum gates it, e.g. the gen-3 `.syx` CRC); byte-identical round-trip;
+     cross-validated against a reference oracle; derived from a published spec read
+     byte-for-byte. → **Ship it. Mark "untested / community-beta." It is DONE pending a
+     confirmation key-press, not "not done."**
+   - WEAK: a guess with no way to catch a wrong answer — an unvalidated join, an
+     inferred offset with no oracle, bytes contradicted by a capture. → This is the
+     ONLY thing that stays out. If shipped at all, it ships behind a DISTINCT, louder
+     label ("experimental / unvalidated — values may be wrong"), NEVER under the same
+     "untested" banner as strong-evidence work, so a user never mistakes a guess for a
+     confident-but-unconfirmed value.
+
+2. **Hardware confirmation** — has a device confirmed it end-to-end? This axis NEVER
+   gates shipping. It only flips a label from "untested" → "confirmed."
+
+**`untested` ≠ `unbuilt`.** When reporting status, say what is BUILT-and-evidence-backed
+(works end-to-end, awaiting a key-press) separately from what is GENUINELY blocked
+(missing data/capture/oracle). Do not report evidence-backed-but-unconfirmed work as a
+gap. The honest label is "untested," and untested capability still ships.
+
+This is the same line as the no-guessed-wire-paths rule: **the line is evidence, not
+"tested."** Decoded-with-evidence ships (community-beta); guessed/contradicted stays out
+or ships loudly-flagged. Use accurate support-status language
+(`hardware-unverified` / `set-only` / `confirmed`), never release-cadence words.
+
 ## Stack
 - TypeScript / Node.js (**ES modules**, not CommonJS: `package.json` has `"type": "module"`, `tsconfig.json` uses `"module": "NodeNext"`)
 - `tsx` is the TypeScript runner for scripts (not `ts-node`); invoke via `npm run <script>` or `npx tsx <path>`
@@ -55,11 +91,11 @@ codec package under `packages/fractal-midi/docs/`.
 | **`@mcp-midi-control/am4`** | `packages/am4/` | AM4 device descriptor, writer, reader, tools. |
 | **`@mcp-midi-control/axe-fx-ii`** | `packages/axe-fx-ii/` | Axe-Fx II (gen-2) device descriptor, writer, reader, tools. |
 | **`@mcp-midi-control/axe-fx-gen1`** | `packages/axe-fx-gen1/` | Axe-Fx Standard/Ultra (gen-1) device descriptor. Its **own** nibble-split codec (model `0x01`, fn `0x02`, trailing query(0)/set(1) flag — not gen-2 septet, not gen-3 sub-action), in `fractal-midi/axe-fx-gen1`. **Set + parameter read, community beta**: decoded byte-exactly from the published gen-1 SysEx spec (no hardware). `get_param`/`get_params` query via fn 0x02 (flag 0) → MIDI_PARAM_VALUE (value + device label); whole-patch dump, save/switch/scene/channel omitted. 922 params / 35 blocks generated from the doc. |
-| **`@mcp-midi-control/fractal-modern`** | `packages/fractal-modern/` | Modern Fractal family (gen-3): Axe-Fx III / FM3 / FM9 / VP4. One `createModernFractalDescriptor` factory + per-device configs; they share one codec + block effect IDs, differing by model byte, grid/scene shape, and a **device-true param catalog** (FM3/FM9/VP4 mined from their own editor binaries — `fractal-midi/fm3`,`/fm9`,`/vp4`; the III is the byte-identity anchor). paramIds are device-specific, never reused across the family. VP4 is AM4-shape (serial 4-slot, no amp/cab) and ships reads + mode switch with writes gated. |
+| **`@mcp-midi-control/fractal-modern`** | `packages/fractal-modern/` | Modern Fractal family (gen-3): Axe-Fx III / FM3 / FM9 / VP4. One `createModernFractalDescriptor` factory + per-device configs; they share one codec + block effect IDs, differing by model byte, grid/scene shape, and a **device-true param catalog** (FM3/FM9/VP4 mined from their own editor binaries — `fractal-midi/fm3`,`/fm9`,`/vp4`; the III is the byte-identity anchor). paramIds are device-specific, never reused across the family. VP4 is AM4-shape (serial 4-slot, no amp/cab); ships reads + the decoded community-beta writes `set_param`/`set_params` (continuous knobs, raw wire value; enum/TYPE set refuses), `set_bypass`, and `save_preset` (from a fw 4.03 capture), with the rest gated. |
 | **`@mcp-midi-control/hydrasynth`** | `packages/hydrasynth/` | Hydrasynth device descriptor, writer, reader, tools. |
 | **`@mcp-midi-control/server-all`** | `packages/server-all/` | MCP server entry point. Composes all device packages. |
 
-**One package per codec family, not per brand.** Devices that share a wire codec live in one package as per-device *configs*, not separate packages. The modern Fractal family (Axe-Fx III / FM3 / FM9, gen-3) is one `fractal-modern` package: `createModernFractalDescriptor(config)` binds the shared codec to a model byte + grid/scene shape. The gen-2 Axe-Fx II is a *different codec*, so it stays its own package. A new brand (Line 6 Helix, Roland) is a new codec → a new package; a new device on an existing codec is a new config file. VP4 (gen-3, model 0x14) is registered as a `fractal-modern` config (`configs/vp4.ts`): AM4-shape (serial 4-slot, 4 scenes, A-Z04), no amp/cab, catalog from `fractal-midi/vp4`. It ships READS + the fn=0x12 mode switch only; every device-state WRITE is gated (`writes_gated`) because the fn=0x01 param/block write path is inferred-not-confirmed and the serial block-placement wire shape is still undecoded.
+**One package per codec family, not per brand.** Devices that share a wire codec live in one package as per-device *configs*, not separate packages. The modern Fractal family (Axe-Fx III / FM3 / FM9, gen-3) is one `fractal-modern` package: `createModernFractalDescriptor(config)` binds the shared codec to a model byte + grid/scene shape. The gen-2 Axe-Fx II is a *different codec*, so it stays its own package. A new brand (Line 6 Helix, Roland) is a new codec → a new package; a new device on an existing codec is a new config file. VP4 (gen-3, model 0x14) is registered as a `fractal-modern` config (`configs/vp4.ts`): AM4-shape (serial 4-slot, 4 scenes, A-Z04), no amp/cab, catalog from `fractal-midi/vp4`. The VP4 fn=0x01 write frame is its OWN shape (decoded byte-exact from community captures, fw 4.03: no sub-action, a `tc` sub-opcode, a swapped-septet float — `fractal-midi/vp4/setParam.ts`). It ships READS plus community-beta (untested-on-hardware) writes (`set_param`/`set_params` for continuous knobs only: raw 0..65534 wire value, calibration pending, enum/TYPE set refuses; `set_bypass`; `save_preset`; see `write_allowlist`), while `set_block` (placement value→slot math undecoded), `switch_scene` (value mapping), `switch_preset`, and `rename` stay gated. Per-capability gating is via `write_allowlist` on top of `writes_gated`.
 
 **Build order matters.** `fractal-midi` builds first (all other packages import from it via `from 'fractal-midi/...'`). The root `npm run build` chains them in dependency order. `npm run preflight` runs build, typecheck, and the full test suite across all packages.
 

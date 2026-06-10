@@ -60,22 +60,39 @@ export const AXEFX_GEN1_CASES: AgentRegressionCase[] = [
     },
   },
 
-  // §2 refused capability — get_param must surface no-read-back ─────
+  // §2 param read-back — gen-1 reads are WIRED (fn 0x02 query flag) ──
+  // STALE-CASE REWRITE 2026-06-10: the original case asserted reads
+  // REFUSE with capability_not_supported and the agent should say
+  // "read the front panel" — that was the pre-2026-06-06 surface.
+  // get_param/get_params are wired now (decoded from the gen-1 wiki
+  // spec, community-beta), so the correct behavior is to CALL the read
+  // and report the value, not to deflect to the panel.
   {
-    id: 'axefx-gen1-get-param-refuses',
+    id: 'axefx-gen1-get-param-reads',
     device: 'axe-fx-gen1',
 
     description:
-      'Confirms the agent surfaces the gen-1 no-read-back limitation when ' +
-      'asked to read a value, rather than trying get_param (which refuses with ' +
-      'capability_not_supported) or fabricating a value. The agent should tell ' +
-      'the user to read the front panel.',
+      'Confirms the agent USES the wired gen-1 read path when asked for a ' +
+      'value (get_param on the reverb mix) instead of deflecting to the front ' +
+      'panel or fabricating a number. Mock answers the fn 0x02 query.',
     prompt:
       'What is the current reverb mix on the Axe-Fx Ultra?',
     expectations: {
+      must_call: ['get_param'],
       must_not_call: ['save_preset', 'switch_preset'],
       max_tools: 4,
-      text_contains: ['front panel', 'read'],
+      tool_call_validators: [
+        {
+          tool: 'get_param',
+          check: (args) => {
+            const port = typeof args.port === 'string' ? args.port.toLowerCase() : '';
+            if (!port.includes('gen1') && !port.includes('gen-1') && !port.includes('ultra') && !port.includes('standard')) {
+              return `get_param port should target gen-1, got ${String(args.port)}`;
+            }
+            return true;
+          },
+        },
+      ],
       max_wall_seconds: 60,
     },
   },
@@ -104,9 +121,12 @@ export const AXEFX_GEN1_CASES: AgentRegressionCase[] = [
             if (!port.includes('gen1') && !port.includes('ultra') && !port.includes('standard')) {
               return `set_params port should target gen-1, got ${String(args.port)}`;
             }
-            const params = Array.isArray(args.params) ? args.params : [];
-            if (params.length < 2) {
-              return `set_params should pass at least 2 params for a batch write, got ${params.length}`;
+            // VALIDATOR-BUG FIX 2026-06-10: the tool's batch field is
+            // `ops`, not `params` — the old check read a nonexistent
+            // field and failed every run (0% pass since creation).
+            const ops = Array.isArray((args as { ops?: unknown[] }).ops) ? (args as { ops: unknown[] }).ops : [];
+            if (ops.length < 2) {
+              return `set_params should pass at least 2 ops for a batch write, got ${ops.length}`;
             }
             return true;
           },

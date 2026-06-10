@@ -7,10 +7,13 @@ Do this once, then follow your device's capture list:
 
 Nothing here changes or risks your presets. You are only *recording* traffic.
 
-> Prefer not to install anything? Many of the needed reads are also covered by a
-> one-command **probe** that ships with the tool. See the "Probe" section on your
-> device's page. Captures are still the highest-value help, but the probe is the
-> zero-setup option.
+> Prefer not to install anything? Two zero-setup options cover most of what we
+> need before any capture: the one-command read-only **harvest script** (one
+> JSON output file, see [harvest-script.md](harvest-script.md)) and your
+> editor's offline **cache file** (see C2 on the gen-3 captures page). Many
+> reads are also covered by the per-device **probe** in the "Probe" section of
+> your device's page. Captures are only needed for the few wire shapes none of
+> those reach.
 
 ---
 

@@ -109,6 +109,11 @@ export function translatePresetSpec(
   let paramsAliased = 0;
   let enumsMapped = 0;
   let sceneCollapses = 0;
+  // Model-name enum values (amp/reverb/delay types) that passed through
+  // with no cross-roster mapping. Aggregated into one warning below so
+  // an unmapped model never ships silently (enums_mapped: 0 with empty
+  // warnings was the 0.3.0 II→FM9 symptom).
+  const unmappedModels = new Set<string>();
 
   const sourceCap = sourceDescriptor.capabilities;
   const targetCap = targetDescriptor.capabilities;
@@ -614,6 +619,7 @@ export function translatePresetSpec(
       (n) => { paramsAliased += n; },
       (n) => { enumsMapped += n; },
       warnings,
+      unmappedModels,
       { channelsAreTarget: slotsWithTargetChannelKeys.has(sourceSlot) },
     );
 
@@ -649,6 +655,16 @@ export function translatePresetSpec(
       occupiedCells.add(`${translatedRef.row}:${translatedRef.col}`);
     }
     targetSlots.push(translatedSlot);
+  }
+
+  // Aggregate unmapped-model warning (one per translate, not per param).
+  if (unmappedModels.size > 0) {
+    warnings.push(
+      `model names passed through WITHOUT a cross-roster mapping: ` +
+      `${Array.from(unmappedModels).join(', ')}. ${targetDescriptor.display_name} may name ` +
+      `these differently; apply-time tolerant matching will attempt resolution, but verify ` +
+      `the applied type on the device (find_compatible_types / list_params show the target's roster).`,
+    );
   }
 
   // ── Pass 2: scenes ────────────────────────────────────────────────
@@ -995,6 +1011,7 @@ function translateParams(
   reportAlias: (n: number) => void,
   reportEnumMap: (n: number) => void,
   warnings: string[],
+  unmappedModels: Set<string>,
   options: { channelsAreTarget?: boolean } = {},
 ): PresetSlotSpec['params'] | undefined {
   if (sourceParams === undefined || sourceParams === null) return undefined;
@@ -1013,6 +1030,37 @@ function translateParams(
       targetDescriptor,
       reportAlias,
       reportEnumMap,
+      warnings,
+      unmappedModels,
+    );
+  }
+
+  // Channel-nested but the TARGET block carries no channels (e.g. the AM4
+  // compressor): flatten to the first channel slice and emit flat params.
+  // Without this, translate emitted params_by_channel on a channel-less
+  // block and apply_preset rejected the whole spec (0.3.0 dev test,
+  // II→AM4 compressor).
+  const targetChannelBlockSet = targetDescriptor.capabilities.channel_blocks !== undefined
+    ? new Set(targetDescriptor.capabilities.channel_blocks.map((b: string) => b.toLowerCase()))
+    : undefined;
+  if (targetChannelBlockSet !== undefined && !targetChannelBlockSet.has(blockType.toLowerCase())) {
+    const channelKeys = entries.map(([ch]) => ch);
+    const firstSlice = entries[0][1] as FlatParams;
+    if (channelKeys.length > 1) {
+      warnings.push(
+        `${blockType} has no channels on ${targetDescriptor.display_name}: kept channel ` +
+        `${channelKeys[0]}'s params and dropped [${channelKeys.slice(1).join(', ')}]. ` +
+        `Per-scene ${blockType} channel selections do not apply on the target.`,
+      );
+    }
+    return translateFlatParams(
+      firstSlice,
+      blockType,
+      targetDescriptor,
+      reportAlias,
+      reportEnumMap,
+      warnings,
+      unmappedModels,
     );
   }
 
@@ -1052,6 +1100,8 @@ function translateParams(
       targetDescriptor,
       reportAlias,
       reportEnumMap,
+      warnings,
+      unmappedModels,
     );
     if (translated !== undefined && Object.keys(translated).length > 0) {
       out[targetCh] = translated;
@@ -1076,6 +1126,8 @@ function translateFlatParams(
   targetDescriptor: DeviceDescriptor,
   reportAlias: (n: number) => void,
   reportEnumMap: (n: number) => void,
+  warnings: string[],
+  unmappedModels: Set<string>,
 ): FlatParams {
   const out: Record<string, number | string> = {};
   for (const [name, value] of Object.entries(params)) {
@@ -1084,12 +1136,35 @@ function translateFlatParams(
     if (aliasResult.aliasUsed !== undefined && aliasResult.canonical !== name) {
       reportAlias(1);
     }
+    // Named tempo divisions ("1/2 DOT") are display strings the gen-3
+    // codec cannot encode; passing them through produced a spec that
+    // failed or no-op'd at apply with no warning (0.3.0 dev test, II→FM9).
+    // Strip with a warning instead.
+    if (
+      typeof value === 'string'
+      && targetDescriptor.capabilities.named_tempo_divisions === false
+      && canonicalName.toLowerCase().endsWith('tempo')
+    ) {
+      warnings.push(
+        `${blockType}.${canonicalName}: dropped tempo division "${value}" — ` +
+        `${targetDescriptor.display_name} cannot address named tempo divisions over the wire ` +
+        `(no decoded wire value; the codec refuses to fabricate one). Set the division on the ` +
+        `device front panel, or send an absolute time value instead.`,
+      );
+      continue;
+    }
     let translatedValue: number | string = value;
     if (typeof value === 'string') {
       const enumResult = resolveEnumAlias(targetDescriptor.id, blockType, canonicalName, value);
       if (enumResult.aliasUsed !== undefined && enumResult.canonical !== value) {
         translatedValue = enumResult.canonical;
         reportEnumMap(1);
+      } else if (canonicalName === 'type' || canonicalName === 'effect_type') {
+        // Model-name enum with no cross-roster mapping: it passes through
+        // verbatim. Collected per-translate and surfaced as one aggregate
+        // warning (0.3.0 dev test: II→FM9 passed "SHIVER CLEAN" et al.
+        // silently with enums_mapped: 0).
+        unmappedModels.add(`${blockType}.${canonicalName}="${value}"`);
       }
     }
     out[canonicalName] = translatedValue;
@@ -1161,6 +1236,10 @@ function translateScenes(
   const sourceChannels = sourceCap.channel_names ?? [];
   const targetChannels = targetCap.channel_names ?? [];
   const targetChannelSet = new Set(targetChannels.map((c) => c.toUpperCase()));
+  // Blocks whose per-scene channel picks were dropped because they are
+  // not channel-bearing on the target; aggregated into one warning below
+  // (previously a silent `continue`).
+  const droppedChannelPickBlocks = new Set<string>();
   const channelRemap = buildChannelRemap(sourceChannels, targetChannels);
   let collapsed = 0;
   // Deduplicate collapse-merge entries: the remap stores the same info
@@ -1290,7 +1369,10 @@ function translateScenes(
       if (targetChannelBlocks !== undefined) {
         const blkLower = block.toLowerCase();
         const blkType = blkLower.replace(/[_ ]?\d+$/, '');
-        if (!targetChannelBlocks.has(blkLower) && !targetChannelBlocks.has(blkType)) continue;
+        if (!targetChannelBlocks.has(blkLower) && !targetChannelBlocks.has(blkType)) {
+          droppedChannelPickBlocks.add(block);
+          continue;
+        }
       }
       if (typeof ch === 'number') {
         channels[block] = ch;
@@ -1309,7 +1391,13 @@ function translateScenes(
         channels[block] = mapped;
       }
     }
-    const translatedScene: SceneSpec = { scene: sc.scene, channels };
+    // Carry the scene name. Dropping it was a 0.3.0 dev-test finding
+    // (reproduced II→AM4 and II→FM9; both targets support scene names).
+    const translatedScene: SceneSpec = {
+      scene: sc.scene,
+      channels,
+      ...(sc.name !== undefined ? { name: sc.name } : {}),
+    };
     if (sc.bypassed !== undefined || Object.keys(effectiveBypassed).length > 0) {
       const filtered: Record<string, boolean> = {};
       for (const [block, val] of Object.entries(effectiveBypassed)) {
@@ -1324,6 +1412,12 @@ function translateScenes(
   if (collapsed > 0) {
     warnings.push(
       `collapsed ${collapsed} scene(s) past index ${targetSceneCount} on target device.`,
+    );
+  }
+  if (droppedChannelPickBlocks.size > 0) {
+    warnings.push(
+      `dropped per-scene channel selections for [${Array.from(droppedChannelPickBlocks).join(', ')}]: ` +
+      `not channel-bearing block(s) on the target device. The block's single set of params applies in every scene.`,
     );
   }
   return out;

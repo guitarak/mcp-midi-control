@@ -43,6 +43,8 @@ import {
   buildBlockLayoutSnapshot,
   buildReadParam,
   buildRequestActiveBufferDump,
+  buildRequestStoredPresetDump,
+  formatLocationCode,
   decode as am4Decode,
   roundDisplayValue,
   isReadResponseLong,
@@ -532,6 +534,56 @@ export const reader: DeviceReader = {
       // active buffer doesn't have, so the name is omitted here; the
       // backup filename falls back to device + timestamp.
       source: 'active working buffer',
+    };
+  },
+
+  async dumpStoredPresetBinary(location: number, ctx: DispatchCtx): Promise<PresetBinaryDump> {
+    // Byte-exact backup of a STORED preset location via the fn 0x03
+    // [bank, sub, 0x00] request (H1 encoding, hardware-confirmed
+    // 2026-06-10: A01/A02/Z04 each answered the canonical 6-frame /
+    // 12,352-byte stream with the [bank, sub] echoed in the 0x77
+    // header, and NO working-buffer side effect). `location` is the
+    // 0-based index 0..103 (A01..Z04).
+    if (!Number.isInteger(location) || location < 0 || location > 103) {
+      throw new DispatchError(
+        'bad_location',
+        'Fractal AM4',
+        `export_preset: location index ${location} out of range — the AM4 has 104 stored locations, index 0..103 (A01..Z04).`,
+      );
+    }
+    const code = formatLocationCode(location);
+    const streamPromise = receivePresetDumpStream(ctx.conn, { timeoutMs: 2000 });
+    ctx.conn.send(buildRequestStoredPresetDump(location));
+    let stream;
+    try {
+      stream = await streamPromise;
+    } catch (err) {
+      throw new DispatchError(
+        'no_ack',
+        'Fractal AM4',
+        `export_preset: stored-location dump of ${code} got no response — ${err instanceof Error ? err.message : String(err)}. Check the AM4 is connected (try reconnect_midi).`,
+      );
+    }
+    const flat: number[] = [...stream.headerBytes];
+    for (const chunk of stream.chunkBytes) for (const b of chunk) flat.push(b);
+    for (const b of stream.footerBytes) flat.push(b);
+    const bytes = Uint8Array.from(flat);
+    // Best-effort stored-name read for the backup filename (same
+    // helper scanLocations uses).
+    let name: string | undefined;
+    try {
+      const parsed = await readPresetName(ctx.conn, location);
+      name = parsed.name?.trimEnd() || undefined;
+    } catch {
+      name = undefined;
+    }
+    return {
+      bytes,
+      byte_length: bytes.length,
+      frame_count: stream.messageCount,
+      format: 'am4-preset-dump',
+      name,
+      source: `stored preset at location ${code} (fn 0x03 flash dump; working buffer untouched)`,
     };
   },
 

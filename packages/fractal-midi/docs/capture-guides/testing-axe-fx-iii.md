@@ -1,6 +1,8 @@
 # Testing: Axe-Fx III
 
 > **Highest value:** the write confirmation (T2 below). The codec is verified from public captures but has never moved a knob on real III hardware via the server. A one-sentence "yes, the panel changed" closes this gap.
+>
+> Beyond the tests below, the two highest-value III artifacts need no capture tools: the editor's cache file (the device's complete parameter dictionary, offline -- see [captures-gen3.md C2](captures-gen3.md)) and a run of the one-command read-only [harvest script](harvest-script.md).
 
 See [README.md](README.md) for setup. Want to record captures too? See [captures-gen3.md](captures-gen3.md).
 

@@ -30,14 +30,14 @@
  *   - II   ✓ — Q8.02 firmware, row 2 (audio chain) of 4×12 grid.
  *   - gen-3 (III / FM3 / FM9) ✓ SET_PARAMETER is decoded (fn=0x01,
  *              byte-verified) and the tone-stack knobs are calibrated
- *              display-first. BUT amp/drive/reverb MODEL selectors are
- *              enum set-by-name gated (the typed-SET raw enum id is
- *              capture-pending), so gen-3 recipes are MODEL-AGNOSTIC
- *              numeric voicings: they set the calibrated tone-stack +
+ *              display-first. These recipes are MODEL-AGNOSTIC numeric
+ *              voicings BY DESIGN: they set the calibrated tone-stack +
  *              reverb/comp knobs on whatever amp model is loaded, and the
- *              agent/user picks the amp model separately. They carry the
- *              `gen3_` prefix to make that contract obvious. No enum
- *              model strings appear in any gen-3 slot.
+ *              agent/user picks the amp model separately. (Model set-by-name
+ *              DOES work on gen-3 — a discrete SET carries float32(read-ordinal)
+ *              — it is just kept out of these recipes so one voicing fits any
+ *              model.) They carry the `gen3_` prefix to make that contract
+ *              obvious. No enum model strings appear in any gen-3 slot.
  *   - Hydra ✗ — synth (osc / module), not a multi-block guitar effects
  *              chain. Block-stack semantics don't translate; consider
  *              a separate "patch_archetype" family if Hydra demand
@@ -155,8 +155,10 @@ export interface BlockStackRecipeSpec {
 const p = <T extends Readonly<Record<string, number | string>>>(params: T): Readonly<Record<string, number | string>> => params;
 
 // gen-3 (III / FM3 / FM9) share one wire codec, one block roster, and one
-// calibrated tone-stack, and the recipes below set numeric knobs only (no
-// gated enum model strings). The slot layout + values are identical across
+// calibrated tone-stack, and the recipes below set numeric knobs only
+// (model-agnostic by design — enum model set-by-name works on gen-3 via a
+// discrete SET carrying float32(read-ordinal), but is left to a separate step
+// so one voicing fits any model). The slot layout + values are identical across
 // the three, so fan one value across all three port keys rather than
 // triplicating the literal. FM3 is a 4×4 grid, so gen-3 recipes stay within
 // cols 1..3 (row 2 audio chain) to fit every device in the family.
@@ -979,9 +981,11 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
     // A pedal-platform clean voicing for the modern Fractal family: light
     // compression to even dynamics, the amp tone-stack set near-flat with
     // gain low for headroom, and a medium reverb for air. The amp MODEL is
-    // NOT set here (model-by-name is enum-gated on gen-3); load any clean
-    // model (Fender / AC-style) and this voicing sits on top. All knobs are
-    // calibrated display-first values.
+    // NOT set here BY DESIGN — this voicing is model-agnostic so it sits on
+    // any clean amp; model-by-name DOES work on gen-3 (a discrete SET carries
+    // float32(read-ordinal)), the user/agent just picks a clean model
+    // (Fender / AC-style) separately. All knobs are calibrated display-first
+    // values.
     //
     // Voicing rationale: gain-staging convention for a clean pedal platform
     // (low drive for headroom, slight treble lift, ~18% reverb). Not an
@@ -989,11 +993,11 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
     gen3_clean_platform: {
       name: 'gen3_clean_platform',
       description:
-        'gen-3 clean platform (III / FM3 / FM9): light comp + near-flat amp tone-stack at low gain + medium reverb. Model-agnostic numeric voicing; pick the amp model separately (model-by-name is capture-gated on gen-3).',
+        'gen-3 clean platform (III / FM3 / FM9): light comp + near-flat amp tone-stack at low gain + medium reverb. Model-agnostic numeric voicing; pick the amp model separately (model-by-name works on gen-3).',
       applicable_devices: GEN3_DEVICES,
       signature_params_per_device: gen3(p({ 'amp.drive': 2, 'reverb.mix': 18 })),
       source_notes:
-        'Clean pedal-platform gain-staging convention (low drive for headroom, slight treble lift, medium reverb). Amp model is user-selected; gen-3 model-by-name is capture-gated.',
+        'Clean pedal-platform gain-staging convention (low drive for headroom, slight treble lift, medium reverb). Amp model is user-selected; gen-3 model-by-name works.',
       slots_per_device: gen3([
         {
           slot: { row: 2, col: 1 },
@@ -1021,11 +1025,11 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
     gen3_crunch_platform: {
       name: 'gen3_crunch_platform',
       description:
-        'gen-3 crunch platform (III / FM3 / FM9): mid-gain amp tone-stack with a slight mid push + light reverb. Edge-of-breakup rhythm voicing. Model-agnostic; pick a crunch amp model separately (capture-gated on gen-3).',
+        'gen-3 crunch platform (III / FM3 / FM9): mid-gain amp tone-stack with a slight mid push + light reverb. Edge-of-breakup rhythm voicing. Model-agnostic; pick a crunch amp model separately (model-by-name works on gen-3).',
       applicable_devices: GEN3_DEVICES,
       signature_params_per_device: gen3(p({ 'amp.drive': 5, 'reverb.mix': 12 })),
       source_notes:
-        'Edge-of-breakup rhythm gain-staging convention (mid drive, mid push, light reverb). Amp model is user-selected; gen-3 model-by-name is capture-gated.',
+        'Edge-of-breakup rhythm gain-staging convention (mid drive, mid push, light reverb). Amp model is user-selected; gen-3 model-by-name works.',
       slots_per_device: gen3([
         {
           slot: { row: 2, col: 1 },
@@ -1048,11 +1052,11 @@ export const BLOCK_STACK_RECIPES: Readonly<Record<string, BlockStackRecipeSpec>>
     gen3_high_gain_platform: {
       name: 'gen3_high_gain_platform',
       description:
-        'gen-3 high-gain platform (III / FM3 / FM9): high-drive scooped-mid amp tone-stack + tight short reverb. Modern metal rhythm voicing. Model-agnostic; pick a high-gain amp model separately (capture-gated on gen-3).',
+        'gen-3 high-gain platform (III / FM3 / FM9): high-drive scooped-mid amp tone-stack + tight short reverb. Modern metal rhythm voicing. Model-agnostic; pick a high-gain amp model separately (model-by-name works on gen-3).',
       applicable_devices: GEN3_DEVICES,
       signature_params_per_device: gen3(p({ 'amp.drive': 8, 'amp.mid': 4 })),
       source_notes:
-        'Modern metal rhythm gain-staging convention (high drive, scooped mids, tight short reverb). Amp model is user-selected; gen-3 model-by-name is capture-gated.',
+        'Modern metal rhythm gain-staging convention (high drive, scooped mids, tight short reverb). Amp model is user-selected; gen-3 model-by-name works.',
       slots_per_device: gen3([
         {
           slot: { row: 2, col: 1 },

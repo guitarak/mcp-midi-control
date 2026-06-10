@@ -3,10 +3,11 @@
  *
  * Numeric voicings of the reverb block: the calibrated knobs a player
  * reaches for to land a hall / plate / spring character on TOP of whatever
- * reverb TYPE is selected. They do NOT set the reverb TYPE: gen-3 enum
- * set-by-name is gated (`enum_display_only`) until the raw-id capture lands,
- * so a recipe that named a type would emit an untested wire value. Picking
- * the reverb type stays a separate, user-driven step; these recipes voice it.
+ * reverb TYPE is selected. They do NOT set the reverb TYPE by design — they are
+ * type-agnostic voicings. (Reverb type set-by-name DOES work on gen-3: a
+ * discrete SET carries float32(read-ordinal), so a type name resolves straight
+ * off the shipped roster. Picking the type stays a separate step so a recipe
+ * can voice any reverb.)
  *
  * Honest scope note. On the modern Fractal family the reverb TYPE selector
  * carries most of a reverb's character; these recipes shape the time / size /
@@ -71,7 +72,7 @@ export const REVERB_RECIPES: Readonly<Record<string, ReverbRecipeSpec>> = Object
   reverb_hall: {
     name: 'reverb_hall',
     description:
-      'Hall voicing: long decay + large size + moderate pre-delay for a big, blooming space. Select a hall-type reverb first (type-by-name is capture-gated on gen-3).',
+      'Hall voicing: long decay + large size + moderate pre-delay for a big, blooming space. Select a hall-type reverb by name first (gen-3 type set-by-name works).',
     applicable_devices: GEN3,
     params_per_device: gen3({
       REVERB_TIME: 3.2,
@@ -90,7 +91,7 @@ export const REVERB_RECIPES: Readonly<Record<string, ReverbRecipeSpec>> = Object
   reverb_plate: {
     name: 'reverb_plate',
     description:
-      'Plate voicing: medium decay + dense diffusion + short pre-delay for a smooth, present studio plate. Select a plate-type reverb first (type-by-name is capture-gated on gen-3).',
+      'Plate voicing: medium decay + dense diffusion + short pre-delay for a smooth, present studio plate. Select a plate-type reverb by name first (gen-3 type set-by-name works).',
     applicable_devices: GEN3,
     params_per_device: gen3({
       REVERB_TIME: 1.8,
@@ -108,7 +109,7 @@ export const REVERB_RECIPES: Readonly<Record<string, ReverbRecipeSpec>> = Object
   reverb_spring: {
     name: 'reverb_spring',
     description:
-      'Spring voicing: short decay + small size + sparse diffusion for a boingy amp-tank character. Select a spring-type reverb first (type-by-name is capture-gated on gen-3).',
+      'Spring voicing: short decay + small size + sparse diffusion for a boingy amp-tank character. Select a spring-type reverb by name first (gen-3 type set-by-name works).',
     applicable_devices: GEN3,
     params_per_device: gen3({
       REVERB_TIME: 1.4,

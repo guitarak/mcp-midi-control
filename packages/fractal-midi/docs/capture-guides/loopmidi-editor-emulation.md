@@ -80,7 +80,7 @@ captured corpus so far). The shape builders are golden-tested offline by
 [`gen3-editor-sync-read-surface`](../research/cookbook/gen3-editor-sync-read-surface.md)
 documents the read surface the simulator answers.
 
-## FM3-Edit (Rig A) — routing formula decode, 2026-06-05
+## FM3-Edit (Rig A): routing formula decode, 2026-06-05
 
 FM3-Edit Rig A (single-port self-loopback on `AXEloopMIDI Port`) was used
 to capture the 4-row routing formula (fn=0x01 sub=0x35). 10 cables collected

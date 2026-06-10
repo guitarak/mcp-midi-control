@@ -32,7 +32,9 @@ import {
   buildGetTempo,
   buildStatusDump,
   buildSwitchPresetPC,
+  buildSwitchPresetSysEx,
   buildSetParameter,
+  buildSetParameterContinuous,
   buildGetParameter,
   buildSetParameterBypass,
   buildRequestPresetDump,
@@ -48,7 +50,7 @@ import {
   parseGen3SetValueEcho,
   resolveEffectId,
   resolveEnumValues,
-  resolveGen3EnumNameToRawId,
+  resolveGen3EnumOrdinal,
   createModernFractalCodec,
 } from '../../src/axe-fx-iii/index.js';
 
@@ -91,6 +93,14 @@ const cases: Case[] = [
   // (bankSelect 'msb') threads the mode through to the builder.
   { label: 'codec(0x10).buildSwitchPresetPC(412) — III standard', built: createModernFractalCodec(0x10).buildSwitchPresetPC(412), expected: 'b00000b02003c01c' },
   { label: 'codec(0x12,msb).buildSwitchPresetPC(412) — FM9 MSB', built: createModernFractalCodec(0x12, { bankSelect: 'msb' }).buildSwitchPresetPC(412), expected: 'b00003b02000c01c' },
+
+  // SWITCH PRESET via SysEx (fn=0x01 sub=0x27). Byte-exact vs the FM3-Edit
+  // capture live-confirmed on FM3 fw 12.00 hardware (BoodieTraps 2026-06-10,
+  // a server-issued frame moved the unit 475→100). Preset# is a 14-bit LE
+  // int at pos 12 (encode14: 475 = 5b 03), NOT a float32 and NOT the BE form
+  // the fn=0x03 dump request uses. blockId/paramId both zero.
+  { label: 'buildSwitchPresetSysEx(475, 0x11) — FM3 capture frame', built: buildSwitchPresetSysEx(475, 0x11), expected: 'f000017411012700000000005b03000000000000006af7' },
+  { label: 'codec(0x10).buildSwitchPresetSysEx(475) — III model byte', built: createModernFractalCodec(0x10).buildSwitchPresetSysEx(475), expected: 'f000017410012700000000005b03000000000000006bf7' },
 
   // 0x0D QUERY PATCH NAME — preset index 0..1023, or 'current' (two sentinel bytes).
   { label: 'buildQueryPatchName(0)', built: buildQueryPatchName(0), expected: 'f0000174100d000018f7' },
@@ -149,12 +159,12 @@ const cases: Case[] = [
   {
     label: 'buildSetParameter(66, 0, 65534) — Reverb 1 paramId 0 max',
     built: buildSetParameter(66, 0, 65534),
-    expected: 'f000017410010900420000000000007e7f030000005df7',
+    expected: 'f00001741001090042000000007c7f3b040000000063f7',
   },
   {
     label: 'buildSetParameter(66, 11, 32767) — Reverb 1 paramId 11 mid',
     built: buildSetParameter(66, 11, 32767),
-    expected: 'f00001741001090042000b000000007f7f0100000055f7',
+    expected: 'f00001741001090042000b00007c7f37040000000064f7',
   },
   {
     label: 'buildGetParameter(66, 0) — Reverb 1 query paramId 0',
@@ -164,7 +174,7 @@ const cases: Case[] = [
   {
     label: 'buildSetParameterBypass(66, true) — Reverb 1 bypass via fn=0x01',
     built: buildSetParameterBypass(66, true),
-    expected: 'f00001741001090042007f0100000001000000000020f7',
+    expected: 'f00001741001090042007f010000007c03000000005ef7',
   },
 ];
 
@@ -177,32 +187,36 @@ interface ParseCase {
 }
 
 const parseCases: ParseCase[] = [
-  // FC-12: Amp 1 boost ON (effectId=58 = ID_DISTORT1 = the Amp block, paramId=40, value=508)
+  // FC-12: Amp 1 boost ON (effectId=58 = the Amp block, paramId=40). The value
+  // is the 5-septet float32 at pos 12 = 1.0 (boost ON); the old "508" was that
+  // float's high bytes misread as a packValue16 at pos 15.
   {
-    label: 'FC-12 Amp 1 boost ON',
+    label: 'FC-12 Amp 1 boost ON (float32 1.0)',
     bytes: [
       0xf0, 0x00, 0x01, 0x74, 0x10, 0x01, 0x52, 0x00, 0x3a, 0x00, 0x28, 0x00,
       0x00, 0x00, 0x00, 0x7c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x2b, 0xf7,
     ],
-    expected: { effectId: 58, paramId: 40, value: 508 },
+    expected: { effectId: 58, paramId: 40, value: 1 },
   },
-  // Public forum capture, typed: Delay 1 TIME = 520 (effectId=70, paramId=2)
+  // Public forum capture, typed Delay 1 TIME (effectId=70, paramId=2).
+  // float32 @pos12 = 8.0 (the old "520" was the pos-15 misread).
   {
-    label: 'forum capture, typed Delay TIME=520',
+    label: 'forum capture, typed Delay TIME (float32 8.0)',
     bytes: [
       0xf0, 0x00, 0x01, 0x74, 0x10, 0x01, 0x09, 0x00, 0x46, 0x00, 0x02, 0x00,
       0x00, 0x00, 0x00, 0x08, 0x04, 0x00, 0x00, 0x00, 0x00, 0x55, 0xf7,
     ],
-    expected: { effectId: 70, paramId: 2, value: 520 },
+    expected: { effectId: 70, paramId: 2, value: 8 },
   },
-  // Public forum capture, drag: Delay 1 TIME = 503
+  // Public forum capture, continuous drag (sub 52 00) Delay 1 TIME.
+  // float32(normalized) @pos12 = 0.45474… (the old "503" was the pos-15 misread).
   {
-    label: 'forum capture, drag Delay TIME=503',
+    label: 'forum capture, drag Delay TIME (float32 normalized)',
     bytes: [
       0xf0, 0x00, 0x01, 0x74, 0x10, 0x01, 0x52, 0x00, 0x46, 0x00, 0x02, 0x00,
       0x49, 0x27, 0x23, 0x77, 0x03, 0x00, 0x00, 0x00, 0x00, 0x3b, 0xf7,
     ],
-    expected: { effectId: 70, paramId: 2, value: 503 },
+    expected: { effectId: 70, paramId: 2, value: 0.4547407925128937 },
   },
   // STATE_BROADCAST (sub-action 04 01) — paramId zero by convention.
   {
@@ -381,13 +395,16 @@ export function runAxeFxIIISetParamTests(): void {
 
   // Gen-3 typed SET (sub 09 00) round-trips byte-exact against the captured
   // FM9-Edit Reverb TYPE change (Medium Room → Medium Spring), FW 11.00 2026-06-03.
-  const fm9TypeSet = buildSetParameter(66, 10, 524, 0x12);
+  // The set value is float32(read-ordinal): Medium Spring = REVERB_TYPE ordinal
+  // 16 → float32 16.0 → septets [00,00,00,0c,04] at pos 12. (The old "524" was
+  // this float's high bytes misread as a packValue16 at pos 15.)
+  const fm9TypeSet = buildSetParameter(66, 10, 16, 0x12);
   const fm9TypeSetExpected = [
     0xf0, 0x00, 0x01, 0x74, 0x12, 0x01, 0x09, 0x00, 0x42, 0x00, 0x0a, 0x00,
     0x00, 0x00, 0x00, 0x0c, 0x04, 0x00, 0x00, 0x00, 0x00, 0x5f, 0xf7,
   ];
   if (hex(fm9TypeSet) !== hex(fm9TypeSetExpected)) {
-    failed.push(`FM9 typed-SET drift: buildSetParameter(66,10,524,0x12) != captured frame\n  ours: ${hex(fm9TypeSet)}\n  cap:  ${hex(fm9TypeSetExpected)}`);
+    failed.push(`FM9 typed-SET drift: buildSetParameter(66,10,16,0x12) != captured frame\n  ours: ${hex(fm9TypeSet)}\n  cap:  ${hex(fm9TypeSetExpected)}`);
   }
 
   // Gen-3 60-byte SET value-echo response (FM9-confirmed): the device echoes
@@ -405,14 +422,12 @@ export function runAxeFxIIISetParamTests(): void {
     failed.push(`parseGen3SetValueEcho drift: expected {eff:66,pid:10,val~0.20513}, got ${JSON.stringify(echo)}`);
   }
 
-  // ── Enum overlay + write-leg resolution goldens ────────────────────────────
+  // ── Enum overlay + set-by-name ordinal goldens ─────────────────────────────
   //
-  // FUZZ_TYPE (eff=118, drive/fuzz pedal type selector) was added to the
-  // family-shared EFFECT_TYPE_OVERRIDES in enumOverlay.ts using AM4's
-  // DRIVE_TYPES table. Byte-anchored: FM9 hw capture confirmed ordinals 15 and
-  // 36 match AM4's Blues OD and Blackglass 7K (2026-06-04).
-  // GEN3_ENUM_ORDINAL_TO_RAW_ID was extended: FUZZ_TYPE ordinal 15 → raw-id 523
-  // (byte-exact from FM9 capture 3, sub=0x09 SET frame for eff=118 pid=0 val=523).
+  // FUZZ_TYPE (eff=118, drive/fuzz pedal type selector) is in the family-shared
+  // EFFECT_TYPE_OVERRIDES (enumOverlay.ts) from AM4's DRIVE_TYPES. Byte-anchored:
+  // FM9 hw capture confirmed ordinals 15 (Blues OD) and 36 (Blackglass 7K). The
+  // read ordinal IS the set value: set-by-name resolves name → ordinal directly.
 
   // FUZZ_TYPE family overlay coverage.
   const fuzzOverlay = resolveEnumValues('FUZZ_TYPE');
@@ -430,23 +445,28 @@ export function runAxeFxIIISetParamTests(): void {
     }
   }
 
-  // Blues OD write-leg: name → ordinal → raw-id round-trip.
-  const bluesOdResult = resolveGen3EnumNameToRawId('FUZZ_TYPE', 'Blues OD');
-  if (bluesOdResult.status !== 'resolved') {
-    failed.push(`resolveGen3EnumNameToRawId("FUZZ_TYPE","Blues OD"): expected "resolved", got "${bluesOdResult.status}"`);
-  } else {
-    if (bluesOdResult.rawId !== 523) {
-      failed.push(`Blues OD raw-id: expected 523 (FM9 capture-confirmed), got ${bluesOdResult.rawId}`);
-    }
-    if (bluesOdResult.ordinal !== 15) {
-      failed.push(`Blues OD ordinal: expected 15, got ${bluesOdResult.ordinal}`);
-    }
+  // Set-by-name = read-roster ORDINAL (the float32(ordinal) set value). Blues
+  // OD resolves to ordinal 15; Blackglass 7K to 36. No raw-id space.
+  const bluesOrd = resolveGen3EnumOrdinal('FUZZ_TYPE', 'Blues OD');
+  if (!('ordinal' in bluesOrd) || bluesOrd.ordinal !== 15) {
+    failed.push(`resolveGen3EnumOrdinal("FUZZ_TYPE","Blues OD"): expected ordinal 15, got ${JSON.stringify(bluesOrd)}`);
+  }
+  const bgOrd = resolveGen3EnumOrdinal('FUZZ_TYPE', 'Blackglass 7K');
+  if (!('ordinal' in bgOrd) || bgOrd.ordinal !== 36) {
+    failed.push(`resolveGen3EnumOrdinal("FUZZ_TYPE","Blackglass 7K"): expected ordinal 36, got ${JSON.stringify(bgOrd)}`);
   }
 
-  // Blackglass 7K has a read-leg label but NO captured raw-id → capture_pending.
-  const bgResult = resolveGen3EnumNameToRawId('FUZZ_TYPE', 'Blackglass 7K');
-  if (bgResult.status !== 'capture_pending') {
-    failed.push(`resolveGen3EnumNameToRawId("FUZZ_TYPE","Blackglass 7K"): expected "capture_pending", got "${bgResult.status}"`);
+  // ── BoodieTraps 2026-06-08 byte-exact oracle frames (FM3 fw 12.00 + FM9) ────
+  // Discrete select = float32(read-ordinal) @pos12, sub 09 00; continuous knob
+  // drag = float32(normalized) @pos12, sub 52 00. These are real device frames.
+  const oracle: Array<[string, number[], string]> = [
+    ['FM3 amp "Shiver Clean" ordinal 31', buildSetParameter(58, 6, 31, 0x11), 'f0000174110109003a0006000000600f04000000004bf7'],
+    ['FM3 reverb "Recording Studio A" ordinal 38', buildSetParameter(66, 0, 38, 0x11), 'f000017411010900420000000000601004000000002af7'],
+    ['FM3 amp Gain drag first (norm 0.498408)', buildSetParameterContinuous(58, 7, 0.4984084367752075, 0x11), 'f0000174110152003a000700645e7c77030000000048f7'],
+    ['FM3 amp Gain drag last (norm 0.722817)', buildSetParameterContinuous(58, 7, 0.7228167653083801, 0x11), 'f0000174110152003a00070005156479030000000074f7'],
+  ];
+  for (const [label, built, want] of oracle) {
+    if (hex(built) !== want) failed.push(`oracle frame drift: ${label}\n  ours: ${hex(built)}\n  want: ${want}`);
   }
 
   if (failed.length > 0) {

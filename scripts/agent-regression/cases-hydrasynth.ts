@@ -16,24 +16,27 @@
 import type { AgentRegressionCase } from './types.js';
 
 export const HYDRASYNTH_CASES: AgentRegressionCase[] = [
-  // System CC write: hydra_set_param against master_volume ──────────
+  // System CC write: set_system_param against master_volume ─────────
+  // STALE-CASE REWRITE 2026-06-10: the legacy hydra_set_param tool no
+  // longer exists (surface migrated to unified tools); the case
+  // demanded a nonexistent tool and failed every post-migration run.
   {
     id: 'hydrasynth-system-cc-master-volume',
     device: 'hydrasynth',
 
-    description: 'System CC: agent should call hydra_set_param for master volume. System CCs are always-on regardless of Param TX/RX mode, so this is the most predictable Hydrasynth smoke. Catches the regression where the agent reaches for hydra_set_engine_param / NRPN for a System CC (wrong tool, slower path, requires a CC-mode precondition the System CC doesnt need).',
+    description: 'System CC: agent should call set_system_param for master volume. System CCs are always-on regardless of Param TX/RX mode, so this is the most predictable Hydrasynth smoke. Catches the regression where the agent reaches for an engine-param NRPN write for a System CC (wrong path, requires a CC-mode precondition the System CC does not need).',
     prompt: "Set the master volume on the Hydrasynth to 100.",
     expectations: {
-      must_call: ['hydra_set_param'],
+      must_call: ['set_system_param'],
       max_tools: 4,
       tool_call_validators: [{
-        tool: 'hydra_set_param',
+        tool: 'set_system_param',
         check: (args) => {
           if (args.id !== 'system.master_volume') {
-            return `hydra_set_param id should be "system.master_volume", got ${JSON.stringify(args.id)}.`;
+            return `set_system_param id should be "system.master_volume", got ${JSON.stringify(args.id)}.`;
           }
           if (args.value !== 100) {
-            return `hydra_set_param value should be 100, got ${JSON.stringify(args.value)}.`;
+            return `set_system_param value should be 100, got ${JSON.stringify(args.value)}.`;
           }
           return true;
         },
@@ -69,24 +72,27 @@ export const HYDRASYNTH_CASES: AgentRegressionCase[] = [
     },
   },
 
-  // Macro write: hydra_set_macro for patch-defined controls ─────────
+  // Macro write: set_macro for patch-defined controls ───────────────
+  // STALE-CASE REWRITE 2026-06-10: hydra_set_macro no longer exists
+  // (unified set_macro replaced it); the case demanded a nonexistent
+  // tool and failed every post-migration run.
   {
     id: 'hydrasynth-macro-set',
     device: 'hydrasynth',
 
-    description: 'Macros: agent should call hydra_set_macro when the user names a macro by number (Macro 1..8 are CCs 16..23, patch-defined). Catches the regression where the agent fires raw CC bytes via a different tool.',
+    description: 'Macros: agent should call set_macro when the user names a macro by number (Macro 1..8 are CCs 16..23, patch-defined). Catches the regression where the agent fires raw CC bytes via a different tool.',
     prompt: "Set Macro 1 to 64 on the Hydrasynth.",
     expectations: {
-      must_call: ['hydra_set_macro'],
+      must_call: ['set_macro'],
       max_tools: 4,
       tool_call_validators: [{
-        tool: 'hydra_set_macro',
+        tool: 'set_macro',
         check: (args) => {
           if (args.macro !== 1) {
-            return `hydra_set_macro macro should be 1, got ${JSON.stringify(args.macro)}.`;
+            return `set_macro macro should be 1, got ${JSON.stringify(args.macro)}.`;
           }
           if (args.value !== 64) {
-            return `hydra_set_macro value should be 64, got ${JSON.stringify(args.value)}.`;
+            return `set_macro value should be 64, got ${JSON.stringify(args.value)}.`;
           }
           return true;
         },

@@ -51,6 +51,7 @@ const FUNC_SET_PRESET_NAME = AXE_FX_II_OPCODES.SET_NAME;         // 0x09
 const FUNC_GET_PRESET_NAME = AXE_FX_II_OPCODES.QUERY_NAME;       // 0x0F
 const FUNC_BLOCK_CHANNEL = AXE_FX_II_LEGACY_OPCODES.BLOCK_CHANNEL; // 0x11
 const FUNC_GET_PRESET_NUMBER = AXE_FX_II_OPCODES.PATCHNUM;       // 0x14
+const FUNC_PATCH_DUMP = AXE_FX_II_OPCODES.PATCH_DUMP;            // 0x03
 const FUNC_GET_ALL_PARAMS = AXE_FX_II_OPCODES.GET_ALL_PARAMS;    // 0x1F
 const FUNC_QUERY_STATES = AXE_FX_II_OPCODES.QUERY_STATES;        // 0x0E
 const FUNC_STORE_PRESET = AXE_FX_II_OPCODES.SAVE_PATCH;          // 0x1D
@@ -831,6 +832,56 @@ export function buildSwitchPreset(
         presetHigh,
         presetLow,
     ]);
+}
+
+/**
+ * Request a PATCH_DUMP (function 0x03) of a STORED preset slot. The
+ * device answers with the 66-frame 0x77/0x78/0x79 envelope chain of
+ * that slot's FLASH contents.
+ *
+ * Status: hardware-verified on Q8.02 (2026-06-10), with two findings:
+ *   - The response is the STORED preset, never the working buffer.
+ *   - SIDE EFFECT: the request RELOADS the stored preset into the
+ *     working buffer, discarding unsaved edits (buffer rename sent via
+ *     fn 0x09 was lost the moment this request was answered). Callers
+ *     that must preserve unsaved buffer state should use
+ *     `buildEditBufferDumpRequest` instead.
+ *
+ * MSB-first 14-bit preset number, same ordering as buildSwitchPreset
+ * (LSB-first silently fails for preset >= 128).
+ */
+export function buildPatchDumpRequest(
+    presetNumber: number,
+    opts: BuildOptions = {},
+): number[] {
+    if (!Number.isInteger(presetNumber) || presetNumber < 0 || presetNumber > 0x3fff) {
+        throw new Error(`buildPatchDumpRequest: preset number out of range (0..16383): ${presetNumber}`);
+    }
+    const modelId = opts.modelId ?? AXE_FX_II_XL_PLUS_MODEL_ID;
+    return buildEnvelope(modelId, [
+        FUNC_PATCH_DUMP,
+        (presetNumber >> 7) & 0x7f,
+        presetNumber & 0x7f,
+    ]);
+}
+
+/**
+ * Request an EDIT-BUFFER dump: function 0x03 with the `0x7F 0x7F`
+ * sentinel payload (the same convention the AM4 uses).
+ *
+ * Status: hardware-confirmed on Q8.02 (2026-06-10), three-way:
+ *   - TRACKING: two sentinel dumps taken across a live buffer rename
+ *     differ exactly where expected, proving the dump reads the
+ *     WORKING BUFFER, not a stored slot.
+ *   - NO SIDE EFFECT: unlike the slot-addressed request, the sentinel
+ *     does NOT reload anything into the buffer (rename survived).
+ *   - ROUND-TRIP: pushing the 66-frame response back to the device
+ *     restored the dumped buffer state byte-for-byte (name re-read OK).
+ * Captures: samples/captured/hw132/ (sentinel-eb-{alpha,bravo}.syx).
+ */
+export function buildEditBufferDumpRequest(opts: BuildOptions = {}): number[] {
+    const modelId = opts.modelId ?? AXE_FX_II_XL_PLUS_MODEL_ID;
+    return buildEnvelope(modelId, [FUNC_PATCH_DUMP, 0x7f, 0x7f]);
 }
 
 /**

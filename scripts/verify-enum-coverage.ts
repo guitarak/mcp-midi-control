@@ -38,14 +38,18 @@ import {
   resolveEnumAlias,
   type CrossDeviceEnumRow,
 } from '../packages/core/src/protocol-generic/cross-device-enums.js';
-import { REVERB_TYPES, DRIVE_TYPES } from 'fractal-midi/am4';
+import { TYPE_BINARY_IDS } from '@mcp-midi-control/fractal-modern/gen3BodyTables.js';
 
-// Per-block gen-3 enum vocabulary. A block present here has a validated
-// gen-3 name set; a block ABSENT here is capture-blocked and must keep
-// axeFxIII null.
+// Per-block gen-3 enum vocabulary, validated against the DEVICE-TRUE roster
+// (fractal-modern TYPE_BINARY_IDS — the file-stored names the decoder emits,
+// byte-validated across 384 III factory presets and corroborated by FM9
+// hardware SET echoes). This is the authority: the prior gate validated gen-3
+// names against AM4's REVERB_TYPES/DRIVE_TYPES (comma form), which let a
+// wrong-form axeFxIII value ("Room, Small" vs the device's "Small Room") pass.
+// A block ABSENT here is capture-blocked and must keep axeFxIII null.
 const GEN3_VOCAB: Readonly<Record<string, ReadonlySet<string>>> = {
-  reverb: new Set(REVERB_TYPES),
-  drive: new Set(DRIVE_TYPES),
+  reverb: new Set(Object.values(TYPE_BINARY_IDS.Reverb)),
+  drive: new Set(Object.values(TYPE_BINARY_IDS.Drive)),
 };
 
 let failures = 0;

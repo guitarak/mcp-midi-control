@@ -1728,7 +1728,7 @@ export const FM9_PARAMS: readonly Param[] = [
   { family: 'REVERB', paramId: 6, name: 'REVERB_SCENEIGNORE', displayLabel: 'Scene Ignore', unit: 'enum' }, // inferred from Fractal convention; device-true 6 (III 60 would mis-address)
   { family: 'REVERB', paramId: 7, name: 'REVERB_KILLDRY', displayLabel: 'Kill Dry', unit: 'enum' }, // inferred from AxeEdit III XML controlType; device-true 7 (III 68 would mis-address)
   { family: 'REVERB', paramId: 10, name: 'REVERB_TYPE', unit: 'enum' }, // inferred from AM4; device-true 10 (III 0 would mis-address)
-  { family: 'REVERB', paramId: 11, name: 'REVERB_TIME', displayLabel: 'Time', unit: 'seconds', displayMin: 0.1, displayMax: 100 }, // inferred from AM4; device-true 11 (III 1 would mis-address)
+  { family: 'REVERB', paramId: 11, name: 'REVERB_TIME', displayLabel: 'Time', unit: 'seconds', displayMin: 0.1, displayMax: 100 }, // range [0.1,100]s + LINEAR taper HARDWARE-CONFIRMED (FM9 fw 11.0 sweep 2026-06-09: norm->sec fit 99.9*n+0.1, residual 0.003s, reproduced by block-read bursts); device-true 11
   { family: 'REVERB', paramId: 12, name: 'REVERB_HICUT', displayLabel: 'High Cut Frequency', unit: 'hz', displayMin: 200, displayMax: 20000 }, // inferred from AM4; device-true 12 (III 2 would mis-address)
   { family: 'REVERB', paramId: 13, name: 'REVERB_HFRATIO', displayLabel: 'High Freq Decay Time', unit: 'numeric' }, // inferred from AxeEdit III XML controlType; device-true 13 (III 3 would mis-address)
   { family: 'REVERB', paramId: 14, name: 'REVERB_DIFFUSION', displayLabel: 'Wall Diffusion', unit: 'percent', displayMin: 0, displayMax: 100 }, // inferred from AM4; device-true 14 (III 4 would mis-address)

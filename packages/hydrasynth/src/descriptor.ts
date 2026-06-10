@@ -19,12 +19,13 @@
  *   - has_channels: false (no per-block X/Y or A/B/C/D — modules are
  *     always-on synthesis stages, not bypassable effects)
  *   - has_macros: true (8 macro CCs; surface via blocks.macros.*)
- *   - supports_save: false in v1 (save-to-slot envelope not yet wired
- *     into the descriptor — legacy apply_patch covers it until
- *     v1 follow-up extends writer.applyPreset)
- *   - supports_factory_restore: false (Hydrasynth has "init patch"
- *     instead — exposed via legacy hydra_apply_init, not the unified
- *     restore_defaults primitive yet)
+ *   - supports_save: false BY DESIGN. The Hydrasynth is a voice-classed
+ *     synthesizer: its preset is a single NRPN patch dump, not a
+ *     guitar-signal-chain of blocks/slots/scenes. So patch authoring +
+ *     save live in the dedicated `apply_patch` / `init_patch` tools (the
+ *     patch-dump + Write Request envelope is hardware-confirmed there), NOT
+ *     in the guitar-shaped unified apply_preset/save_preset. This is a
+ *     deliberate two-surface split (synth vs guitar), not a pending wire.
  *   - supports_lineage: false (Fractal lineage corpus doesn't apply)
  *
  * Unified surface coverage (v1):
@@ -33,7 +34,7 @@
  *   ✗ apply_preset (legacy apply_patch covers — deferred)
  *   ✗ get_param / get_params (no decoded read primitive)
  *   ✗ scan_locations (Hydrasynth patches are full SysEx dumps, no name-only query)
- *   ✗ switch_scene / set_bypass / set_block / restore_defaults — no-op for synth
+ *   ✗ switch_scene / set_bypass / set_block — no-op for synth
  */
 
 import type { DeviceDescriptor, PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';

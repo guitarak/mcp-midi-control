@@ -433,7 +433,7 @@ export const presetSceneShape = z.object({
 
 export const routingEdgeShape = z.object({
   from: z.string().describe(
-    'Source block id. Either the explicit `id` on a slots[] entry, or the auto-derived `<block_type>_<instance>` (e.g. amp_1, drive_2).',
+    'Source block id. Either the explicit `id` on a slots[] entry, or the auto-derived id: the BARE block type for a single instance (`amp`, `delay`; `amp_1` is accepted as an alias), `<block_type>_<instance>` from the second instance up (`amp_2`).',
   ),
   to: z.string().describe(
     'Destination block id. Same naming rules as `from`.',

@@ -1,6 +1,6 @@
 # Testing: VP4
 
-> The VP4 **reads** are implemented (get_param, get_preset) and hardware-unverified. **Writes are gated** -- the serial block-placement wire shape is undecoded, so the tool refuses all writes until a capture confirms the path. See [captures-vp4.md](captures-vp4.md) for what unlocks writes.
+> The VP4 **reads** are implemented (get_param, get_preset) and hardware-unverified. **First writes ship too**, decoded byte-exact from a community capture (fw 4.03) and untested on hardware: continuous-knob set_param (raw wire values, %/ms calibration pending), set_bypass, and save_preset. Block placement (set_block / apply_preset), scene switching, and enum/TYPE sets stay **gated** until their wire shapes are captured. See [captures-vp4.md](captures-vp4.md) for what unlocks the rest.
 
 See [README.md](README.md) for setup.
 

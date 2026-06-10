@@ -118,10 +118,13 @@ interface FractalBlock {
   /**
    * Stable identifier for this block within the preset. Used by
    * `routing` and `scenes` to reference this specific block. If
-   * omitted, the descriptor generates one from `block_type +
-   * instance` (e.g. `amp_1`, `drive_2`). Provide explicitly when
-   * you have two instances of the same type and want predictable
-   * names, e.g. `id: 'rhythm_amp'` / `id: 'lead_amp'`.
+   * omitted, the descriptor generates one from `block_type` +
+   * `instance`: the BARE block type for a single instance (`amp`,
+   * `drive`; the engine also accepts `amp_1` as an alias for it),
+   * and `<block_type>_<instance>` from the second instance up
+   * (`amp_2`). Provide explicitly when you have two instances of
+   * the same type and want predictable names, e.g.
+   * `id: 'rhythm_amp'` / `id: 'lead_amp'`.
    */
   id?: string;
 
@@ -183,7 +186,11 @@ interface FractalBlock {
 }
 
 interface RoutingEdge {
-  /** Source block's `id` (or auto-generated `<block_type>_<instance>`). */
+  /**
+   * Source block's `id` (or the auto-generated id: bare `block_type`
+   * for a single instance — `amp_1` accepted as alias — and
+   * `<block_type>_<instance>` from instance 2 up).
+   */
   from: string;
   /** Destination block's `id`. */
   to: string;

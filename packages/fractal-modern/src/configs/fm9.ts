@@ -55,9 +55,12 @@ export const FM9_CONFIG: FractalModernConfig = {
     'pending one owner round-trip of our own builder.',
   params_by_family: FM9_PARAMS_BY_FAMILY,
   device_true_roster: true,
-  // Device-true amp model names captured from FM9 hardware (read-leg, partial).
-  // The amp roster is FM9-specific, so the family-shared overlay leaves it
-  // numeric; this binds the captured ordinals. See enumOverrides.ts.
+  // Device-true FM9 model rosters, mined from the FM9-Edit effectDefinitions
+  // cache (fw 11.0) by anchored walk and validated against hardware ordinals:
+  // amp 331 (@65/179/264), drive/FUZZ 86 (@15/36), reverb 79 (@16/45). The
+  // ordinal IS the discrete-SET value, so these are read labels AND settable by
+  // name across the whole roster. FM9-specific (the family-shared overlay leaves
+  // these numeric for the III/FM3). See enumOverrides.ts / rosters.generated.ts.
   enum_overrides: FM9_ENUM_OVERRIDES,
   canonical_terms: {
     block: 'block',
@@ -74,8 +77,12 @@ export const FM9_CONFIG: FractalModernConfig = {
       'gen-3 SysEx protocol and a 6×14 grid with 8 scenes and A–D channels.',
       'The param catalog is FM9-true (mined from FM9-Edit\'s own binary, so',
       'paramIds address the right knob); block effect IDs are the III\'s,',
-      'which are shared across the gen-3 family. The fn=0x01 SET envelope is',
-      'not yet FM9-hardware-confirmed, so confirm every write on the device.',
+      'which are shared across the gen-3 family. Amp, drive, and reverb types',
+      'are settable AND readable BY NAME using the FM9\'s own model names',
+      '(e.g. amp "Texas Star Clean", drive "Blues OD", reverb "Music Hall"):',
+      'the full device-true rosters are wired, not just a few captured points.',
+      'The fn=0x01 SET envelope is not yet FM9-hardware-confirmed, so confirm',
+      'every write on the device.',
     ].join('\n'),
   },
   example_spec: WIDE_GRID_EXAMPLE_SPEC,

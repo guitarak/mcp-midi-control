@@ -112,7 +112,7 @@ it and ship the correction.
 The current commit covers 40 amps and 33 drives, biased toward the
 famously-tricky ones (Plexis, Marshalls, Fenders, Mesas, Soldano,
 Diezel, Friedman, Vox; Klon, TS808, RAT, Big Muff, OCD). It does NOT
-cover the full amp catalog of 326 amps (AM4) / 259 amps (Axe-Fx II) /
+cover the full amp catalog of 326 amps (AM4) / 266 amps (Axe-Fx II) /
 ~1000 (Axe-Fx III). The descriptor wiring treats a missing entry as
 "no calibration data available" and emits a generic loudness note
 based on amp family.

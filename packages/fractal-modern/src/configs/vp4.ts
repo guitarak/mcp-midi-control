@@ -7,14 +7,16 @@
  * A-D channels, and A01..Z04 preset locations (NOT the gen-3 6x14 grid /
  * 8 scenes). It has no amp/cab section.
  *
- * VERIFICATION / GATING. Only the fn=0x12 mode switch is wire-confirmed on
- * VP4 hardware. The fn=0x01 param read/write path is INFERRED from the AM4
- * analogy and the shared gen-3 codec, and the serial block-placement wire
- * shape is undecoded. So this config ships READS (the fn=0x1F block poll,
- * effect-id addressed, grid-agnostic) but GATES every device-state write
- * (`writes_gated: true`): set_param / set_block / apply_preset / save_preset /
- * rename / set_bypass / switch_preset / switch_scene refuse with a clear
- * "untested on hardware" message until a VP4 capture lands. community-beta.
+ * VERIFICATION / GATING. The gen-3 envelope/checksum/effect-ID layer and the
+ * VP4 fn=0x01 frame are confirmed byte-exact from community captures (fw 4.03).
+ * The VP4 SET frame is its OWN shape (no sub-action, a `tc` sub-opcode, a
+ * swapped-septet float — see `fractal-midi/vp4/setParam.ts`). This config ships
+ * READS plus two byte-exact, community-beta (untested-on-hardware) writes:
+ * `set_bypass` and `save_preset` (see `write_allowlist`). Every OTHER write
+ * stays GATED (`writes_gated: true`): `set_param` (per-param value calibration +
+ * discrete/continuous distinction undecoded), `set_block` (placement value→slot
+ * math undecoded), `switch_scene` (value↔scene mapping unconfirmed), plus
+ * apply_preset / rename / switch_preset refuse with a clear message. community-beta.
  *
  * CATALOG. paramIds are VP4-true (mined from VP4-Edit's own binary; reusing
  * the III's mis-addresses 99.1% of shared params — see
@@ -85,16 +87,27 @@ export const VP4_CONFIG: FractalModernConfig = {
   preset_count: 104,
   preset_location_format: /^[A-Z]0?[1-4]$/,
   support_tier: 'community-beta',
-  // Reads work; writes are gated until VP4 hardware confirms the param/block
-  // write path and the serial placement wire shape is decoded.
+  // Reads work; most writes gated. set_bypass + save_preset are decoded
+  // byte-exact from a community capture (fw 4.03, 2026-06-09) and ship as
+  // community-beta (untested on hardware). set_param (calibration + discrete/
+  // continuous undecoded), set_block (placement value-math), and switch_scene
+  // (value mapping) stay gated pending more captures.
   writes_gated: true,
+  // Decoded byte-exact from a community capture (fw 4.03). Continuous set_param
+  // works (raw 0..65534 wire value → normalized float; DISCRETE/enum set refuses,
+  // no captured evidence). set_block (placement value→slot math) and switch_scene
+  // (value mapping) stay gated — genuinely undecoded, not just untested.
+  write_allowlist: ['set_param', 'set_params', 'set_bypass', 'save_preset'],
   verification:
-    'Model byte 0x14 is wire-confirmed (the fn=0x12 mode switch decoded on VP4 hardware). The ' +
-    'gen-3 effects envelope/checksum/septet/dispatcher layer is shared with the III, so per-block ' +
-    'fn=0x1F reads reuse it. The fn=0x01 param/block WRITE path is inferred from the AM4 analogy, ' +
-    'NOT confirmed on VP4, and the serial block-placement wire shape is undecoded, so device-state ' +
-    'writes are GATED (reads + mode switch only). Param catalog is VP4-true (mined from VP4-Edit\'s ' +
-    'own tables; paramIds are device-specific, not reused from the III). No amp/cab.',
+    'Model byte 0x14 wire-confirmed. The gen-3 envelope/checksum/septet layer and the block ' +
+    'effect-ID table are confirmed on VP4 hardware (community captures, fw 4.03). The VP4 fn=0x01 ' +
+    'WRITE frame is decoded byte-exact (its own shape: no sub-action, a tc sub-opcode, a ' +
+    'swapped-septet float). set_param (continuous knobs; raw 0..65534 value, %/ms calibration ' +
+    'pending — enum/type set refuses), set_bypass, and save_preset ship as community-beta (untested ' +
+    'on hardware, confirm on the front panel). set_block / apply_preset (placement value→slot math ' +
+    'undecoded — cannot build a move) and switch_scene (value↔scene mapping unconfirmed) stay GATED. ' +
+    'Param catalog ' +
+    'is VP4-true (mined from VP4-Edit; paramIds device-specific). No amp/cab.',
   params_by_family: VP4_PARAMS_BY_FAMILY,
   device_true_roster: true,
   // The mined catalog carries DISTORT (amp) + CABINET params from the shared
@@ -114,12 +127,17 @@ export const VP4_CONFIG: FractalModernConfig = {
     // (writes_gated), so the family-default "writes attempt a wire send" is
     // wrong here. Keep it consistent with device_note below.
     beta_status: [
-      'COMMUNITY BETA, READS ONLY. The VP4 param/block write path is',
-      'inferred-not-confirmed and the serial block-placement wire shape is',
-      'undecoded, so every device-state write refuses with an "untested on',
-      'hardware" message (see device_note). Reads (get_param / get_preset)',
-      'work. Do not present any write as applied; the refusal is by design',
-      'until a hardware capture lands.',
+      'COMMUNITY BETA. Reads work. WRITES decoded byte-exact from a community',
+      'capture, shipping UNTESTED (confirm on the VP4 front panel):',
+      '• set_param / set_params — CONTINUOUS knobs only; the value is the raw',
+      '  0..65534 wire field (NOT calibrated to %/ms yet). Setting an enum/TYPE',
+      '  selector refuses (no captured evidence).',
+      '• set_bypass, save_preset.',
+      'GENUINELY UNDECODED, still gated (refuse): set_block / apply_preset',
+      '(block-placement value→slot math is unknown — we cannot build a move),',
+      'switch_scene (value↔scene mapping), switch_preset, rename. These are not',
+      'just untested — the wire bytes are undecoded. Do not present a gated',
+      'write as applied; do not present a continuous value as an exact %/ms.',
     ].join('\n'),
     device_note: [
       'This is the Fractal VP4 (community beta). It reuses the Axe-Fx III',
@@ -127,13 +145,13 @@ export const VP4_CONFIG: FractalModernConfig = {
       'scenes, A-D channels, A01..Z04 preset locations, and NO amp/cab.',
       'The param catalog is VP4-true (mined from VP4-Edit\'s own binary).',
       '',
-      'WRITES ARE GATED. Only the fn=0x12 mode switch is wire-confirmed on',
-      'VP4 hardware; the param/block write path is inferred and the serial',
-      'block-placement wire shape is undecoded. Reads (get_param /',
-      'get_preset) work; every write (set_param, set_block, apply_preset,',
-      'save_preset, rename, set_bypass, switch_preset, switch_scene) refuses',
-      'with an "untested on hardware" message. Do not present a write as',
-      'applied; tell the user VP4 writes are pending a hardware capture.',
+      'WRITES (community beta, byte-exact captured wire shape, untested on',
+      'hardware — tell the user to confirm on the front panel):',
+      'set_param/set_params (CONTINUOUS knobs; value is the raw 0..65534 wire',
+      'field, not %/ms — enum/TYPE set refuses), set_bypass, and save_preset',
+      '(needs explicit save intent). STILL GATED (wire bytes undecoded, not just',
+      'untested): set_block / apply_preset (block placement), switch_scene,',
+      'switch_preset, rename. Do not present a gated write as applied.',
     ].join('\n'),
   },
   example_spec: VP4_EXAMPLE_SPEC,

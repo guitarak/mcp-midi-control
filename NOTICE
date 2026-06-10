@@ -49,6 +49,18 @@ when distributing in Object form.
   - zod (MIT License)
     https://github.com/colinhacks/zod
 
+This product also includes gen-3 (Axe-Fx III / FM3 / FM9) protocol
+data derived from:
+
+  - fractal-syx-codec  (Apache License, Version 2.0)
+    Copyright 2026 Andrew Mercurio ("BoodieTraps")
+    https://github.com/drewmerc302/fractal-syx-codec
+    The gen-3 preset-file format spec (FORMAT.md) and the read-ordinal
+    effect-type roster tables. The Huffman/CRC codec here is a clean-
+    room reimplementation from that spec; the roster name tables are
+    derived from its data, independently cross-validated against our
+    own hardware captures.
+
 Additional development-only dependencies (TypeScript, tsx, jest,
 etc.) are not redistributed in Object form and are listed in
 package.json.

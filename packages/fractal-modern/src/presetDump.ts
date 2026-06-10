@@ -48,12 +48,22 @@
  * are a chunk discriminator (the `mid=6, byte_count=2` field per the
  * descriptor table); the remaining 3072 bytes are 1024 ushorts packed
  * 3 bytes/ushort (low septet, mid septet, high septet -> little-endian
- * 16-bit value). Inner per-scene / per-block decode is the subject of
- * future work; this module treats chunk bodies as opaque blobs except for
- * the preset-name word decode below.
+ * 16-bit value). This module is the FRAMING layer only: it reassembles the
+ * chunk ushort image and decodes the preset name (below), but treats the
+ * rest of the chunk body as an opaque blob. The inner per-scene /
+ * per-block decode is NOT future work: it ships in `presetBody.ts`
+ * (`decodeGen3Body` / `decodeGen3PresetDump`), which Huffman-decompresses
+ * the reassembled image into the flat `raw_patch` and decodes the grid,
+ * placed blocks, per-channel effect types, amp model + knobs, modifiers,
+ * and scene state (cross-validated against the reference decoder over all
+ * 384 III factory presets). presetDump's own scope stays framing + name.
  *
- * Footer payload bytes (3): believed to be a content hash (parallel to
- * AM4's and II's 0x79 footers). Treat as opaque for round-trip purposes.
+ * Footer payload bytes (3): the uint16 XOR of every little-endian word of
+ * the raw_patch image, septet-packed (`[xor&0x7f, (xor>>7)&0x7f,
+ * (xor>>14)&0x7f]`). Proven byte-exact across the III factory banks (N=384)
+ * and an FM9 export by `computeRawPatchXor` + `scripts/verify-gen3-authoring.ts`.
+ * Authoring recomputes it on any edit (`encodeFooterXor` in presetAuthor.ts);
+ * a plain parse→serialize round-trip preserves it verbatim.
  *
  * READ DIRECTION WIRE-VERIFIED (FM9 fw 11.00, 2026-06-04). The
  * device→host dump was previously only structurally verified (III factory
@@ -116,7 +126,8 @@ export interface ParsedPresetDump {
   readonly headerPayload: Uint8Array;
   /** N x 3074-byte chunk payloads. Inner structure is opaque. */
   readonly chunkPayloads: readonly Uint8Array[];
-  /** 3 bytes between 0x79 and its checksum. Believed to be a content hash. */
+  /** 3 bytes between 0x79 and its checksum: septet-packed uint16 XOR of the
+   *  raw_patch words (see `computeRawPatchXor` / `encodeFooterXor`). */
   readonly footerPayload: Uint8Array;
 }
 

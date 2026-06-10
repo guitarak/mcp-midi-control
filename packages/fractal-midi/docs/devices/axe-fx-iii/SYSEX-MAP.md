@@ -50,10 +50,21 @@ Checksum implementation: `src/shared/checksum.ts`.
 Notably absent, operations that exist in other Fractal devices but
 are NOT in the III's third-party spec:
 
-- **No `SET_PRESET_NUMBER` / `SWITCH_PRESET` function.** Remote preset
-  switching on the III is via standard MIDI Program Change messages
-  (PC), not SysEx. The III does NOT accept "switch to preset N" as a
-  SysEx command from a third-party device.
+- **No *documented* `SET_PRESET_NUMBER` / `SWITCH_PRESET` function.** The
+  documented remote-preset-switch path is standard MIDI Program Change +
+  Bank Select (PC), not SysEx, and that is what the codec's default
+  `switch_preset` (`buildSwitchPresetPC`) emits. **But the gen-3 editor
+  DOES switch presets over SysEx via an undocumented `fn=0x01 sub=0x27`**
+  (preset# = 14-bit LE septet int at value pos 12; blockId/paramId zero).
+  FM3-Edit capture, live-confirmed on FM3 fw 12.00 hardware (BoodieTraps
+  2026-06-10: a server-issued frame moved the unit 475→100). Exposed as
+  `buildSwitchPresetSysEx` (not the default; PC stays the default path).
+  Note the pos-12 value is a PLAIN int here — int-or-float by sub-action
+  (float32 for 0x09/0x52 SET) — and LITTLE-endian, unlike the BIG-endian
+  preset# in the `fn=0x03` dump request.
+  **Do NOT use `fn=0x3C`** ("AxeFxControl / wiki set-preset"): it HARD-NACKs
+  on FM3 (reply `fn=0x64` multipurpose, result `0x05` — the same
+  received-but-rejected signature as the legacy `fn=0x02` mistake).
 - **No `SET_PARAMETER_VALUE` function.** Per-block parameter writes
   are not exposed in the spec. The Axe-Fx II spec exposes `0x02
   SET_PARAMETER_VALUE`; the III deliberately omits it.
@@ -208,18 +219,23 @@ The list below is preserved as a historical record:
 
 ## 0x01 PARAMETER_SETGET, byte-verified from public captures 🟢 SET / 🟡 GET
 
-> **FM9 hardware confirmation (2026-06-03).** A community FM9 capture (model `0x12`,
-> FW 11.00) of a Reverb TYPE change made in FM9-Edit contains the typed SET, and it is
-> **byte-exact** to `buildSetParameter(effectId=66, paramId=10, value=524)` — so the
-> `sub 09 00` typed-SET wire shape is now confirmed on real gen-3 hardware (not just III
-> public captures). The capture also reveals: (1) a second SET sub-action `52 00`
-> (mouse-drag) whose value is a **5-septet-LE float32 normalized [0,1]** at bytes 12–16
-> (vs the typed form's 3-septet int at 15–17); (2) the **device's 60-byte SET value-echo
-> response** (effectId@8–9, paramId@10–11, 5-septet float32 @12–16, then a descriptor
-> block) — the synchronous SET response previously noted as "not in any public capture".
-> Parsers: `decode5SeptetFloat32`, `parseGen3SetValueEcho` (golden-tested). NOTE: enum/type
-> params carry the **raw enum id** in the SET (524 = Medium Spring), a different space from
-> the `0x75` dump's **ordinal index** (16); the name↔raw-id dictionary is not yet mined.
+> **CORRECTED 2026-06-08 (FM3 fw 12.00 lldb, BoodieTraps + our FM9 re-decode).** The SET
+> value field is a **5-septet LE float32 at bytes 12-16** for BOTH sub-actions — there is
+> NO separate "raw enum id" space. A DISCRETE type/model select (`sub 09 00`) carries
+> `float32(read-ordinal)`; a CONTINUOUS knob (`sub 52 00`) carries `float32(normalized 0..1)`.
+> The earlier "raw enum id 524, a different space from the dump ordinal 16" reading was a
+> MISREAD: float32(16.0) = septets `[00,00,00,0c,04]`, whose nonzero high septets land at
+> bytes 15-16 where a 3-septet `packValue16` would sit, so `pv16` read 524 — coincidental
+> alignment that only holds when the ordinal's low three septets are zero (e.g. powers of
+> two). It is LOSSY: ordinals 16,17,18,19 all read 524 at pos 15. Our own FM9 reverb
+> capture's SET frame decodes to `float32 16.0` at pos 12 (Medium Spring = ordinal 16), and
+> the device's 60-byte echo returns `16/78 = 0.20512819` (index/(count-1)) — the device
+> received ordinal 16. **So the read-roster ordinal IS the set value; set-by-name resolves
+> name → ordinal off the rosters we already ship, AMPS INCLUDED, no capture.** Builders:
+> `buildSetParameter` (discrete, `float32(ordinal)`), `buildSetParameterContinuous`
+> (`52 00`, `float32(normalized)`); a bare `52 00` stream commits with no `56 00` begin-
+> gesture. Parsers: `decode5SeptetFloat32`, `parseSetGetParameterResponse` (reads pos 12),
+> `parseGen3SetValueEcho`. Byte-exact vs the FM3 amp/reverb + FM9 oracle frames.
 
 **Status (2026-05-18, PIVOT).** The III's parameter-write
 opcode is **`fn=0x01`** with a 2-byte sub-action discriminator, NOT
@@ -658,7 +674,7 @@ END   F0 00 01 74 12 76 [cs] F7                                        (8 B)
 > channel rather than getting a silent guess. `get_preset` reads the channel-A copy
 > (`paramId < stride`) and warns that per-channel params are reported as channel A.
 > The old code's `values[paramId]` was silently "channel A only". The write path
-> (`set_param`, raw-id) is unaffected.
+> (`set_param` = `float32(ordinal)`/`float32(normalized)` at pos 12) is unaffected.
 
   **Continuous-param SET (mouse-drag), FM9-confirmed 2026-06-04:** the same capture
   byte-anchors the continuous-value write (prior FM9 SET confirmation was an enum/type
@@ -749,6 +765,41 @@ IN   F0 00 01 74 [model] 79 [3B] [cs] F7                              (11 B) DUM
   not yet wired.
 - Full decode + evidence is in the maintainer's private session notes.
 
+### Preset envelope spec: byte-identical to the II, footer = XOR-fold (Ghidra-decoded, 2026-06-09)
+
+Mining the Axe-Edit III binary's envelope descriptor tables and its preset
+RECEIVE path (`ghidra-axe-edit-iii-dump-descriptors.txt` +
+`ghidra-axe-edit-iii-preset-receiver.txt` + `ghidra-axe-edit-iii-store-preset.txt`)
+settled three structural questions:
+
+- **The III preset-binary (0x77/0x78/0x79) descriptor tables are byte-identical
+  to the II's, record for record** (`(tag, mid, byte_count)` stride-12 tables:
+  0x77 head `(0,6,1)+(1,7,1)+(2,8,3)`, 0x78 chunk `(0,6,2)+(1,8,3072)` = 1024
+  ushorts x 3 septet bytes, 0x79 footer `(0,6,3)`). The parser selects gen-3 vs
+  older-generation tables by the model byte (`>= 0x10` vs `< 0x10`). Note: the
+  descriptor dump's OPENING table pair, once mislabeled as the preset envelope,
+  is actually the fn=0x75 broadcast-body pair (gen-3 256 ushorts/frame vs gen-2
+  64).
+- **The 0x79 footer value is a 16-bit XOR-fold of the de-framed body words.**
+  The editor's receive path XOR-folds the assembled ushort buffer and rejects
+  on mismatch; this matches the footer XOR already shipping in
+  `packages/fractal-modern/src/presetHuffman.ts` (validated across III + FM9
+  factory presets). It is a separate layer from the inner raw-patch CRC.
+  Cookbook: [[xor-fold-hash]].
+- **No editor-side store hash exists.** The store-to-device flow re-emits the
+  `.syx` file's 0x77/0x78/0x79 bytes verbatim, patching only the 0x77 header's
+  preset-index field; the footer travels through untouched.
+
+The same dispatcher mine also bound two previously unknown **multi-frame dump
+families** (decoded from the binary, hardware-unverified): request `fn=0x40`
+triggers a `0x67/0x68/0x69` head/body/tail dump (response-only family, no
+editor emitter; the strong candidate for the device's param-definition /
+library dictionary), and request `fn=0x1a` or `fn=0x40` triggers a
+`0x5a/0x5b/0x5c` dump (system-data / footswitch-config candidate; head length
+septet-coded at bytes 10-11, 256-unit chunks). One captured connect-and-sync
+session would bind their semantics; the harvest script's `--experimental` flag
+sends both requests and records the replies.
+
 ### Enum value labels DO cross the wire (septet-packed, FM9-confirmed 🟢)
 
 Correcting the earlier "labels are device-resident, never on the wire" conclusion: enum
@@ -758,12 +809,13 @@ bits-=8; emit (acc>>bits)&0xff}` over `frame[5 .. len-2]`. A one-byte misalignme
 (starting at byte 6) yields garbage — that error is why prior full-capture scans reported
 "zero labels."
 
-- **WRITE leg {raw-id → name} byte-confirmed:** a typed SET (`fn=0x01 sub=0x09`, 23B OUT)
-  carries the **raw enum id** in its value field; the device's **60B IN response** carries
-  that value's **name** in the septet layer. Captured pairs: reverb 524=`Medium Spring`,
-  529=`Music Hall`; drive 523=`Blues OD` (all agree with AM4 ordinal-table names). Amp
-  (eff=58) echoes the ordinal numerically; the amp model NAME comes via `fn=0x01 sub=0x1a`
-  (getParameterInfo current-value label) instead.
+- **WRITE leg = float32(read-ordinal) — NO raw-id space (corrected 2026-06-08):** a typed
+  SET (`fn=0x01 sub=0x09`, 23B OUT) carries `float32(read-ordinal)` at bytes 12-16; the
+  device's 60B IN echo returns that value's name. The earlier "raw enum id" pairs
+  (reverb 524/529, drive 523) were `float32(ordinal)` misread at pos 15: 524 = float32(16),
+  529 = float32(40) (NOT 45 — pos-15 is lossy), 523 = float32(14). Set-by-name uses the
+  read ordinal directly; amps select the same way (`float32(ordinal)`), no `sub=0x1a`
+  runtime fetch needed.
 - **Value LISTS:** `fn=0x01 sub=0x2e` IN dumps a param's full value list as positional
   32-char fields; `sub=0x2a` dumps the cab/IR browser list; `sub=0x1f` the modifier
   sources; `sub=0x01` block instance names.
@@ -774,9 +826,10 @@ bits-=8; emit (acc>>bits)&0xff}` over `frame[5 .. len-2]`. A one-byte misalignme
   264=`SV Bass 1`, 65=`SV Bass 2`, 179=`Texas Star Clean` (names match the tester's
   notes); REVERB (eff=66 pid=10) 1=`Medium Room`, 16=`Medium Spring`, 45=`Music Hall`;
   DRIVE (eff=118 pid=0) 15=`Blues OD`, 36=`Blackglass 7K`; FILTER (eff=114 pid=0)
-  6=`Peaking`. These are READ-leg ordinals — NOT the SET raw-id (e.g. "Music Hall"
-  reads as ordinal 45 but SET-writes raw-id 529). Partial (only swept values); the full
-  amp roster still needs the Type-dropdown sweep.
+  6=`Peaking`. The read ordinal IS the SET value (`float32(ordinal)`): "Music Hall" reads
+  ordinal 45 and SET-writes `float32(45)`. Partial (only swept values); the full FM9 amp
+  roster (amp ordinals are device-specific) still needs a Type-dropdown sweep to NAME the
+  unswept ordinals, but set-by-name itself is unblocked for every named type.
 - **To harvest full per-type tables:** open each block's *Type dropdown* (forces a sub=0x2e
   list dump per param), or re-mine the editor resources now that the 32-char septet format
   is known. The block-PANEL-open capture only yields current-value + cab-IR lists.
@@ -792,7 +845,7 @@ block-edit ops. All are `fn=0x01` with a sub-action byte at position 6; the
 | sub | op | payload | status |
 |---|---|---|---|
 | `0x32` | block INSERT | effectId @8-9, gridPos @12-13 | matched (0x10/0x11/0x12) |
-| `0x30` | cell SELECT (insert companion) | gridPos @12-13 | matched |
+| `0x30` | cell RESET / CLEAR (also the insert companion) | gridPos @12-13 | matched; semantics Ghidra-anchored (see the 2026-06-09 mine section below) |
 | `0x26` | STORE / save-to-location | presetNum @12-13 (LSB-first) | matched |
 | `0x35` | routing / connect | 26-byte frame; b21/b22/b23 encode src+dest cell | matched (6-row + 4-row) |
 
@@ -849,6 +902,94 @@ Key structural differences:
 - 6-row b23 is centered at row 3 with mod-4 wrap; 4-row is a flat `(destRow−1)×32` linear map.
 
 Captures archived: `samples/captured/fm3-routing-probe-*.json` (gitignored).
+
+### Ghidra-decoded write surface, 2026-06-09 actions-and-shapes mine (decoded / hardware-unverified)
+
+Source: the full decompile mine of the Axe-Edit III binary's fn=0x01
+builder callers and standalone-fn emitters
+(`ghidra-axe-edit-iii-actions-and-shapes.txt`, 25,980 lines; charted
+table in the maintainer's private mine notes plus
+`iii-subaction-table.json`). Everything below is FACT-tier in the
+Ghidra sense (string/symbol-anchored emission sites, exact field
+writes), decoded with **no hardware confirmation**. Builders ship
+community-beta in `src/axe-fx-iii/setParam.ts` with byte goldens in
+`test/axe-fx-iii/subactions.test.ts`.
+
+#### Block clear (fn=0x01 sub=0x30, companion sub=0x33)
+
+The editor's "Clearing preset..." routine (`FUN_140218f80`, dump
+L9821-9976) loops gridPos 0..0x53 (84 = 6x14 cells) and emits per cell:
+
+```
+CLEAR     F0 00 01 74 <model> 01 30 00 00 00 00 00 <gp:2> 00 00 00 00 00 00 00 <cks> F7
+COMPANION F0 00 01 74 <model> 01 33 00 00 00 00 00 <gp:2> 00 00 00 00 00 00 00 <cks> F7
+```
+
+blockId14 = paramId14 = 0; the cell index rides in the value32 field as
+a raw uint32 (NOT a float32, unlike the SET ops). Thin helper
+`FUN_1403403e0` (dump L22283-22301) confirms the field map. This grounds
+the semantics of the sub=0x30 frame already captured live as the
+block-insert "cell SELECT companion" (table above): it is the cell
+reset/clear (the editor clears the target cell before inserting).
+The sub=0x33 companion's own semantics are uncharted ("clear-preset
+companion step"); the clear loop always sends the pair, the insert
+transaction sends 0x30 alone. Note the loop bound is 0x54 for ALL model
+bytes including FM3 (4x12 = 48 cells), so the index space may be a
+model-agnostic 84-entry slot table rather than the literal grid; for
+III/FM9 the readings coincide. Builders: `buildClearBlock`,
+`buildClearBlockCompanion`.
+
+#### Name writes (fn=0x01 sub=0x28 preset, sub=0x2b scene)
+
+Two name-write sub-actions, both carrying a 32-byte raw name as the
+fn=0x01 tail (tailCount14 = 32 at payload 13-14, then the name 8-to-7
+septet-packed to 37 wire bytes per `iii-byte-stream-septet-pack-8to7`;
+60-byte total frame):
+
+- **sub=0x28, preset name** (`FUN_140340560`, dump L8014-8053):
+  blockId14 = paramId14 = 0. The clear-preset flow writes the literal
+  `"<EMPTY>"` through it (dump L10410-10432), which is exactly what
+  empty gen-3 preset slots display. Builder: `buildRenamePreset`.
+- **sub=0x2b, indexed (scene) name** (`FUN_1403404a0`, dump
+  L10522-10561): the index rides in the paramId14 field. The editor's
+  "Clear All Names" command (`FUN_1402da550`, dump L17584-17612) loops
+  index 0..7 with an empty name, matching the gen-3 8-scene count
+  (scene-index reading is decoded inference; the byte shape is exact).
+  Builders: `buildSetSceneName`, `buildClearAllSceneNames`.
+
+Pad caveat: the editor formats the 32-byte field via `FUN_140386ac0`,
+whose body is in no dump we hold, so the pad byte for short names is
+NOT cited. The builders space-pad (0x20), matching every Fractal
+32-char name field decoded so far (AM4 rename is hardware-confirmed
+space-pad); flagged for capture confirmation.
+
+#### Scene-blob transfer (standalone fn=0x5a header + fn=0x5c trailer)
+
+`FUN_140328a10` (dump L22861-23053) emits a scene-targeted DATA
+TRANSFER, not a bare scene switch:
+
+```
+HEADER  F0 00 01 74 <model> 5A <scene> <arg14:2> <wordCount21:3> <cks> F7   (14 bytes)
+DATA    ... streamed in chunks of up to 0x100 uint32 words (chunk frame NOT decoded) ...
+TRAILER F0 00 01 74 <model> 5C <xor32:5-septet, byte 4 = bits 28-31> <cks> F7  (13 bytes)
+```
+
+The scene number in header payload byte 0 is FACT; the 14-bit arg's
+semantics are uncited (caller-supplied runtime value); the trailer is
+the XOR-32 of all data words (standalone emitter `FUN_140336a40`, dump
+L23059-23086). The dump generator's section label called this
+"fn=0x15 Change Scene"; the bodies show fn=0x5a/0x5c. The editor never
+emits a bare data-less fn=0x5a (a null data pointer aborts before any
+send, dump L22915), so no "switch scene via 0x5a" builder ships; the
+plain scene switch remains the spec-documented fn=0x0c. Builders:
+`buildSceneBlobHeader`, `buildSceneBlobChecksum`, `xorChecksum32Words`.
+
+Also from the same mine: the generator's PART B labels "fn=0x30 Reset
+Block" and "fn=0x31 Move Block" are wrong; those emitters actually send
+fn=0x43 (our REQUEST_EDIT_BUFFER_DUMP) and fn=0x08. Block reset/clear
+is the fn=0x01 sub=0x30 above, and the highest-value capture asks are
+one III/FM9 USBPcap of a scene change and of a block clear to flip
+these from decoded to confirmed.
 
 ### Function 0x01, long-payload write (likely SET_PARAMETER / SET_MODIFIER)
 
@@ -994,16 +1135,16 @@ scans returned 0 hits.
 | 0x13 | ✅ | STATUS DUMP |
 | 0x14 | ✅ | SET/GET TEMPO |
 | 0x19 | ❌ | Undocumented (3-byte payload, FOOTSWITCH_*?) |
-| 0x1a | ❌ | Undocumented (3-byte payload, FOOTSWITCH_*?) |
+| 0x1a | ❌ | Request side of the `0x5a/0x5b/0x5c` dump family (bound 2026-06-09 from the inbound-dispatcher mine; system-data / footswitch-config candidate, hardware-unverified) |
 | 0x1b | ❌ | Undocumented (3-byte payload, FOOTSWITCH_*?) |
 | 0x1f | ❌ | Caller `FUN_140339ed0(longlong*, ushort*)` packs a 16-bit value into 7-bit septets before calling. **Smaller payload than full SET_PARAM would need** (SET_PARAM needs effectId+paramId+value ~60 bits / 9 septets). Likely a 14-bit-payload-only SysEx, candidates: per-effect bypass, channel set, or status query. Re-classified from "high suspicion SET_PARAM" after  caller-decompile inspection. |
 | 0x3f | ❌ | Caller `FUN_140336dd0(longlong, ushort*)`, same shape as 0x1f (16-bit input + septet pack). Likely paired with 0x40 as a 14-bit-value SysEx pair. |
-| 0x40 | ❌ | Caller `FUN_140337060`, similar shape to 0x3f. |
+| 0x40 | ❌ | Caller `FUN_140337060`, similar shape to 0x3f. Bound 2026-06-09: request that triggers BOTH the `0x67/0x68/0x69` dump (response-only family, device-dictionary candidate) and the `0x5a/0x5b/0x5c` dump. Hardware-unverified; see the envelope-spec section above. |
 | 0x46 | ❌ | Undocumented (paired with 0x47) |
 | 0x47 | ❌ | Undocumented (paramless, like TEMPO TAP shape) |
-| 0x5a | ❌ | Undocumented (scene-related? `+ 0x20 + 'Z'` arithmetic in caller) |
-| 0x5b | ❌ | Undocumented |
-| 0x5c | ❌ | Undocumented |
+| 0x5a | ❌ | Two decoded roles (2026-06-09, hardware-unverified): host-emitted scene-blob DATA-transfer header (see the scene-blob section above; NOT a scene switch) and head frame of the device's `0x5a/0x5b/0x5c` dump family (request `0x1a` or `0x40`) |
+| 0x5b | ❌ | Body frame of the `0x5a/0x5b/0x5c` dump family (decoded, hardware-unverified) |
+| 0x5c | ❌ | Trailer: scene-blob XOR-32 trailer on the host side; tail frame of the `0x5a/0x5b/0x5c` dump family on the device side (decoded, hardware-unverified) |
 | 0x74 | ❌ | Preset-adjacent (caller chain near 0x77/0x78/0x79) |
 | 0x75 | ❌ | Preset-adjacent |
 | 0x76 | ❌ | Preset-adjacent |
@@ -1211,9 +1352,13 @@ Given the function-byte map + Appendix 1 effect IDs:
 - ✅ `axefx3_set_tempo(bpm)` / `axefx3_get_tempo()`, 0x14
 - ✅ `axefx3_set_looper(action)` / `axefx3_get_looper_state()`, 0x0F (the REAL 0x0F)
 - ✅ `axefx3_status_dump()`, 0x13 (correct already, parser too)
-- ❌ `axefx3_switch_preset`, NOT possible via SysEx; use MIDI PC instead. Tool should be removed or relabeled `send_preset_change_pc`.
+- ⚠️ `axefx3_switch_preset`: the v1.4-PDF-documented path is MIDI PC + Bank
+  Select (default). UPDATE 2026-06-10: a SysEx-native path also exists —
+  `fn=0x01 sub=0x27` (`buildSwitchPresetSysEx`), FM3-hardware-confirmed. (The
+  old `buildSwitchPreset` bug — which sent a *query-patch-name* frame — is a
+  separate, real defect; see the known-bugs table above.)
 - ✅ `axefx3_set_param`, opcode is fn=`0x01` PARAMETER_SETGET with sub-action `09 00` (typed-input), byte-verified against 10 public captures spanning two effect blocks and two paramIds (see the 0x01 PARAMETER_SETGET section above). NOT fn=`0x02` (that was the wrong II-port, now closed). Param-IDs come from the AxeEdit III binary mining, not the published third-party PDF. The SET wire shape ships verified; the GET response shape is still unverified.
-- 🟢 `save_preset` (gen-3 path, used via the `port` argument), store-to-location is `fn=0x01 sub=0x26` (presetNum septet @12-13, LSB-first), captured byte-exact from III-Edit (0x10) and FM9-Edit (0x12) over loopMIDI; the codec now emits this. Wire shape confirmed; device persistence (front-panel confirm + flash write) is the remaining hardware-verification step. The 0x77/0x78/0x79 multi-frame envelope is the separate full preset-binary transfer (export), still undecoded.
+- 🟢 `save_preset` (gen-3 path, used via the `port` argument), store-to-location is `fn=0x01 sub=0x26` (presetNum septet @12-13, LSB-first), captured byte-exact from III-Edit (0x10) and FM9-Edit (0x12) over loopMIDI; the codec now emits this. Wire shape confirmed; device persistence (front-panel confirm + flash write) is the remaining hardware-verification step. The 0x77/0x78/0x79 multi-frame envelope is the separate full preset-binary transfer (decoded: its descriptor tables are byte-identical to the II's, the 0x79 footer is a 16-bit XOR-fold of the body words, and the receive direction is FM9 hardware-confirmed; see the preset-dump and envelope sections above).
 
 ## Cross-references
 

@@ -300,11 +300,11 @@ export const writer: DeviceWriter = {
     };
   },
 
-  // setBlock / switchScene / rename / applyPreset / applySetlist /
-  // restoreDefaults intentionally omitted in v1 — the dispatcher
-  // surfaces `capability_not_supported` for unified tool calls hitting
-  // those. Legacy apply_patch / hydra_apply_init tools cover the
-  // applyPreset semantics until BK-051 Session D.
+  // setBlock / switchScene / rename / applyPreset / applySetlist
+  // intentionally omitted in v1 — the dispatcher surfaces
+  // `capability_not_supported` for unified tool calls hitting those.
+  // Legacy apply_patch / hydra_apply_init tools cover the applyPreset
+  // semantics until BK-051 Session D.
 };
 
 // Map from a Hydrasynth "block" to the wet/mix param that effectively

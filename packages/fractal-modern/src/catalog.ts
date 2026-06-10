@@ -32,7 +32,8 @@ import {
   type AxeFxIIIBlock,
   resolveEnumValues,
   resolveEffectTypeEnum,
-  resolveGen3EnumNameToRawId,
+  enumLabelForms,
+  normalizeLabel,
 } from 'fractal-midi/axe-fx-iii';
 import { type Param as AxeFxIIIParam } from 'fractal-midi/axe-fx-iii';
 import { displayToWire, wireToDisplay } from 'fractal-midi/axe-fx-ii';
@@ -59,7 +60,7 @@ export interface ModernCatalog {
    * the dispatcher boundary (`encodeValue`). `apply_preset` must call this so a
    * spec value like `treble: 5.5` becomes a wire int instead of reaching
    * `packValue16` raw (which rejects non-integers). Calibrated knobs map through
-   * the display range; enums resolve name→raw-id (or pass a numeric through);
+   * the display range; enums resolve name→ordinal (or pass a numeric through);
    * uncalibrated params still require a raw wire int, surfacing a clear error.
    */
   encodeParamOrThrow(
@@ -184,53 +185,46 @@ function makePassthroughEncode(family: string, paramKey: string): ParamSchema['e
 }
 
 /**
- * Encode closure for a gen-3 enum param. A NUMBER is the raw write-leg wire
- * id (caller's responsibility — passthrough). A STRING name is resolved to
- * its device-true write-leg raw id via the captured ordinal→raw-id table:
- *   - `resolved`        → emit the hardware-confirmed raw id.
- *   - `capture_pending` → throw (the name is valid but its write id isn't
- *                         captured; the dispatcher gate normally refuses
- *                         these by name before reaching here via
- *                         `enum_settable_names`, so this is a backstop).
- *   - `unknown_name`    → throw → dispatcher reformats as "did you mean…?"
- *
- * Read ordinal ≠ write raw-id on gen-3 (a permutation), so this NEVER reuses
- * the decode ordinal as a wire value — only table-backed raw ids are emitted.
+ * Discrete enum encode: resolve a NAME to its read-roster ORDINAL (the value a
+ * gen-3 discrete SET carries as float32(ordinal) at pos 12). The ordinal IS the
+ * set value — there is no separate raw-id space (verified 2026-06-08, FM3 +
+ * FM9). Resolves against the SAME merged `enum_values` table the read leg
+ * decodes with (case + word-order tolerant), so amp/drive/reverb names from the
+ * shared rosters AND device-captured overrides all set by name. A number (or
+ * numeric string) passes through as the ordinal directly.
  */
 function makeEnumEncode(
   family: string,
   paramKey: string,
-  paramSymbol: string,
-  settableNames: readonly string[],
+  enumValues: Readonly<Record<number, string>>,
 ): ParamSchema['encode'] {
+  // name (normalized + word-order variants) → ordinal. Built once. Lowest
+  // ordinal wins a collision so a canonical name maps deterministically.
+  const reverse = new Map<string, number>();
+  for (const [ordStr, label] of Object.entries(enumValues)) {
+    const ord = Number(ordStr);
+    for (const form of enumLabelForms(label)) {
+      const existing = reverse.get(form);
+      if (existing === undefined || ord < existing) reverse.set(form, ord);
+    }
+  }
   return (value: number | string): number => {
-    // A number — or a NUMERIC STRING — is the raw write-leg wire id
-    // (passthrough; caller's responsibility). The dispatcher gate already
-    // lets numeric strings through, so mirror the passthrough encoder here
-    // and only treat a NON-numeric string as an enum name.
     const asNum = typeof value === 'number' ? value : Number(value);
     if (typeof value === 'number' || (value.trim() !== '' && Number.isFinite(asNum))) {
       if (!Number.isInteger(asNum) || asNum < 0 || asNum > 65534) {
-        throw new Error(
-          `${family}.${paramKey} expects the raw write-leg wire id 0..65534 (or a capture-confirmed ` +
-            `name): ${value}`,
-        );
+        throw new Error(`${family}.${paramKey} expects an ordinal 0..65534 or a type name: ${value}`);
       }
       return asNum;
     }
-    const res = resolveGen3EnumNameToRawId(paramSymbol, value);
-    if (res.status === 'resolved') return res.rawId;
-    if (res.status === 'capture_pending') {
-      const list = settableNames.length > 0 ? settableNames.map((n) => `"${n}"`).join(', ') : '(none)';
-      throw new Error(
-        `"${res.matchedLabel}" is a valid ${paramKey} but its gen-3 write value isn't captured yet — ` +
-          `set it on the device, or pass the raw wire id. Capture-confirmed names: ${list}.`,
-      );
+    let ord = reverse.get(normalizeLabel(value));
+    if (ord === undefined) {
+      for (const f of enumLabelForms(value)) {
+        const o = reverse.get(f);
+        if (o !== undefined) { ord = o; break; }
+      }
     }
-    if (res.status === 'unknown_name') {
-      throw new Error(`unknown ${paramKey} value "${value}"`);
-    }
-    throw new Error(`${family}.${paramKey}: "${value}" is not an enum value`);
+    if (ord !== undefined) return ord;
+    throw new Error(`unknown ${paramKey} value "${value}"`);
   };
 }
 
@@ -242,14 +236,54 @@ interface CalibrationOpts {
 }
 
 /**
+ * One device-true display range row, as emitted by a device's editor-cache
+ * codegen (`fractal-midi/fm9` `Fm9ParamRange`). Only the fields the catalog
+ * needs are required here, so the codec package's generated type structurally
+ * satisfies it without an import coupling. `displayMin`/`displayMax` are in
+ * front-panel units (cache value already × scale).
+ */
+export interface DeviceParamRange {
+  readonly kind: 'enum' | 'float';
+  readonly displayMin: number;
+  readonly displayMax: number;
+}
+
+/** Device-true ranges keyed family → paramId → range (e.g. `FM9_RANGES`). */
+export type DeviceRangeTable = Readonly<Record<string, Readonly<Record<number, DeviceParamRange>>>>;
+
+/**
  * Decide whether a param's catalog range yields a usable display↔wire
  * calibration. Requires a finite displayMin < displayMax; for log10 scaling
  * both bounds must be positive (the II resolver throws otherwise). Returns
  * undefined for anything that can't calibrate, so the caller falls back to
  * passthrough rather than emitting a closure that throws at call time.
+ *
+ * Device-true precedence: when `deviceRange` is supplied (a `float` row from
+ * the device's own editor cache, e.g. FM9_RANGES), its bounds OVERRIDE the
+ * catalog's AM4-overlay-inferred displayMin/displayMax. The cache range is
+ * the device's real front-panel range, so it corrects the ~36 FM9 float
+ * params whose inherited bounds contradict the hardware (DELAY_TIME 0..8000 →
+ * 1..16000, REVERB_PREDELAY 0..250 → 0..1000, etc.). Enum cache rows are NOT
+ * used for calibration (discrete selectors keep their ordinal handling); we
+ * fall through to the catalog range only where the cache has no float row.
  */
-function resolveCalibration(param: AxeFxIIIParam): CalibrationOpts | undefined {
-  const { displayMin, displayMax, scaling } = param;
+function resolveCalibration(
+  param: AxeFxIIIParam,
+  deviceRange?: DeviceParamRange,
+): CalibrationOpts | undefined {
+  // Cache-derived device-true range wins when present and float-kind. Round the
+  // cache bounds to display precision (roundDisplay, 2 dp) so the calibrated
+  // decode endpoints match the schema's reported bounds AND the 2-decimal front
+  // panel: a cache displayMin like 0.3162 Hz reports and decodes as 0.32, not a
+  // sub-precision value the decode (which rounds) would quantize away and fail
+  // the endpoint round-trip gate against.
+  let displayMin = param.displayMin;
+  let displayMax = param.displayMax;
+  if (deviceRange !== undefined && deviceRange.kind === 'float') {
+    displayMin = roundDisplay(deviceRange.displayMin);
+    displayMax = roundDisplay(deviceRange.displayMax);
+  }
+  const { scaling } = param;
   if (displayMin === undefined || displayMax === undefined) return undefined;
   if (!Number.isFinite(displayMin) || !Number.isFinite(displayMax)) return undefined;
   if (displayMin >= displayMax) return undefined;
@@ -296,6 +330,8 @@ function buildParamSchema(
   family: string,
   param: AxeFxIIIParam,
   deviceEnumOverrides?: Readonly<Record<string, Readonly<Record<number, string>>>>,
+  sharedEnumRosters?: Readonly<Record<string, Readonly<Record<number, string>>>>,
+  deviceRange?: DeviceParamRange,
 ): {
   key: string;
   schema: ParamSchema;
@@ -304,9 +340,10 @@ function buildParamSchema(
   // Gen-3 read leg: if the param's firmware symbol has an enum vocabulary in
   // the shared overlay, attach the ordinal->label table so get_param /
   // get_preset / broadcast and list_params surface NAMES, not raw indices.
-  // These are display-only: `enum_display_only` makes the dispatcher refuse
-  // set-by-name (the typed-SET raw enum id is a different, uncaptured
-  // encoding), while numeric wire values still pass through.
+  // The SAME ordinal table drives set-by-name: a discrete SET carries
+  // float32(read-ordinal) at pos 12 (sub 09 00), so the name->ordinal the read
+  // leg decodes with IS the set value (verified 2026-06-08, FM3 + FM9). No
+  // separate raw-id space, no gating.
   //
   // Unit-aware to avoid over-matching: only a param the catalog actually tags
   // `unit: 'enum'` (the III) gets the FULL overlay (effect-type lists +
@@ -322,32 +359,39 @@ function buildParamSchema(
   // family-shared overlay deliberately leaves numeric because amp ordinals
   // differ per model). Takes precedence over the family overlay. Partial by
   // construction (only captured ordinals) — the decode below labels known
-  // ordinals and passes unknown ones through as numbers. Read-leg only: these
-  // are broadcast ordinals, NOT typed-SET raw ids, so set-by-name stays gated
-  // (enum_display_only) until a raw-id is captured for the name.
+  // ordinals and passes unknown ones through as numbers. These ordinals double
+  // as the set-by-name values (float32(ordinal) discrete SET).
   const deviceOverlayValues = deviceEnumOverrides?.[param.name];
-  const enumValues = deviceOverlayValues ?? overlay?.values;
+  // Shared gen-3 read roster (factory-correlated name table, e.g. the 284 amp
+  // models). LOWEST precedence: it fills params the family overlay leaves
+  // numeric (notably amp), but must NOT override the overlay's canonical
+  // spellings. Layered precedence (later spread wins):
+  //   shared roster < family overlay < device-captured (hardware truth).
+  const sharedRoster = sharedEnumRosters?.[param.name];
+  const enumValues =
+    deviceOverlayValues !== undefined || overlay?.values !== undefined || sharedRoster !== undefined
+      ? { ...(sharedRoster ?? {}), ...(overlay?.values ?? {}), ...(deviceOverlayValues ?? {}) }
+      : undefined;
 
   // Display-first: a non-enum param with a calibrated range encodes/decodes
-  // through the II resolver. Enum params stay display-only (raw wire in,
-  // label out) — their typed-SET raw enum id is a different, uncaptured
-  // encoding, so set-by-name is gated and numeric wire values pass through.
-  const cal = enumValues === undefined ? resolveCalibration(param) : undefined;
+  // through the II resolver. Enum params encode name→ordinal (the discrete-SET
+  // value, float32(ordinal)) and decode ordinal→label; numeric wire passes
+  // through either way. When a device-true cache range is present (FM9), it
+  // overrides the catalog's AM4-overlay bounds inside resolveCalibration.
+  const cal = enumValues === undefined ? resolveCalibration(param, deviceRange) : undefined;
 
-  // Write leg: the subset of this enum's labels whose device-true raw id has
-  // been captured (FM9 hardware) — those can be set BY NAME; everything else
-  // stays gated. Empty for every enum without captured raw ids (the norm).
-  const enumSettableNames =
-    enumValues !== undefined
-      ? Object.values(enumValues).filter(
-          (label) => resolveGen3EnumNameToRawId(param.name, label).status === 'resolved',
-        )
-      : [];
+  // Surface the device-true bounds (not the inherited inference) on the schema
+  // so list_params / describe_device report the FM9's real range. Only a
+  // float-kind cache row overrides; otherwise the catalog value stands.
+  const displayMin = deviceRange?.kind === 'float' ? roundDisplay(deviceRange.displayMin) : param.displayMin;
+  const displayMax = deviceRange?.kind === 'float' ? roundDisplay(deviceRange.displayMax) : param.displayMax;
 
   let encode: ParamSchema['encode'];
   let decode: ParamSchema['decode'];
   if (enumValues !== undefined) {
-    encode = makeEnumEncode(family, key, param.name, enumSettableNames);
+    // Set-by-name = float32(read-ordinal): encode resolves a NAME to the same
+    // ordinal the decode labels with. The wire form is DISCRETE (sub 09 00).
+    encode = makeEnumEncode(family, key, enumValues);
     decode = (wire: number): number | string => enumValues[wire] ?? wire;
   } else if (cal !== undefined) {
     encode = makeCalibratedEncode(family, key, cal);
@@ -362,14 +406,16 @@ function buildParamSchema(
     schema: {
       display_name: humanize(key),
       unit: param.unit,
-      display_min: param.displayMin,
-      display_max: param.displayMax,
+      display_min: displayMin,
+      display_max: displayMax,
       enum_values: enumValues,
-      enum_display_only: enumValues !== undefined ? true : undefined,
-      // A per-device override table is captured-partial (only some ordinals
-      // named), so numeric ordinals outside it must pass through, not error.
-      enum_partial: deviceOverlayValues !== undefined ? true : undefined,
-      enum_settable_names: enumSettableNames.length > 0 ? enumSettableNames : undefined,
+      // gen-3 SET wire form: enum/type selectors are DISCRETE (float32(ordinal),
+      // sub 09 00); every other param is CONTINUOUS (float32(normalized), 52 00).
+      wire_kind: enumValues !== undefined ? 'discrete' : 'continuous',
+      // A captured/correlated table is partial (only some ordinals named), so
+      // numeric ordinals outside it must pass through, not error. A pure family
+      // overlay (no device/shared contribution) stays a complete vocab.
+      enum_partial: (deviceOverlayValues !== undefined || sharedRoster !== undefined) ? true : undefined,
       encode,
       decode,
       parameter_name: param.name,
@@ -401,6 +447,14 @@ export function createModernCatalog(opts: {
    */
   deviceEnumOverrides?: Readonly<Record<string, Readonly<Record<number, string>>>>;
   /**
+   * Shared gen-3 read rosters (read-ordinal -> name), keyed by param firmware
+   * symbol. Factory-correlated name tables shared across III/FM3/FM9, layered
+   * BELOW the family overlay + device-captured points (fills params the overlay
+   * leaves numeric, notably amp). The ordinal doubles as the set-by-name value
+   * (float32(ordinal) discrete SET). Omit for serial gen-3 (VP4) until validated.
+   */
+  sharedEnumRosters?: Readonly<Record<string, Readonly<Record<number, string>>>>;
+  /**
    * Block slugs (lower-case) the physical device does NOT expose, dropped
    * unconditionally even when their mapped family carries params. The mined
    * catalog is shared across the gen-3 editor family, so a device-true table
@@ -410,8 +464,20 @@ export function createModernCatalog(opts: {
    * absent blocks need this explicit list.
    */
   excludeBlocks?: readonly string[];
+  /**
+   * Device-true display ranges keyed family → paramId → range, mined from the
+   * device's OWN editor cache (e.g. `FM9_RANGES` from the FM9-Edit
+   * effectDefinitions cache). When supplied, a float-kind row's
+   * displayMin/displayMax OVERRIDES the catalog's AM4-overlay-inferred bounds
+   * for display↔wire calibration AND the reported schema range; the inference
+   * is used only as the fallback where the cache has no row. This corrects the
+   * FM9 float params whose inherited bounds contradict the real front panel
+   * (DELAY_TIME, REVERB_PREDELAY, etc.). Omit for devices with no device-true
+   * range table (III/FM3/VP4 still use the catalog inference).
+   */
+  deviceRanges?: DeviceRangeTable;
 }): ModernCatalog {
-  const { blocks, paramsByFamily, resolveEffectId, dropEmptyMappedBlocks = false, deviceEnumOverrides, excludeBlocks } = opts;
+  const { blocks, paramsByFamily, resolveEffectId, dropEmptyMappedBlocks = false, deviceEnumOverrides, sharedEnumRosters, excludeBlocks, deviceRanges } = opts;
   const excluded = new Set((excludeBlocks ?? []).map((s) => s.toLowerCase()));
 
   const slugToFamily: Record<string, string> = {};
@@ -437,7 +503,11 @@ export function createModernCatalog(opts: {
         // Skip firmware-internal sentinels (paramId >= 0x3fff are *_SET_ALL /
         // *_VAL_ALL — documentary only, not wire-addressable).
         if (p.paramId >= 0x3fff) continue;
-        const { key, schema } = buildParamSchema(family, p, deviceEnumOverrides);
+        // Device-true range precedence: look up this (family, paramId) in the
+        // device's editor-cache range table; a float row overrides the
+        // AM4-overlay inference inside buildParamSchema.
+        const deviceRange = deviceRanges?.[family]?.[p.paramId];
+        const { key, schema } = buildParamSchema(family, p, deviceEnumOverrides, sharedEnumRosters, deviceRange);
         // First wins on key collision (e.g. FLANGER_TYPE vs FLANGER_OLD_TYPE).
         if (!(key in params)) {
           params[key] = schema;

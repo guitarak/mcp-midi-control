@@ -132,12 +132,13 @@ Driving the live editor confirmed two envelope layouts byte-for-byte:
 ```
 sub=0x30 cell-select : f0 00 01 74 12 01 30 00 00 00 00 00 32 00 ...  -> gridPos @ bytes 12..13 = 50 (r3c9)
 sub=0x09 typed       : f0 00 01 74 12 01 09 00 42 00 0a 00 00 00 00 00 00 00 ...
-                       -> eff @ 8..9 = 66, paramId @ 10..11 = 10 (Reverb TYPE on FM9), value @ 15..17
+                       -> eff @ 8..9 = 66, paramId @ 10..11 = 10 (Reverb TYPE on FM9), value @ 12..16
 ```
 
 The `sub=0x09` layout is byte-identical to `buildSetParameter` (eff@8..9,
-paramId@10..11, packValue16 value@15..17) — first live FM9 confirmation of the
-gen-3 `set_param` envelope through the simulator (value was 0, a type GET). The
+paramId@10..11, 5-septet LE float32 value @ 12..16 — see
+[[gen3-fn01-set-float32-ordinal]]) — first live FM9 confirmation of the gen-3
+`set_param` envelope through the simulator (value was 0.0, a type GET). The
 `sub=0x30` gridPos slot (bytes 12..13) is the same slot
 [[gen3-fn01-grid-set-position-insert]] uses for the insert.
 

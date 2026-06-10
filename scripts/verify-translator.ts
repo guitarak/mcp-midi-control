@@ -149,8 +149,10 @@ check(
 
 const ampX = (ampSlot1?.params_by_channel as Record<string, Record<string, number | string>> | undefined)?.X;
 check(
-  'amp_1.X carries the source channel-A (Shiver Clean) gain',
-  ampX !== undefined && ampX.gain === 3.5,
+  // AM4 `gain` aliases to the II canonical `input_drive` since the 0.3.0
+  // preamp-gain alias triple landed.
+  'amp_1.X carries the source channel-A (Shiver Clean) gain as input_drive',
+  ampX !== undefined && ampX.input_drive === 3.5,
   `amp_1.X: ${JSON.stringify(ampX)?.slice(0, 200)}`,
 );
 
@@ -163,8 +165,8 @@ check(
 
 const amp2X = (ampSlot2?.params_by_channel as Record<string, Record<string, number | string>> | undefined)?.X;
 check(
-  'amp_2.X carries source channel C (Brit JVM) — gain 7.5',
-  amp2X !== undefined && amp2X.gain === 7.5,
+  'amp_2.X carries source channel C (Brit JVM) — gain 7.5 as input_drive',
+  amp2X !== undefined && amp2X.input_drive === 7.5,
   `amp_2.X: ${JSON.stringify(amp2X)?.slice(0, 200)}`,
 );
 
@@ -481,10 +483,9 @@ console.log('Translator specification invariants');
 // gen-3 enum column: II → gen-3 maps reverb + drive model names to the
 // gen-3 (axeFxIII) vocabulary, while amp stays verbatim (capture-blocked /
 // deferred). This is the cross-device-enums "enums_mapped: 0" bottleneck
-// closing for the bindable families. II names differ from gen-3 (e.g. II
-// "LARGE HALL" vs gen-3 "Hall, Large"), so the mapping is a real
-// substitution that increments enums_mapped — unlike AM4→gen-3, where the
-// names are identical (gen-3 reuses the AM4 reverb/drive strings).
+// closing for the bindable families. The gen-3 reverb names are the device's
+// adjective-first form (e.g. II "LARGE HALL" → gen-3 "Large Hall", NOT AM4's
+// comma form "Hall, Large"), validated against the device-true roster.
 {
   // Collect every param value across flat params + all channels of a slot.
   const slotValues = (slot: { params?: Record<string, unknown>; params_by_channel?: Record<string, Record<string, unknown>> } | undefined): unknown[] => {
@@ -510,9 +511,13 @@ console.log('Translator specification invariants');
   const driveVals = slotsOf('drive').flatMap(slotValues);
   const ampVals = slotsOf('amp').flatMap(slotValues);
 
+  const norm = (v: unknown): string => (typeof v === 'string' ? v.toLowerCase().replace(/[^a-z0-9]/g, '') : '');
   check(
-    'gen-3 enum: II→gen-3 maps reverb "LARGE HALL" → "Hall, Large"',
-    reverbVals.includes('Hall, Large'),
+    'gen-3 enum: II→gen-3 reverb "LARGE HALL" resolves to gen-3 "Large Hall"',
+    // gen-3 form is "Large Hall"; only case differs from II "LARGE HALL", so the
+    // resolver keeps the source string (case-insensitive target). The point is
+    // it resolves to the Large-Hall concept, not AM4's comma form "Hall, Large".
+    reverbVals.some((v) => norm(v) === 'largehall'),
     `reverb values: ${JSON.stringify(reverbVals)}`,
   );
   check(
@@ -526,9 +531,50 @@ console.log('Translator specification invariants');
     `amp values: ${JSON.stringify(ampVals)}`,
   );
   check(
-    'gen-3 enum: enums_mapped counts the reverb + drive substitutions',
-    r.port_summary.enums_mapped >= 2,
+    // drive substitutes (RAT DIST → Rat Distortion); reverb is now case-only
+    // different from gen-3 ("LARGE HALL" ~ "Large Hall"), so it resolves without
+    // a counted substitution. At least the drive substitution must register.
+    'gen-3 enum: enums_mapped counts the drive substitution',
+    r.port_summary.enums_mapped >= 1,
     `enums_mapped: ${r.port_summary.enums_mapped}`,
+  );
+}
+
+// gen-3 SOURCE direction: a gen-3 preset's decoded reverb/drive names (the
+// device's adjective-first form, e.g. "Large Hall", "Rat Distortion") must
+// resolve to the AM4 / II vocabulary. This is the reverse of the block above
+// and the leg the gen-3 -> AM4/II translate path (source_location) relies on.
+{
+  const source: PresetSpec = {
+    name: 'gen3-source-enum-probe',
+    slots: [
+      { slot: { row: 2, col: 1 }, block_type: 'drive', params: { type: 'Rat Distortion' } },
+      { slot: { row: 2, col: 2 }, block_type: 'reverb', params: { type: 'Large Hall' } },
+    ],
+  };
+  const toAm4 = translatePresetSpec(AXEFX3_DESCRIPTOR, source, AM4_DESCRIPTOR);
+  const am4Vals = (bt: string) => toAm4.applied_spec.slots
+    .filter((s) => s.block_type.toLowerCase() === bt)
+    .flatMap((s) => Object.values((s.params ?? {}) as Record<string, unknown>));
+  check(
+    'gen-3 source: reverb "Large Hall" → AM4 "Hall, Large"',
+    am4Vals('reverb').includes('Hall, Large'),
+    `AM4 reverb values: ${JSON.stringify(am4Vals('reverb'))}`,
+  );
+  const toII = translatePresetSpec(AXEFX3_DESCRIPTOR, source, AXEFX2_DESCRIPTOR);
+  const iiVals = (bt: string) => toII.applied_spec.slots
+    .filter((s) => s.block_type.toLowerCase() === bt)
+    .flatMap((s) => Object.values((s.params ?? {}) as Record<string, unknown>));
+  const norm2 = (v: unknown): string => (typeof v === 'string' ? v.toLowerCase().replace(/[^a-z0-9]/g, '') : '');
+  check(
+    'gen-3 source: reverb "Large Hall" resolves to II LARGE HALL (case-insensitive)',
+    iiVals('reverb').some((v) => norm2(v) === 'largehall'),
+    `II reverb values: ${JSON.stringify(iiVals('reverb'))}`,
+  );
+  check(
+    'gen-3 source: drive "Rat Distortion" → II "RAT DIST"',
+    iiVals('drive').includes('RAT DIST'),
+    `II drive values: ${JSON.stringify(iiVals('drive'))}`,
   );
 }
 
@@ -564,14 +610,15 @@ console.log('Translator specification invariants');
   const amp1ChMap = amp1?.params_by_channel as Record<string, Record<string, unknown>> | undefined;
   const amp2ChMap = amp2?.params_by_channel as Record<string, Record<string, unknown>> | undefined;
   check(
+    // AM4 `gain` → II canonical `input_drive` (0.3.0 preamp-gain alias).
     'SPEC channel-expand: amp_1 carries source channels A,B remapped to X,Y',
-    amp1ChMap?.X?.gain === 3 && amp1ChMap?.Y?.gain === 7,
-    `amp_1: X.gain=${amp1ChMap?.X?.gain}, Y.gain=${amp1ChMap?.Y?.gain}`,
+    amp1ChMap?.X?.input_drive === 3 && amp1ChMap?.Y?.input_drive === 7,
+    `amp_1: X.input_drive=${amp1ChMap?.X?.input_drive}, Y.input_drive=${amp1ChMap?.Y?.input_drive}`,
   );
   check(
     'SPEC channel-expand: amp_2 carries source channels C,D remapped to X,Y',
-    amp2ChMap?.X?.gain === 6 && amp2ChMap?.Y?.gain === 8,
-    `amp_2: X.gain=${amp2ChMap?.X?.gain}, Y.gain=${amp2ChMap?.Y?.gain}`,
+    amp2ChMap?.X?.input_drive === 6 && amp2ChMap?.Y?.input_drive === 8,
+    `amp_2: X.input_drive=${amp2ChMap?.X?.input_drive}, Y.input_drive=${amp2ChMap?.Y?.input_drive}`,
   );
   check(
     'SPEC channel-expand: expansion surfaces a top-level warning',
@@ -1832,12 +1879,13 @@ console.log('Translator III specification invariants');
     ampChannels === 'X,Y',
     `amp channels: ${ampChannels}`,
   );
-  // A→X param values preserved.
+  // A→X param values preserved (III `gain` → II canonical `input_drive`,
+  // 0.3.0 preamp-gain alias).
   const ampX = (ampSlot?.params_by_channel as Record<string, Record<string, unknown>> | undefined)?.X;
   check(
     'III-III→II: amp A→X gain value preserved (5)',
-    ampX?.gain === 5,
-    `amp.X.gain = ${String(ampX?.gain)}`,
+    ampX?.input_drive === 5,
+    `amp.X.input_drive = ${String(ampX?.input_drive)}`,
   );
   // Channel-drop warning surfaced.
   const sawChannelDropWarning = r.warnings.some((w) =>

@@ -2,6 +2,8 @@
 
 > Gen-1 supports both **writing** parameters (922 of them) and **reading** them back: the gen-1 protocol documents a parameter query (function 0x02 with the set/query flag cleared) that returns the live value plus the device's own label. All of it is decoded from the spec but UNCONFIRMED on real Standard/Ultra hardware. The asks below take about 5 minutes combined and confirm what we can't verify from the spec alone.
 
+> **Want preset BUILDING (`apply_preset` + save) on your Standard/Ultra?** One capture of a gen-1 AxeEdit editing session is the single unlock -- see [captures-axe-fx-gen1.md, section C2](captures-axe-fx-gen1.md).
+
 See [README.md](README.md) for setup. Have old AxeEdit captures? See [captures-axe-fx-gen1.md](captures-axe-fx-gen1.md).
 
 ---
@@ -13,7 +15,7 @@ In Claude Desktop:
 
 > "List the available MIDI ports."
 
-Paste the full output. The gen-1 descriptor uses a specific port-name pattern (`axe-?fx.*ultra|standard`) to route to the correct codec. Older hardware may enumerate as "Axe-Fx MIDI" or similar, which would route to the wrong codec (gen-2). Your output is the only thing needed to confirm or fix this before you try anything else.
+Paste the full output. The server matches your USB port by name to route to the correct codec (it looks for an Axe-Fx Standard or Ultra port). Older hardware may enumerate as "Axe-Fx MIDI" or similar, which would route to the wrong codec (gen-2). Your exact port name is the only thing needed to confirm or fix this before you try anything else.
 
 ---
 

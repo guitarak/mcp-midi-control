@@ -618,15 +618,17 @@ console.log('\nCase: Bug F-1 — linear→grid expansion grid-cell collision');
   );
 
   // Channel allocation: amp_1 carries A/B as X/Y, amp_2 carries C/D as X/Y.
+  // AM4's `gain` aliases to the II's canonical `input_drive` (the
+  // preamp-gain triple landed with the 0.3.0 translate aliasing pass).
   const amp1Channels = amp1?.params_by_channel as Record<string, Record<string, unknown>> | undefined;
   const amp2Channels = amp2?.params_by_channel as Record<string, Record<string, unknown>> | undefined;
   check(
-    `F-1: amp_1.X has source A's gain=3, got ${amp1Channels?.X?.gain}`,
-    amp1Channels?.X?.gain === 3,
+    `F-1: amp_1.X has source A's gain=3 as input_drive, got ${amp1Channels?.X?.input_drive}`,
+    amp1Channels?.X?.input_drive === 3,
   );
   check(
-    `F-1: amp_2.X has source C's gain=6, got ${amp2Channels?.X?.gain}`,
-    amp2Channels?.X?.gain === 6,
+    `F-1: amp_2.X has source C's gain=6 as input_drive, got ${amp2Channels?.X?.input_drive}`,
+    amp2Channels?.X?.input_drive === 6,
   );
 
   // F6g cab auto-placement still fires; cab sits between amp_2 and delay.
@@ -722,6 +724,130 @@ console.log('\nCase: Bug F-1b — collision avoidance respects grid bounds');
       );
     }
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Case: 0.3.0 dev-test regression bundle — gain/EQ aliasing, scene
+// names, channel-less-block flattening, per-scene pick drop warning,
+// gen-3 tempo-division strip, unmapped-model aggregate warning.
+// Mirrors the SHIVA 4-SCENE spec from the 2026-06-10 desktop session.
+// ─────────────────────────────────────────────────────────────────────
+console.log('\nCase: 0.3.0 regression bundle (II → AM4 and II → FM9, SHIVA shape)');
+
+const shivaSpec: PresetSpec = {
+  name: 'SHIVA 4-SCENE',
+  slots: [
+    {
+      slot: { row: 2, col: 1 },
+      block_type: 'compressor',
+      params_by_channel: {
+        X: { threshold: -40, ratio: 6, attack: 25 },
+        Y: { threshold: -25, ratio: 3, attack: 15 },
+      },
+    },
+    {
+      slot: { row: 2, col: 2 },
+      block_type: 'amp',
+      params_by_channel: {
+        X: { effect_type: 'SHIVER CLEAN', input_drive: 3.5, middle: 5, master_volume: 5 },
+        Y: { effect_type: 'SHIVER LEAD', input_drive: 6, middle: 6, master_volume: 4.5 },
+      },
+    },
+    {
+      slot: { row: 2, col: 4 },
+      block_type: 'delay',
+      params_by_channel: {
+        X: { effect_type: 'DIGITAL STEREO', tempo: '1/2 DOT', feedback: 55, mix: 40 },
+      },
+    },
+  ],
+  scenes: [
+    { scene: 1, name: 'Spank Clean', channels: { compressor: 'X', amp: 'X', delay: 'X' } },
+    { scene: 2, name: 'Crunch Lead', channels: { amp: 'Y', delay: 'X' } },
+  ],
+};
+
+{
+  // II → AM4
+  const result = translatePresetSpec(AXEFX2_DESCRIPTOR, shivaSpec, AM4_DESCRIPTOR);
+  check('II→AM4 ok=true', result.ok);
+  const amp = result.applied_spec.slots.find((s) => s.block_type === 'amp') as PresetSlotSpec;
+  const ampCh = amp?.params_by_channel as Record<string, Record<string, unknown>> | undefined;
+  check(
+    `II→AM4: input_drive aliased to gain on A, got keys [${Object.keys(ampCh?.A ?? {}).join(', ')}]`,
+    ampCh?.A?.gain === 3.5 && ampCh?.A?.input_drive === undefined,
+  );
+  check(
+    `II→AM4: middle aliased to mid on B, got ${ampCh?.B?.mid}`,
+    ampCh?.B?.mid === 6 && ampCh?.B?.middle === undefined,
+  );
+  // Channel-less target block flattening: AM4 compressor has no channels.
+  const comp = result.applied_spec.slots.find((s) => s.block_type === 'compressor') as PresetSlotSpec;
+  check(
+    'II→AM4: compressor flattened to flat params (no params_by_channel)',
+    comp?.params_by_channel === undefined && comp?.params !== undefined,
+  );
+  check(
+    `II→AM4: compressor kept first channel slice (threshold -40), got ${JSON.stringify(comp?.params)}`,
+    (comp?.params as Record<string, unknown>)?.threshold === -40,
+  );
+  check(
+    'II→AM4: flatten warning names the dropped channel slice',
+    result.warnings.some((w) => /compressor has no channels/i.test(w)),
+  );
+  // Scene names survive.
+  const scenes = result.applied_spec.scenes as SceneSpec[];
+  check(
+    `II→AM4: scene names carried, got [${scenes?.map((s) => s.name).join(', ')}]`,
+    scenes?.[0]?.name === 'Spank Clean' && scenes?.[1]?.name === 'Crunch Lead',
+  );
+  // Per-scene channel picks for the channel-less compressor drop WITH a warning.
+  check(
+    'II→AM4: compressor scene pick dropped from channels map',
+    scenes?.every((s) => !('compressor' in (s.channels ?? {}))),
+  );
+  check(
+    'II→AM4: dropped scene-pick warning present',
+    result.warnings.some((w) => /dropped per-scene channel selections/i.test(w)),
+  );
+  // Unmapped model names surface in ONE aggregate warning.
+  check(
+    'II→AM4: unmapped-model aggregate warning present (SHIVER has no Phase-2 row)',
+    result.warnings.some((w) => /without a cross-roster mapping/i.test(w) && /SHIVER/i.test(w)),
+  );
+}
+
+{
+  // II → FM9 (gen-3): tempo division must strip with a warning.
+  const result = translatePresetSpec(AXEFX2_DESCRIPTOR, shivaSpec, FM9_DESCRIPTOR);
+  check('II→FM9 ok=true', result.ok);
+  const delay = result.applied_spec.slots.find((s) => s.block_type === 'delay') as PresetSlotSpec;
+  const delayCh = delay?.params_by_channel as Record<string, Record<string, unknown>> | undefined;
+  const delayParams = delayCh?.A ?? (delay?.params as Record<string, unknown> | undefined);
+  check(
+    `II→FM9: tempo division stripped from translated spec, got ${JSON.stringify(delayParams?.tempo)}`,
+    delayParams?.tempo === undefined,
+  );
+  check(
+    'II→FM9: tempo strip warning present',
+    result.warnings.some((w) => /dropped tempo division/i.test(w)),
+  );
+  check(
+    'II→FM9: gain aliased to drive (gen-3 canonical)',
+    (() => {
+      const amp = result.applied_spec.slots.find((s) => s.block_type === 'amp') as PresetSlotSpec;
+      const ch = amp?.params_by_channel as Record<string, Record<string, unknown>> | undefined;
+      return ch?.A?.drive === 3.5 && ch?.A?.input_drive === undefined && ch?.A?.mid === 5;
+    })(),
+  );
+  check(
+    'II→FM9: scene names carried',
+    (result.applied_spec.scenes as SceneSpec[] | undefined)?.[0]?.name === 'Spank Clean',
+  );
+  check(
+    'II→FM9: unmapped-model aggregate warning present',
+    result.warnings.some((w) => /without a cross-roster mapping/i.test(w)),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────

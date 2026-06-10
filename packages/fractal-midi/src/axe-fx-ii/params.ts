@@ -344,6 +344,16 @@ export const AMP_EFFECT_TYPE_VALUES: Readonly<Record<number, string>> = Object.f
     256: "DIRTY SHIRLEY 2",
     257: "BRIT 800 #34",
     258: "5F1 TWEED EC",
+    // 259-265: from the Axe-Edit effectDefinitions_07.cache (real-device sync,
+    // Q8.02), hardware-confirmed 2026-06-09 by the post-reassembly-fix fn 0x28
+    // dump (266/266 device-emitted labels match this table exactly).
+    259: "FRIEDMAN BE C45",
+    260: "FRIEDMAN 2018",
+    261: "PLEXI 2204",
+    262: "FRIEDMAN HBEC45",
+    263: "PORTA-BASS",
+    264: "SV BASS 2",
+    265: "SKULL CRUSHER",
 });
 
 export const AMP_TONE_LOCATION_VALUES: Readonly<Record<number, string>> = Object.freeze({
@@ -2239,7 +2249,10 @@ export const KNOWN_PARAMS = {
     "delay.effect_type": { groupCode: "DLY", block: "delay", paramId: 0, wikiName: "EFFECT TYPE", name: "effect_type", controlType: "select", enumValues: DELAY_EFFECT_TYPE_VALUES },
     "delay.config": { groupCode: "DLY", block: "delay", paramId: 1, wikiName: "CONFIG", name: "config", controlType: "select", parameterName: "DELAY_TYPE", xmlLabel: "Config", enumValues: DELAY_CONFIG_VALUES },
     //  calibration (2026-05-11, tempo sync DISABLED): wire 0..65534
-    // ↔ 1..8000 ms linear. NOTE: when `delay.tempo` is set to a non-NONE
+    // ↔ 1..8000 ms linear. RE-CONFIRMED 2026-06-10 via an 11-point
+    // midpoint sweep with tempo unlocked: k=1.00 (perfectly linear) end
+    // to end (wire 0 -> 1 ms, mid -> 4001 ms, full -> 8000 ms).
+    // NOTE: when `delay.tempo` is set to a non-NONE
     // sync value, the device IGNORES manual `delay.time` writes and shows
     // the tempo-derived time in parens (e.g. "(375 ms)"). Caller should
     // set `delay.tempo` to wire 0 (NONE) before setting `delay.time`
@@ -2670,6 +2683,12 @@ export const KNOWN_PARAMS = {
     "phaser.rate": { groupCode: "PHA", block: "phaser", paramId: 2, wikiName: "RATE", name: "rate", controlType: "knob", parameterName: "PHASER_RATE", xmlLabel: "Rate", modifierAssignable: true },
     "phaser.lfo_type": { groupCode: "PHA", block: "phaser", paramId: 3, wikiName: "LFO TYPE", name: "lfo_type", controlType: "select", parameterName: "PHASER_LFOTYPE", xmlLabel: "LFO Type", enumValues: PHASER_LFO_TYPE_VALUES },
     "phaser.tempo": { groupCode: "PHA", block: "phaser", paramId: 4, wikiName: "Tempo", name: "tempo", controlType: "select", parameterName: "PHASER_TEMPO", xmlLabel: "Tempo" },
+    // Range HELD: fn 0x16 reports the INTERNAL extent (1..10 here), not the
+    // display range, for non-dB knobs (the audit showed knobs read 0..1
+    // internal, time reads seconds, etc.). So neither the editor cache
+    // ([10..100], a scale artifact) nor fn 0x16 cleanly gives phaser.depth's
+    // DISPLAY range. The recipe depth=6 works as passthrough; leave it until a
+    // front-panel / midpoint-display read settles the display range + taper.
     "phaser.depth": { groupCode: "PHA", block: "phaser", paramId: 5, wikiName: "DEPTH", name: "depth", controlType: "knob", parameterName: "PHASER_DEPTH", xmlLabel: "Depth", modifierAssignable: true },
     "phaser.feedback": { groupCode: "PHA", block: "phaser", paramId: 6, wikiName: "FEEDBACK", name: "feedback", controlType: "knob", parameterName: "PHASER_FEEDBACK", xmlLabel: "Feedback", modifierAssignable: true },
     "phaser.freq_start": { groupCode: "PHA", block: "phaser", paramId: 7, wikiName: "FREQ. START", name: "freq_start", controlType: "knob", parameterName: "PHASER_FSTART", xmlLabel: "Frequency Start" },

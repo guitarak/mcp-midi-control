@@ -13,9 +13,9 @@
 | Read (read-only) | 10 |
 | Write (reversible) | 25 |
 | Write (destructive) | 5 |
-| Average description length | 613 chars |
-| Tools over 600 chars | 16 |
-| Tools over 1000 chars | 2 |
+| Average description length | 638 chars |
+| Tools over 600 chars | 17 |
+| Tools over 1000 chars | 4 |
 
 ## All tools
 
@@ -27,16 +27,16 @@ No device state changes. `readOnlyHint: true`. Hosts group these as read tools.
 
 | Tool | Description length | First sentence |
 |---|---|---|
-| `describe_device` | 986 ⚠ | REQUIRED first call for any device question or apply_preset call. |
+| `describe_device` | 1119 ⚠️ over 1000 | REQUIRED first call for any device question or apply_preset call. |
 | `find_compatible_types` | 613 ⚠ | Returns the subset of block.type values that expose EVERY knob you list (AND-semantics). |
 | `get_param` | 761 ⚠ | Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name). |
 | `get_params` | 434 | Batch-read parameters from a device. |
-| `get_preset` | 993 ⚠ | Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. |
+| `get_preset` | 1169 ⚠️ over 1000 | Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. |
 | `list_midi_ports` | 579 | List every MIDI input + output port the OS exposes. |
 | `list_params` | 736 ⚠ | Enumerate a device's params with units and display ranges. |
 | `lookup_lineage` | 966 ⚠ | Look up authored lineage for a block type: real hardware modeled, manufacturer notes, developer/forum quotes. |
 | `scan_locations` | 593 | Bulk-read stored preset names across a location range. |
-| `translate_preset` | 597 | Translate a preset spec between layout-class devices (AM4 / Axe-Fx II / III). |
+| `translate_preset` | 980 ⚠ | Translate a preset between layout-class devices (AM4 / Axe-Fx II / III / FM3 / FM9). |
 
 ### Write (reversible)
 
@@ -44,7 +44,7 @@ Working-buffer edits and navigation, reversible by switching presets. Not destru
 
 | Tool | Description length | First sentence |
 |---|---|---|
-| `export_preset` | 809 ⚠ | Back up a preset to a byte-exact `.syx` file on disk. |
+| `export_preset` | 874 ⚠ | Back up a preset to a byte-exact `.syx` file on disk. |
 | `init_patch` | 412 | Reset the active patch to factory INIT state. |
 | `reconnect_midi` | 812 ⚠ | You almost never need this. |
 | `send_cc` | 304 | Send a MIDI Control Change to any CC-responsive device. |
@@ -59,16 +59,16 @@ Working-buffer edits and navigation, reversible by switching presets. Not destru
 | `send_reset_controllers` | 243 | Reset All Controllers (CC 121) on a channel: pitch bend, mod wheel, expression, channel pressure, etc. |
 | `send_sequence` | 321 | Play a timed sequence of MIDI notes (arpeggios, riffs, test patterns). |
 | `send_song_position` | 252 | Send MIDI Song Position Pointer (0xF2): jump a sequencer / drum machine to a specific beat. |
-| `set_block` | 686 ⚠ | Place ONE block, or clear a slot (block_type "none"), on a single preset. |
+| `set_block` | 698 ⚠ | Place ONE block, or clear a slot (block_type "none"), on a single preset. |
 | `set_bypass` | 381 | Silence (bypassed=true) or activate (bypassed=false) a block on the currently-active scene. |
 | `set_macro` | 425 | Set a Macro control (CCs 16-23 on the Hydrasynth; CC range varies by device). |
-| `set_macro_route` | 765 ⚠ | Assign one of a performance Macro's (1-8) destinations by NAME on the Hydrasynth macro page (up to 8 destinations each); allocates a free slot and writes tar... |
-| `set_mod_route` | 746 ⚠ | Wire one modulation-matrix route by NAME on a synth with a mod matrix (e.g. |
+| `set_macro_route` | 998 ⚠ | Assign one of a performance Macro's (1-8) destinations by NAME on the Hydrasynth macro page (up to 8 each); allocates a free slot and writes target + depth +... |
+| `set_mod_route` | 737 ⚠ | Wire one modulation-matrix route by NAME on a synth with a mod matrix (e.g. |
 | `set_param` | 931 ⚠ | Write one parameter by (block, name) in display units (knob 0..10, dB, ms, %, enum name or wire index). |
 | `set_params` | 559 | Batch-write parameters on a device. |
 | `set_system_param` | 374 | Set a device-level system CC (master volume, sustain pedal, expression, mod wheel, all-notes-off). |
-| `switch_preset` | 402 | Load a stored preset into the working buffer. |
-| `switch_scene` | 336 | Change the active scene within the current preset. |
+| `switch_preset` | 433 | Load a stored preset into the working buffer. |
+| `switch_scene` | 344 | Change the active scene within the current preset. |
 
 ### Write (destructive)
 
@@ -89,4 +89,6 @@ Tools with descriptions over 1000 chars. Migration to structured response fields
 | Tool | Description length |
 |---|---|
 | `apply_patch` | 3776 chars |
+| `get_preset` | 1169 chars |
+| `describe_device` | 1119 chars |
 | `apply_preset` | 1084 chars |

@@ -237,15 +237,14 @@ const SUFFIX_RULES: Array<readonly [string, EnumOverlayEntry]> = [
 // models AM4 never shipped, so treat a missing high-ordinal label as
 // "newer than AM4," not an error.
 //
-// Display-only: these enums carry `enum_display_only` at the catalog
-// layer so set-by-name is refused (the typed-SET RAW enum id is a
-// DIFFERENT encoding than the read ordinal and is not yet captured: the
-// write leg). The codec layer is unaffected; numeric wire values still
-// pass through.
+// Set-by-name works: a gen-3 discrete SET carries float32(read-ordinal) at
+// payload pos 12 (sub 09 00), so the read ordinal these tables decode with IS
+// the set value (verified 2026-06-08, FM3 + FM9). The catalog encodes name ->
+// ordinal directly. Numeric wire values also pass through.
 
 const EFFECT_TYPE_NOTE =
   'Effect-type ordinals reused from AM4 by family (byte-anchored for Reverb; ' +
-  'gen-3 firmware may extend the list). Read-leg only: set-by-name is gated pending a capture.';
+  'gen-3 firmware may extend the list). The ordinal is also the discrete-SET value, so these set by name.';
 
 function effectType(values: Readonly<Record<number, string>>): EnumOverlayEntry {
   return { values, provenance: 'am4-shared', note: EFFECT_TYPE_NOTE };
@@ -262,10 +261,11 @@ const EFFECT_TYPE_OVERRIDES: Record<string, EnumOverlayEntry> = {
   // the AMP block, so DISTORT_TYPE is the amp MODEL selector, not a drive-
   // pedal picker. The AM4 DRIVE/AMP_TYPES tables are NOT a valid ordinal
   // oracle for gen-3 amp ordinals (FM9 ordinals 65/179/264 exceed AM4's 248
-  // entries and the names disagree), so labeling it would fabricate wrong
-  // amp model names on all three devices. The amp model selector ships as a
-  // numeric wire passthrough (no enum_values, no enum_display_only) until a
-  // getBlockString amp-roster sweep binds device-true names.
+  // entries and the names disagree), so labeling it from AM4 would fabricate
+  // wrong amp model names. The amp model names come from the SHARED gen-3 read
+  // roster (gen3ReadRosters, the 284 factory-correlated DISTORT models) layered
+  // at the catalog, and the ordinal IS the discrete-SET value, so amp set-by-name
+  // resolves off that roster. This overlay just stays out of amp's way.
   //
   // FUZZ_TYPE (eff=118) IS the user-facing drive/fuzz pedal type selector —
   // NOT the amp. AM4's DRIVE_TYPES ordinals match byte-for-byte against FM9

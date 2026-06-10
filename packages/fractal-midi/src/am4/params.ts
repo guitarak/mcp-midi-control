@@ -11,6 +11,7 @@
 
 import type { ParamId } from './setParam.js';
 import { CACHE_PARAMS } from './cacheParams.js';
+import { AMP_GHOST_PARAMS } from './cacheOracleParams.generated.js';
 import {
   AMP_TYPES_VALUES,
   DRIVE_TYPES_VALUES,
@@ -456,9 +457,35 @@ export const SCENE_MIDI_TYPE_ENUM: Record<number, string> = (() => {
  * any hand override that COLLIDES with a CACHE_PARAMS entry must agree
  * byte-for-byte (pidLow/pidHigh/unit/displayMin/displayMax/scaling) —
  * pure additions are unconstrained.
+ *
+ * 2026-06-09 accuracy pass: the amp banks (pidLow 0x3a / 0x3e) and the
+ * typecode family-4/5 taper set were corrected from the 2026-06-09
+ * zero-resync cache walk (effectDefinitions_15_2p0, solved record
+ * grammar). The log10 taper family is hardware-anchored: an Axe-Fx II
+ * family-4 Hz knob reads exactly the geometric mean of its range at
+ * 12 o'clock. Per-entry provenance comments predating that pass
+ * describe observed VALUES (screenshots), which remain compatible
+ * with the corrected ranges.
  */
 export const KNOWN_PARAMS = {
   ...CACHE_PARAMS,
+  // ====================================================================
+  // Amp GHOST params from the cache oracle (DISTORT section 10, pidLow
+  // 0x3a) — the 10 genuinely-unregistered HW-129 GHOSTs. Ranges/labels
+  // sourced from the SOLVED effectDefinitions_15_2p0 cache walk (the
+  // AM4-native oracle HW-129 said did not exist).
+  //
+  // HARDWARE-CONFIRMED 2026-06-10 (probe-am4-deep-verify, pass B): the 6
+  // type-code enums (biastype/precomptype/cliptype2/drivetype/tonetype/
+  // fbtype) each ROSTER-SIZE-CONFIRMED device-side — a write at the
+  // cache's count clamps to count-1, matching the cache roster exactly
+  // (n=3/2/13/8/138/69). The 4 continuous GHOSTs (xfleakage/offset1/
+  // wshpf/pi_ratio) read back in-range (pass A). Spread here so a later
+  // hand override could still win. Per the shipping bar these ship as
+  // community-beta: ranges device-true, enum LABEL text is the cache's
+  // (AM4 echoes no label over MIDI, so labels are untested by a glance);
+  // type codes are amp-model-internal — recommend read-only use.
+  ...AMP_GHOST_PARAMS,
   'amp.gain': {
     block: 'amp', name: 'gain',
     displayLabel: 'Gain',
@@ -663,10 +690,10 @@ export const KNOWN_PARAMS = {
     block: 'amp', name: 'clarity',
     displayLabel: 'Clarity',
     pidLow: 0x003a, pidHigh: 0x004d,
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
-    // typecode 80 = log10 ( cont). displayMin=0 makes log10
-    // fall back to linear at runtime; declared anyway to match the
-    // cache-derived scaling and keep verify-cache-params byte-exact.
+    // typecode 80 = log10. displayMin 0.1 per the corrected cache walk,
+    // so the log10 decode actually fires (the old 0 floor forced the
+    // linear fallback).
+    unit: 'knob_0_10', displayMin: 0.1, displayMax: 10,
     scaling: 'log10',
   },
   // renamed for UI-label match (audit row: DISTORT 82)
@@ -707,9 +734,13 @@ export const KNOWN_PARAMS = {
     block: 'amp', name: 'geq_type',
     displayLabel: 'Type',
     pidLow: 0x003a, pidHigh: 0x0063,
-    // Cache id=99: 4-entry enum.
-    unit: 'enum', displayMin: 0, displayMax: 3,
-    enumValues: { 0: '8 BAND VAR Q', 1: '7 BAND VAR Q', 2: '5 BAND (MARK)', 3: '8 BAND CONST Q' },
+    // Cache section 10 id=99: 11-entry enum (the old misframed parse saw 4).
+    unit: 'enum', displayMin: 0, displayMax: 10,
+    enumValues: {
+      0: '8 BAND VAR Q', 1: '7 BAND VAR Q', 2: '5 BAND (MARK)', 3: '8 BAND CONST Q',
+      4: '7 BAND CONST Q', 5: '5 BAND CONST Q', 6: '5 BAND PASSIVE', 7: '4 BAND PASSIVE',
+      8: '3 BAND PASSIVE', 9: '3 BAND CONSOLE', 10: '4 BAND JMPRE-1',
+    },
   },
   'amp.high_treble': {
     block: 'amp', name: 'high_treble',
@@ -790,8 +821,9 @@ export const KNOWN_PARAMS = {
   //   • Power Amp 0x005d / 0x0090 (Cathode Resistance vs Master Bias
   //     Excursion duplicates at wire=1.0)
   //   • Power Amp 0x0026 / 0x0064 / 0x008d / 0x0093 (no screenshot match)
-  //   • Cabinet 0x001c (Cab 1 Low Cut needs different scale than
-  //     master_low_cut — likely log-Hz storage; skipped pending decode)
+  //   • Cabinet 0x001c (audit guessed "Cab 1 Low Cut, log-Hz storage";
+  //     the 2026-06-09 cache walk shows 0x1c is a percent register,
+  //     raw 0..1 scale 100, so the audit label-join was wrong there)
   //   • Cabinet 0x0045 / 0x0046 (Cab 1/2 Position — bipolar -10..10
   //     range needs new unit, no existing fit)
   //   • Cabinet 0x0024 / 0x002c / 0x0030 / 0x0031 (LF/HF Damping —
@@ -808,7 +840,7 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003a, pidHigh: 0x0081,
     // Preamp.Input Boost section. Screenshot 1.11 dB (no unit visible
     // but Boost knobs are conventionally dB on Fractal).
-    unit: 'db', displayMin: 0, displayMax: 20,
+    unit: 'db', displayMin: 0, displayMax: 24,
   },
   'amp.saturation_drive': {
     block: 'amp', name: 'saturation_drive',
@@ -816,14 +848,15 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003a, pidHigh: 0x0070,
     // Preamp.Saturation Mod.Saturation Drive. Screenshot 2.220, no
     // visible unit on AM4-Edit panel; treated as raw count.
-    unit: 'count', displayMin: 0, displayMax: 10,
+    unit: 'count', displayMin: 1, displayMax: 10,
   },
   'amp.tonestack_frequency': {
     block: 'amp', name: 'tonestack_frequency',
     displayLabel: 'Frequency',
     pidLow: 0x003a, pidHigh: 0x0012,
     // Preamp.Tonestack.Frequency. Screenshot 333.0 Hz raw.
-    unit: 'hz', displayMin: 20, displayMax: 20000,
+    unit: 'hz', displayMin: 200, displayMax: 2000,
+    scaling: 'log10',
   },
   'amp.tube_hardness': {
     block: 'amp', name: 'tube_hardness',
@@ -837,13 +870,15 @@ export const KNOWN_PARAMS = {
     block: 'amp', name: 'triode_1_plate_freq',
     displayLabel: 'Triode 1 Plate Freq',
     pidLow: 0x003a, pidHigh: 0x004a,
-    unit: 'hz', displayMin: 20, displayMax: 20000,
+    unit: 'hz', displayMin: 400, displayMax: 40000,
+    scaling: 'log10',
   },
   'amp.triode_2_plate_freq': {
     block: 'amp', name: 'triode_2_plate_freq',
     displayLabel: 'Triode 2 Plate Freq',
     pidLow: 0x003a, pidHigh: 0x0049,
-    unit: 'hz', displayMin: 20, displayMax: 20000,
+    unit: 'hz', displayMin: 400, displayMax: 40000,
+    scaling: 'log10',
   },
   'amp.preamp_bias': {
     block: 'amp', name: 'preamp_bias',
@@ -859,7 +894,7 @@ export const KNOWN_PARAMS = {
     // Preamp.Preamp.Bias Excursion — percent (wire 0.080 → display 8.0%).
     // Distinct from amp.power_tube_bias_excursion / amp.pi_bias_excursion
     // / amp.master_bias_excursion on the Power Amp tab.
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: 0, displayMax: 200,
   },
   // renamed for UI-label match (audit row: DISTORT 17)
   'amp.high_cut_frequency': {
@@ -868,7 +903,8 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003a, pidHigh: 0x0011,
     // Preamp.Preamp.High Cut Frequency — bottom row of the PREAMP
     // section. Screenshot 9999.1 Hz raw.
-    unit: 'hz', displayMin: 20, displayMax: 20000,
+    unit: 'hz', displayMin: 400, displayMax: 40000,
+    scaling: 'log10',
   },
   // renamed for UI-label match (audit row: DISTORT 16)
   'amp.low_cut': {
@@ -876,7 +912,8 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Low Cut',
     pidLow: 0x003a, pidHigh: 0x0010,
     // Preamp.Input EQ.Low Cut. Screenshot 130.0 Hz raw.
-    unit: 'hz', displayMin: 20, displayMax: 20000,
+    unit: 'hz', displayMin: 10, displayMax: 1000,
+    scaling: 'log10',
   },
   'amp.input_eq_gain': {
     block: 'amp', name: 'input_eq_gain',
@@ -949,6 +986,7 @@ export const KNOWN_PARAMS = {
     // Same screenshot-misread pattern as presence_freq. Range corrected
     // to the cache truth (50..500 Hz, real Hz this time).
     unit: 'hz', displayMin: 50, displayMax: 500,
+    scaling: 'log10',
   },
   // renamed for UI-label match (audit row: DISTORT 40)
   'amp.harmonics': {
@@ -966,8 +1004,8 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003a, pidHigh: 0x002a,
     // Power Amp.Power Supply.B+ Time Constant. Screenshot 9.50 ms
     // (wire 0.0095 ×1000 = 9.5).
-    unit: 'ms', displayMin: 0.1, displayMax: 1000,
     // typecode 68 = log10 ( cont audit)
+    unit: 'ms', displayMin: 1, displayMax: 100,
     scaling: 'log10',
   },
   'amp.grid_bias': {
@@ -982,8 +1020,8 @@ export const KNOWN_PARAMS = {
     displayLabel: 'XFormer Drive',
     pidLow: 0x003a, pidHigh: 0x0035,
     // Power Amp.Transformer.XFormer Drive. Screenshot 0.120 raw count.
-    unit: 'count', displayMin: 0, displayMax: 1,
     // typecode 64 = log10 ( cont audit)
+    unit: 'count', displayMin: 0.01, displayMax: 10,
     scaling: 'log10',
   },
   'amp.xformer_matching': {
@@ -991,8 +1029,8 @@ export const KNOWN_PARAMS = {
     displayLabel: 'XFormer Matching',
     pidLow: 0x003a, pidHigh: 0x003a,
     // Power Amp.Transformer.XFormer Matching. Screenshot 1.300 raw.
-    unit: 'count', displayMin: 0.1, displayMax: 10,
     // typecode 64 = log10 ( cont audit)
+    unit: 'count', displayMin: 0.5, displayMax: 2,
     scaling: 'log10',
   },
   'amp.screen_frequency': {
@@ -1025,17 +1063,7 @@ export const KNOWN_PARAMS = {
     // Power Amp.Power Tubes.Bias Excursion. Screenshot 19.0 %.
     // Distinct from preamp_bias_excursion / pi_bias_excursion /
     // master_bias_excursion (4 separate "bias excursion" knobs).
-    unit: 'percent', displayMin: 0, displayMax: 100,
-  },
-  'amp.cathode_follower_compression': {
-    block: 'amp', name: 'cathode_follower_compression',
-    displayLabel: 'Power Tube Type',
-    pidLow: 0x003a, pidHigh: 0x004b,
-    // Power Amp.Cathode Follower.Compression. Screenshot 14.0 %.
-    // Stored raw (wire 14.0 → display 14.0%) NOT as percent ×100,
-    // confirmed by scale ×1 match in audit. Treat unit as 'count'
-    // even though display suffix is %.
-    unit: 'count', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: 0, displayMax: 200,
   },
   'amp.ac_line_frequency': {
     block: 'amp', name: 'ac_line_frequency',
@@ -1043,7 +1071,7 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003a, pidHigh: 0x005e,
     // Power Amp.Power Supply.AC Line Frequency. Screenshot 65 Hz raw.
     // Typical range 50/60 Hz mains; AM4-Edit allows wider sweep.
-    unit: 'hz', displayMin: 30, displayMax: 200,
+    unit: 'hz', displayMin: 30, displayMax: 100,
   },
   // renamed for UI-label match (audit row: DISTORT 95)
   'amp.hardness': {
@@ -1053,8 +1081,8 @@ export const KNOWN_PARAMS = {
     // Power Amp.Power Tubes.Hardness. Screenshot 7.00 (knob_0_10).
     // Distinct from preamp tube_hardness (separate knob, separate
     // wire address).
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
     // typecode 80 = log10 ( cont audit)
+    unit: 'knob_0_10', displayMin: 2.5, displayMax: 40,
     scaling: 'log10',
   },
   'amp.cathode_time_const': {
@@ -1063,8 +1091,8 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003a, pidHigh: 0x0065,
     // Power Amp.Power Amp.Cathode Time Const. Screenshot 10.00 ms
     // (wire 0.010 ×1000 = 10).
-    unit: 'ms', displayMin: 0.1, displayMax: 1000,
     // typecode 68 = log10 ( cont audit)
+    unit: 'ms', displayMin: 1, displayMax: 100,
     scaling: 'log10',
   },
   'amp.mismatch': {
@@ -1072,14 +1100,14 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Mismatch',
     pidLow: 0x003a, pidHigh: 0x0069,
     // Power Amp.Power Tubes.Mismatch. Screenshot 0.180 raw count.
-    unit: 'count', displayMin: 0, displayMax: 1,
+    unit: 'count', displayMin: -1, displayMax: 1,
   },
   'amp.variac': {
     block: 'amp', name: 'variac',
     displayLabel: 'Variac',
     pidLow: 0x003a, pidHigh: 0x006c,
     // Power Amp.Power Supply.Variac. Screenshot 55.0 % (wire 0.550 ×100).
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: 50, displayMax: 150,
   },
   'amp.pi_bias_excursion': {
     block: 'amp', name: 'pi_bias_excursion',
@@ -1087,7 +1115,7 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003a, pidHigh: 0x0079,
     // Power Amp.Power Amp.PI Bias Excursion (phase-inverter).
     // Screenshot 11.0 % (wire 0.110 ×100).
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: 0, displayMax: 200,
   },
   'amp.master_bias_excursion': {
     block: 'amp', name: 'master_bias_excursion',
@@ -1107,14 +1135,16 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003a, pidHigh: 0x0016,
     // Speaker.Impedance.XFormer Low Freq. Screenshot 33.3 Hz (wire stores
     // 33.33; AM4-Edit display rounds to 1 decimal).
-    unit: 'hz', displayMin: 10, displayMax: 20000,
+    unit: 'hz', displayMin: 5, displayMax: 500,
+    scaling: 'log10',
   },
   'amp.low_freq': {
     block: 'amp', name: 'low_freq',
     displayLabel: 'Low Freq',
     pidLow: 0x003a, pidHigh: 0x0021,
     // Speaker.Impedance.Low Freq. Screenshot 44.4 Hz (wire 44.44).
-    unit: 'hz', displayMin: 10, displayMax: 20000,
+    unit: 'hz', displayMin: 40, displayMax: 400,
+    scaling: 'log10',
   },
   'amp.low_q': {
     block: 'amp', name: 'low_q',
@@ -1130,14 +1160,16 @@ export const KNOWN_PARAMS = {
     displayLabel: 'XFormer Hi Freq',
     pidLow: 0x003a, pidHigh: 0x0017,
     // Speaker.Impedance.XFormer Hi Freq. Screenshot 12000 Hz raw.
-    unit: 'hz', displayMin: 100, displayMax: 20000,
+    unit: 'hz', displayMin: 4000, displayMax: 40000,
+    scaling: 'log10',
   },
   'amp.high_freq': {
     block: 'amp', name: 'high_freq',
     displayLabel: 'High Freq',
     pidLow: 0x003a, pidHigh: 0x0032,
     // Speaker.Impedance.High Freq. Screenshot 666.0 Hz raw.
-    unit: 'hz', displayMin: 100, displayMax: 20000,
+    unit: 'hz', displayMin: 400, displayMax: 4000,
+    scaling: 'log10',
   },
   'amp.hi_slope': {
     block: 'amp', name: 'hi_slope',
@@ -1148,8 +1180,8 @@ export const KNOWN_PARAMS = {
     // (also wire 0.888) by section-position heuristic — Hi Slope is
     // higher in the AM4-Edit UI (Impedance > Speaker), and 0x006b
     // sits before 0x007a in pidHigh order.
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
     // typecode 64 = log10 ( cont audit)
+    unit: 'knob_0_10', displayMin: 1, displayMax: 10,
     scaling: 'log10',
   },
   'amp.cab_resonance': {
@@ -1165,8 +1197,8 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Speaker Impedance',
     pidLow: 0x003a, pidHigh: 0x0086,
     // Speaker.Impedance.Speaker Impedance. Screenshot 1.220 raw count.
-    unit: 'count', displayMin: 0.1, displayMax: 10,
     // typecode 64 = log10 ( cont audit)
+    unit: 'count', displayMin: 0.5, displayMax: 2,
     scaling: 'log10',
   },
   'amp.spkr_compression': {
@@ -1193,8 +1225,8 @@ export const KNOWN_PARAMS = {
     // Speaker.Speaker.Time Constant. Screenshot 1000.0 ms (wire 1.000
     // ×1000). `spkr_` prefix to avoid confusion with cathode_time_const
     // on the Power Amp tab.
-    unit: 'ms', displayMin: 0.1, displayMax: 10000,
     // typecode 68 = log10 ( cont audit)
+    unit: 'ms', displayMin: 100, displayMax: 10000,
     scaling: 'log10',
   },
   'amp.thump': {
@@ -1210,15 +1242,18 @@ export const KNOWN_PARAMS = {
     block: 'amp', name: 'cab1_distance',
     pidLow: 0x003e, pidHigh: 0x0002,
     // Cabinet.Cab 1.Distance. Screenshot 2.22 cm (wire 0.022 ×100).
-    // Display unit on AM4-Edit is "cm"; firmware stores cm/100.
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    // Display unit on AM4-Edit is "cm"; firmware stores cm/100. Cache
+    // says the register is bipolar (-100..100); suffix kept as cm.
+    unit: 'bipolar_percent', displayMin: -100, displayMax: 100,
+    displayUnit: 'cm',
   },
   'amp.cab_mic_preamp_drive': {
     block: 'amp', name: 'cab_mic_preamp_drive',
     displayLabel: 'Drive',
     pidLow: 0x003e, pidHigh: 0x001a,
     // Cabinet.Cab Mic Preamp.Drive. Screenshot 6.60 (knob_0_10).
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+    unit: 'knob_0_10', displayMin: 0.01, displayMax: 10,
+    scaling: 'log10',
   },
   'amp.cab_mic_preamp_saturation': {
     block: 'amp', name: 'cab_mic_preamp_saturation',
@@ -1235,14 +1270,15 @@ export const KNOWN_PARAMS = {
     // (Many wire=1.0 rows in the audit also matched this label via the
     // ×10 scale — those are false positives; the canonical pidHigh
     // is 0x0027 with wire=10.0 raw.)
-    unit: 'db', displayMin: -20, displayMax: 20,
+    unit: 'db', displayMin: -12, displayMax: 12,
   },
   'amp.room_size': {
     block: 'amp', name: 'room_size',
     displayLabel: 'Room Size',
     pidLow: 0x003e, pidHigh: 0x001d,
     // Cabinet.Room.Room Size. Screenshot 5.55 m raw count.
-    unit: 'count', displayMin: 0.1, displayMax: 50,
+    unit: 'count', displayMin: 3, displayMax: 30,
+    scaling: 'log10',
   },
   'amp.mic_spacing': {
     block: 'amp', name: 'mic_spacing',
@@ -1257,8 +1293,8 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003e, pidHigh: 0x0020,
     // Cabinet.Cab Master EQ.Master High Cut. Screenshot 222 Hz
     // (founder-confirmed deliberate non-default value).
-    unit: 'hz', displayMin: 20, displayMax: 20000,
     // typecode 64 = log10 ( cont audit)
+    unit: 'hz', displayMin: 200, displayMax: 20000,
     scaling: 'log10',
   },
   'amp.cab_master_low_cut': {
@@ -1266,7 +1302,8 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Proximity Frequency',
     pidLow: 0x003e, pidHigh: 0x0022,
     // Cabinet.Cab Master EQ.Master Low Cut. Screenshot 33.3 Hz raw.
-    unit: 'hz', displayMin: 20, displayMax: 20000,
+    unit: 'hz', displayMin: 20, displayMax: 200,
+    scaling: 'log10',
   },
   'amp.cab_master_level': {
     block: 'amp', name: 'cab_master_level',
@@ -1282,7 +1319,8 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Frequency',
     pidLow: 0x003e, pidHigh: 0x002e,
     // Cabinet.Air.Frequency. Screenshot 12121 Hz raw.
-    unit: 'hz', displayMin: 100, displayMax: 20000,
+    unit: 'hz', displayMin: 2000, displayMax: 20000,
+    scaling: 'log10',
   },
   'amp.room_diffusion': {
     block: 'amp', name: 'room_diffusion',
@@ -1296,8 +1334,8 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Low Cut',
     pidLow: 0x003e, pidHigh: 0x0036,
     // Cabinet.Cab 2.Low Cut. Screenshot 55.0 Hz raw.
-    unit: 'hz', displayMin: 20, displayMax: 20000,
     // typecode 64 = log10 ( cont audit)
+    unit: 'hz', displayMin: 20, displayMax: 200,
     scaling: 'log10',
   },
   'amp.cab1_high_cut': {
@@ -1305,14 +1343,16 @@ export const KNOWN_PARAMS = {
     displayLabel: 'High Cut',
     pidLow: 0x003e, pidHigh: 0x0037,
     // Cabinet.Cab 1.High Cut. Screenshot 5500.0 Hz raw.
-    unit: 'hz', displayMin: 20, displayMax: 20000,
+    unit: 'hz', displayMin: 2000, displayMax: 20000,
+    scaling: 'log10',
   },
   'amp.cab2_high_cut': {
     block: 'amp', name: 'cab2_high_cut',
     displayLabel: 'High Cut',
     pidLow: 0x003e, pidHigh: 0x0038,
     // Cabinet.Cab 2.High Cut. Screenshot 4444.1 Hz raw.
-    unit: 'hz', displayMin: 20, displayMax: 20000,
+    unit: 'hz', displayMin: 2000, displayMax: 20000,
+    scaling: 'log10',
   },
   'amp.align_distance_1': {
     block: 'amp', name: 'align_distance_1',
@@ -1320,14 +1360,14 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003e, pidHigh: 0x0012,
     // Cabinet.Align modal.Distance 1. Screenshot 5.000 ms
     // (wire 0.005 ×1000). Distinct delay-trim knob from Cab 1 Distance.
-    unit: 'ms', displayMin: 0, displayMax: 100,
+    unit: 'ms', displayMin: 0, displayMax: 10,
   },
   'amp.align_distance_2': {
     block: 'amp', name: 'align_distance_2',
     displayLabel: 'Mic Distance',
     pidLow: 0x003e, pidHigh: 0x0013,
     // Cabinet.Align modal.Distance 2. Screenshot 6.000 ms.
-    unit: 'ms', displayMin: 0, displayMax: 100,
+    unit: 'ms', displayMin: 0, displayMax: 10,
   },
 
   // 2026-05-17 — CABINET  closeout. 25 new amp
@@ -1374,17 +1414,17 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Bank',
     pidLow: 0x003e, pidHigh: 0x000a,
     // CABINET_BANK1 (catalog id=10). AM4-Edit "Bank" — cab IR-pack
-    // selector (UltraRes / Legacy / etc.). TODO: capture enum values.
-    unit: 'enum', displayMin: 0, displayMax: 31,
+    // selector. Cache roster has a single entry on this firmware.
+    unit: 'enum', displayMin: 0, displayMax: 0,
+    enumValues: { 0: 'USER' },
   },
   'amp.cab': {
     block: 'amp', name: 'cab',
     displayLabel: 'Cab #',
     pidLow: 0x003e, pidHigh: 0x000c,
     // CABINET_TYPE1 (catalog id=12). AM4-Edit "Cab #" — cab IR
-    // selector within the active bank. TODO: capture enum values
-    // (range varies by bank; conservative 0..255 for now).
-    unit: 'enum', displayMin: 0, displayMax: 255,
+    // selector within the active bank. Cache: integer 0..255.
+    unit: 'count', displayMin: 0, displayMax: 255,
   },
   'amp.pan': {
     block: 'amp', name: 'pan',
@@ -1407,8 +1447,9 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Cab Mode',
     pidLow: 0x003e, pidHigh: 0x0018,
     // CABINET_MODE (catalog id=24). AM4-Edit "Cab Mode" — selects
-    // single / dual / DynaCab routing. TODO: capture enum values.
-    unit: 'enum', displayMin: 0, displayMax: 7,
+    // user-cab vs DynaCab routing.
+    unit: 'enum', displayMin: 0, displayMax: 1,
+    enumValues: { 0: 'USER CAB', 1: 'DYNA-CAB' },
   },
   'amp.cab_section': {
     block: 'amp', name: 'cab_section',
@@ -1417,7 +1458,7 @@ export const KNOWN_PARAMS = {
     // CABINET_BYPASS (catalog id=25). AM4-Edit "Cab Section" — section-
     // level bypass for the cab block (distinct from preset bypass).
     unit: 'enum', displayMin: 0, displayMax: 1,
-    enumValues: { 0: 'OFF', 1: 'ON' },
+    enumValues: { 0: 'ENGAGED', 1: 'BYPASSED' },
   },
   'amp.room_level': {
     block: 'amp', name: 'room_level',
@@ -1432,16 +1473,18 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Cab Input Mode',
     pidLow: 0x003e, pidHigh: 0x0023,
     // CABINET_INPUTSEL (catalog id=35). AM4-Edit "Cab Input Mode" —
-    // selects L / R / SUM input to the cab block. TODO: capture enum.
+    // input routing into the cab block.
     unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: { 0: 'STEREO', 1: 'LEFT', 2: 'RIGHT', 3: 'SUM L+R' },
   },
   'amp.mode': {
     block: 'amp', name: 'mode',
     displayLabel: 'Mode',
     pidLow: 0x003e, pidHigh: 0x0028,
     // CABINET_OVERSAMPLE (catalog id=40). AM4-Edit "Mode" — IR engine
-    // oversampling / quality mode selector. TODO: capture enum values.
-    unit: 'enum', displayMin: 0, displayMax: 3,
+    // quality mode.
+    unit: 'enum', displayMin: 0, displayMax: 1,
+    enumValues: { 0: 'ECONOMY', 1: 'HIGH QUALITY' },
   },
   'amp.floor_reflections': {
     block: 'amp', name: 'floor_reflections',
@@ -1449,7 +1492,7 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003e, pidHigh: 0x002c,
     // CABINET_FLOORLVL (catalog id=44). AM4-Edit "Floor Reflections" —
     // level of floor-bounce reflections in the room model.
-    unit: 'db', displayMin: -60, displayMax: 12,
+    unit: 'bipolar_percent', displayMin: -100, displayMax: 100,
   },
   'amp.room_shape': {
     block: 'amp', name: 'room_shape',
@@ -1457,8 +1500,8 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003e, pidHigh: 0x002f,
     // CABINET_ROOMSHAPE (catalog id=47). AM4-Edit "Room Shape" —
     // selects the room geometry preset (square / rectangle / etc.).
-    // TODO: capture enum values.
-    unit: 'enum', displayMin: 0, displayMax: 7,
+    unit: 'enum', displayMin: 0, displayMax: 1,
+    enumValues: { 0: 'HALL', 1: 'ROOM' },
   },
   'amp.lf_damping': {
     block: 'amp', name: 'lf_damping',
@@ -1466,7 +1509,7 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003e, pidHigh: 0x0030,
     // CABINET_LFDAMPING (catalog id=48). AM4-Edit "LF Damping" —
     // low-frequency damping in the room reflection model.
-    unit: 'db', displayMin: -60, displayMax: 12,
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
   },
   'amp.hf_damping': {
     block: 'amp', name: 'hf_damping',
@@ -1474,7 +1517,7 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003e, pidHigh: 0x0031,
     // CABINET_HFDAMPING (catalog id=49). AM4-Edit "HF Damping" —
     // high-frequency damping in the room reflection model.
-    unit: 'db', displayMin: -60, displayMax: 12,
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
   },
   'amp.cab_vu': {
     block: 'amp', name: 'cab_vu',
@@ -1491,7 +1534,8 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003e, pidHigh: 0x0039,
     // CABINET_LENGTH1 (catalog id=57). AM4-Edit "Cab 1 IR Length" —
     // impulse-response truncation length in samples / ms for Cab 1.
-    unit: 'count', displayMin: 0, displayMax: 8192,
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: { 0: 'MAX', 1: '1024', 2: '512', 3: '256' },
   },
   'amp.cab_2_ir_length': {
     block: 'amp', name: 'cab_2_ir_length',
@@ -1499,24 +1543,26 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003e, pidHigh: 0x003a,
     // CABINET_LENGTH2 (catalog id=58). AM4-Edit "Cab 2 IR Length" —
     // sibling to cab_1_ir_length for Cab 2.
-    unit: 'count', displayMin: 0, displayMax: 8192,
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: { 0: 'MAX', 1: '1024', 2: '512', 3: '256' },
   },
   'amp.low_slope': {
     block: 'amp', name: 'low_slope',
     displayLabel: 'Low Slope',
     pidLow: 0x003e, pidHigh: 0x003b,
     // CABINET_LOSLOPE1 (catalog id=59). AM4-Edit "Low Slope" — Cab 1
-    // low-cut filter slope in dB/oct. TODO: capture enum values
-    // (commonly 6/12/18/24/36/48 dB/oct in Fractal cab filters).
-    unit: 'enum', displayMin: 0, displayMax: 7,
+    // low-cut filter slope in dB/oct.
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: { 0: '6 dB/OCT', 1: '12 dB/OCT', 2: '18 dB/OCT', 3: '24 dB/OCT' },
   },
   'amp.high_slope': {
     block: 'amp', name: 'high_slope',
     displayLabel: 'High Slope',
     pidLow: 0x003e, pidHigh: 0x003d,
     // CABINET_HISLOPE1 (catalog id=61). AM4-Edit "High Slope" — Cab 1
-    // high-cut filter slope in dB/oct. TODO: capture enum values.
-    unit: 'enum', displayMin: 0, displayMax: 7,
+    // high-cut filter slope in dB/oct.
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: { 0: '6 dB/OCT', 1: '12 dB/OCT', 2: '18 dB/OCT', 3: '24 dB/OCT' },
   },
   'amp.master_low_slope': {
     block: 'amp', name: 'master_low_slope',
@@ -1524,8 +1570,8 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003e, pidHigh: 0x003f,
     // CABINET_PRELOSLOPE (catalog id=63). AM4-Edit "Master Low Slope" —
     // Cab-Master EQ low-cut slope (sibling to cab_master_low_cut Hz).
-    // TODO: capture enum values.
-    unit: 'enum', displayMin: 0, displayMax: 7,
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: { 0: '6 dB/OCT', 1: '12 dB/OCT', 2: '18 dB/OCT', 3: '24 dB/OCT' },
   },
   'amp.master_high_slope': {
     block: 'amp', name: 'master_high_slope',
@@ -1533,16 +1579,16 @@ export const KNOWN_PARAMS = {
     pidLow: 0x003e, pidHigh: 0x0040,
     // CABINET_PREHISLOPE (catalog id=64). AM4-Edit "Master High Slope" —
     // Cab-Master EQ high-cut slope (sibling to cab_master_high_cut Hz).
-    // TODO: capture enum values.
-    unit: 'enum', displayMin: 0, displayMax: 7,
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: { 0: '6 dB/OCT', 1: '12 dB/OCT', 2: '18 dB/OCT', 3: '24 dB/OCT' },
   },
   'amp.dynacab': {
     block: 'amp', name: 'dynacab',
     displayLabel: 'DynaCab',
     pidLow: 0x003e, pidHigh: 0x0045,
     // CABINET_DYNACAB_R1 (catalog id=69). AM4-Edit "DynaCab" — Cab 1
-    // DynaCab radius/rotation. Knob-style 0..10.
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+    // DynaCab radius/rotation. Bipolar knob, -10..+10.
+    unit: 'knob_0_10', displayMin: -10, displayMax: 10,
   },
   // SKIP: CABINET_DYNACAB_Z1 (catalog id=71, XML "Distance") would
   // collide with the existing CACHE_PARAMS entry `amp.distance` at
@@ -1622,6 +1668,7 @@ export const KNOWN_PARAMS = {
     // 'frequency' to mirror the existing input_eq_q / input_eq_gain /
     // input_eq_low_cut family on the same UI page.
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'amp.overdrive': {
     block: 'amp', name: 'overdrive',
@@ -1649,6 +1696,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'High Cut',
     pidLow: 0x003a, pidHigh: 0x005a,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'amp.cathode_resistance': {
     block: 'amp', name: 'cathode_resistance',
@@ -1754,6 +1802,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Low Cut',
     pidLow: 0x0076, pidHigh: 0x0010,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'drive.bass': {
     block: 'drive', name: 'bass',
@@ -1771,6 +1820,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'XFormer Low Freq',
     pidLow: 0x0076, pidHigh: 0x0016,
     unit: 'hz', displayMin: 200, displayMax: 2000,
+    scaling: 'log10',
   },
   'drive.treble': {
     block: 'drive', name: 'treble',
@@ -1796,6 +1846,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'High Cut Frequency',
     pidLow: 0x0076, pidHigh: 0x0011,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'drive.bypass_mode': {
     block: 'drive', name: 'bypass_mode',
@@ -1971,6 +2022,7 @@ export const KNOWN_PARAMS = {
     // Cache: a=200, b=20000, c=1 → raw Hz, 200..20000 Hz. Hall capture
     // wrote 7000 Hz directly (numeric input field, action=0x0001).
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'reverb.low_cut': {
     block: 'reverb', name: 'low_cut',
@@ -1978,6 +2030,7 @@ export const KNOWN_PARAMS = {
     pidLow: 0x0042, pidHigh: 0x0014,
     // Cache: a=20, b=2000, c=1 → raw Hz, 20..2000 Hz.
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'reverb.input_gain': {
     block: 'reverb', name: 'input_gain',
@@ -2164,12 +2217,14 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Low Cut',
     pidLow: 0x0046, pidHigh: 0x0014,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'delay.high_cut': {
     block: 'delay', name: 'high_cut',
     displayLabel: 'High Cut',
     pidLow: 0x0046, pidHigh: 0x0015,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'delay.lo_fi_drive': {
     block: 'delay', name: 'lo_fi_drive',
@@ -2251,12 +2306,14 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Frequency 1',
     pidLow: 0x0046, pidHigh: 0x0041,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'delay.eq_freq_2': {
     block: 'delay', name: 'eq_freq_2',
     displayLabel: 'Frequency 2',
     pidLow: 0x0046, pidHigh: 0x0042,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'delay.eq_q_1': {
     block: 'delay', name: 'eq_q_1',
@@ -2313,12 +2370,14 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Master Time',
     pidLow: 0x0046, pidHigh: 0x004e,
     unit: 'percent', displayMin: 25, displayMax: 400,
+    scaling: 'log10',
   },
   'delay.lfo_rate': {
     block: 'delay', name: 'lfo_rate',
     displayLabel: 'LFO Rate',
     pidLow: 0x0046, pidHigh: 0x004f,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'delay.lfo_depth': {
     block: 'delay', name: 'lfo_depth',
@@ -2465,6 +2524,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Rate',
     pidLow: 0x004e, pidHigh: 0x000c,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'chorus.depth': {
     block: 'chorus', name: 'depth',
@@ -2547,6 +2607,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'High Cut',
     pidLow: 0x004e, pidHigh: 0x000f,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'chorus.lfo_phase_pct': {
     block: 'chorus', name: 'lfo_phase_pct',
@@ -2560,6 +2621,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Rate Right',
     pidLow: 0x004e, pidHigh: 0x0016,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   // renamed for UI-label match (audit row: CHORUS 23)
   'chorus.lfo_2_depth': {
@@ -2584,6 +2646,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Low Cut',
     pidLow: 0x004e, pidHigh: 0x0019,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   // renamed for UI-label match (audit row: CHORUS 26)
   'chorus.stereo_spread': {
@@ -2625,6 +2688,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Rate',
     pidLow: 0x0052, pidHigh: 0x000b,
     unit: 'hz', displayMin: 0.05, displayMax: 10,
+    scaling: 'log10',
   },
   'flanger.depth': {
     block: 'flanger', name: 'depth',
@@ -2685,6 +2749,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Rate',
     pidLow: 0x005a, pidHigh: 0x000c,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'phaser.feedback': {
     block: 'phaser', name: 'feedback',
@@ -2772,6 +2837,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Minimum Frequency',
     pidLow: 0x005e, pidHigh: 0x000b,
     unit: 'hz', displayMin: 100, displayMax: 1000,
+    scaling: 'log10',
   },
   // renamed for UI-label match (audit row: WAH 12)
   'wah.maximum_frequency': {
@@ -2780,6 +2846,7 @@ export const KNOWN_PARAMS = {
     pidLow: 0x005e, pidHigh: 0x000c,
     // Cache id=12: a=500 b=5000 c=1.
     unit: 'hz', displayMin: 500, displayMax: 5000,
+    scaling: 'log10',
   },
   'wah.q_resonance': {
     block: 'wah', name: 'q_resonance',
@@ -2841,6 +2908,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Low Cut Frequency',
     pidLow: 0x005e, pidHigh: 0x0014,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'wah.eq_post': {
     block: 'wah', name: 'eq_post',
@@ -2958,6 +3026,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Low Cut',
     pidLow: 0x002e, pidHigh: 0x0011,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'compressor.sidechain_source': {
     block: 'compressor', name: 'sidechain_source',
@@ -2998,6 +3067,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'High Cut',
     pidLow: 0x002e, pidHigh: 0x001a,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'compressor.sidechain_gain': {
     block: 'compressor', name: 'sidechain_gain',
@@ -3010,6 +3080,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Frequency',
     pidLow: 0x002e, pidHigh: 0x001c,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'compressor.sidechain_q': {
     block: 'compressor', name: 'sidechain_q',
@@ -3051,6 +3122,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Emphasis Freq',
     pidLow: 0x002e, pidHigh: 0x0027,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'compressor.drive': {
     block: 'compressor', name: 'drive',
@@ -3105,6 +3177,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Frequency',
     pidLow: 0x0072, pidHigh: 0x000b,
     unit: 'hz', displayMin: 20, displayMax: 20000,
+    scaling: 'log10',
   },
   // 2026-04-25: filter Config-page cuts.
   // Wire-verified at 100 Hz / 1800 Hz on a Low-Pass filter
@@ -3115,12 +3188,14 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Low Cut',
     pidLow: 0x0072, pidHigh: 0x0012,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'filter.high_cut': {
     block: 'filter', name: 'high_cut',
     displayLabel: 'High Cut',
     pidLow: 0x0072, pidHigh: 0x0013,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   // 2026-04-26: All-Pass filter Config-page
   // residuals — `session-33-filter-extended.pcapng`. Wire-verified
@@ -3159,6 +3234,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Rate',
     pidLow: 0x006a, pidHigh: 0x000c,
     unit: 'hz', displayMin: 0.2, displayMax: 20,
+    scaling: 'log10',
   },
   'tremolo.depth': {
     block: 'tremolo', name: 'depth',
@@ -3244,12 +3320,14 @@ export const KNOWN_PARAMS = {
     displayLabel: 'Low Cut',
     pidLow: 0x007a, pidHigh: 0x000c,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'enhancer.high_cut': {
     block: 'enhancer', name: 'high_cut',
     displayLabel: 'High Cut',
     pidLow: 0x007a, pidHigh: 0x000d,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   // finding F1 — `enhancer.mix` is a phantom
   // register on the AM4 hardware display. The Enhancer block exposes
@@ -3366,6 +3444,7 @@ export const KNOWN_PARAMS = {
     displayLabel: 'High Cut',
     pidLow: 0x0092, pidHigh: 0x0011,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'gate.bypass_mode': {
     block: 'gate', name: 'bypass_mode',
@@ -3633,11 +3712,11 @@ export const KNOWN_PARAMS = {
   'geq.band_10': { block: 'geq', name: 'band_10', displayLabel: '16k', pidLow: 0x0032, pidHigh: 0x0013, unit: 'db', displayMin: -12, displayMax: 12 },
   'geq.master_q': { block: 'geq', name: 'master_q', displayLabel: 'Master Q', pidLow: 0x0032, pidHigh: 0x0015, unit: 'count', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   // PEQ 5-channel parametric EQ mirrors (frequency / Q / gain × 5 channels).
-  'peq.channel_1_frequency': { block: 'peq', name: 'channel_1_frequency', displayLabel: 'Freq 1', pidLow: 0x0036, pidHigh: 0x000a, unit: 'hz', displayMin: 20, displayMax: 2000 },
-  'peq.channel_2_frequency': { block: 'peq', name: 'channel_2_frequency', displayLabel: 'Freq 2', pidLow: 0x0036, pidHigh: 0x000b, unit: 'hz', displayMin: 100, displayMax: 10000 },
-  'peq.channel_3_frequency': { block: 'peq', name: 'channel_3_frequency', displayLabel: 'Freq 3', pidLow: 0x0036, pidHigh: 0x000c, unit: 'hz', displayMin: 100, displayMax: 10000 },
-  'peq.channel_4_frequency': { block: 'peq', name: 'channel_4_frequency', displayLabel: 'Freq 4', pidLow: 0x0036, pidHigh: 0x000d, unit: 'hz', displayMin: 100, displayMax: 10000 },
-  'peq.channel_5_frequency': { block: 'peq', name: 'channel_5_frequency', displayLabel: 'Freq 5', pidLow: 0x0036, pidHigh: 0x000e, unit: 'hz', displayMin: 200, displayMax: 20000 },
+  'peq.channel_1_frequency': { block: 'peq', name: 'channel_1_frequency', displayLabel: 'Freq 1', pidLow: 0x0036, pidHigh: 0x000a, unit: 'hz', displayMin: 20, displayMax: 2000, scaling: 'log10' },
+  'peq.channel_2_frequency': { block: 'peq', name: 'channel_2_frequency', displayLabel: 'Freq 2', pidLow: 0x0036, pidHigh: 0x000b, unit: 'hz', displayMin: 100, displayMax: 10000, scaling: 'log10' },
+  'peq.channel_3_frequency': { block: 'peq', name: 'channel_3_frequency', displayLabel: 'Freq 3', pidLow: 0x0036, pidHigh: 0x000c, unit: 'hz', displayMin: 100, displayMax: 10000, scaling: 'log10' },
+  'peq.channel_4_frequency': { block: 'peq', name: 'channel_4_frequency', displayLabel: 'Freq 4', pidLow: 0x0036, pidHigh: 0x000d, unit: 'hz', displayMin: 100, displayMax: 10000, scaling: 'log10' },
+  'peq.channel_5_frequency': { block: 'peq', name: 'channel_5_frequency', displayLabel: 'Freq 5', pidLow: 0x0036, pidHigh: 0x000e, unit: 'hz', displayMin: 200, displayMax: 20000, scaling: 'log10' },
   'peq.channel_1_q': { block: 'peq', name: 'channel_1_q', displayLabel: 'Q1', pidLow: 0x0036, pidHigh: 0x000f, unit: 'count', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   'peq.channel_2_q': { block: 'peq', name: 'channel_2_q', displayLabel: 'Q2', pidLow: 0x0036, pidHigh: 0x0010, unit: 'count', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   'peq.channel_3_q': { block: 'peq', name: 'channel_3_q', displayLabel: 'Q3', pidLow: 0x0036, pidHigh: 0x0011, unit: 'count', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
@@ -3774,8 +3853,20 @@ export const KNOWN_PARAMS = {
   'rotary.rotor_length': { block: 'rotary', name: 'rotor_length', displayLabel: 'Rotor Length', pidLow: 0x0056, pidHigh: 0x000f, unit: 'percent', displayMin: 0.1, displayMax: 100 },
   'rotary.mic_spacing': { block: 'rotary', name: 'mic_spacing', displayLabel: 'Mic Spacing', pidLow: 0x0056, pidHigh: 0x0010, unit: 'rotary_mic_spacing', displayMin: 0, displayMax: 100 },
   'rotary.low_rate_multiplier': { block: 'rotary', name: 'low_rate_multiplier', displayLabel: 'Low Rate Multiplier', pidLow: 0x0056, pidHigh: 0x0011, unit: 'count', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
-  'rotary.low_time_constant': { block: 'rotary', name: 'low_time_constant', displayLabel: 'Low Time Constant', pidLow: 0x0056, pidHigh: 0x0012, unit: 'count', displayMin: 0.1, displayMax: 10 },
-  'rotary.high_time_constant': { block: 'rotary', name: 'high_time_constant', displayLabel: 'High Time Constant', pidLow: 0x0056, pidHigh: 0x0013, unit: 'count', displayMin: 0.1, displayMax: 10 },
+  'rotary.low_time_constant': {
+    block: 'rotary', name: 'low_time_constant',
+    displayLabel: 'Low Time Constant',
+    pidLow: 0x0056, pidHigh: 0x0012,
+    unit: 'seconds', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
+  },
+  'rotary.high_time_constant': {
+    block: 'rotary', name: 'high_time_constant',
+    displayLabel: 'High Time Constant',
+    pidLow: 0x0056, pidHigh: 0x0013,
+    unit: 'seconds', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
+  },
   'rotary.stereo_spread': { block: 'rotary', name: 'stereo_spread', displayLabel: 'Stereo Spread', pidLow: 0x0056, pidHigh: 0x0014, unit: 'bipolar_percent', displayMin: -200, displayMax: 200 },
   'rotary.drive': { block: 'rotary', name: 'drive', displayLabel: 'Drive', pidLow: 0x0056, pidHigh: 0x0015, unit: 'knob_0_10', displayMin: 0.5, displayMax: 500, scaling: 'log10' /* typecode 80 —  cont */ },
   'rotary.mic_distance': { block: 'rotary', name: 'mic_distance', displayLabel: 'Mic Distance', pidLow: 0x0056, pidHigh: 0x0016, unit: 'count', displayMin: 0.01, displayMax: 1, scaling: 'log10' },
@@ -4001,18 +4092,25 @@ export const KNOWN_PARAMS = {
   'reverb.early_level':      { block: 'reverb', name: 'early_level', displayLabel: "Early Level",      pidLow: 0x0042, pidHigh: 0x0011, unit: 'db', displayMin: -40, displayMax: 10 },
   'reverb.late_level':       { block: 'reverb', name: 'late_level', displayLabel: "Late Level ",       pidLow: 0x0042, pidHigh: 0x0012, unit: 'db', displayMin: -40, displayMax: 10 },
   'reverb.depth':            { block: 'reverb', name: 'depth', displayLabel: "Depth",            pidLow: 0x0042, pidHigh: 0x0015, unit: 'percent', displayMin: 0, displayMax: 100 },
-  'reverb.rate':             { block: 'reverb', name: 'rate', displayLabel: "Rate",             pidLow: 0x0042, pidHigh: 0x0016, unit: 'hz', displayMin: 0.01, displayMax: 1 },
+  'reverb.rate':             { block: 'reverb', name: 'rate', displayLabel: "Rate",             pidLow: 0x0042, pidHigh: 0x0016, unit: 'hz', displayMin: 0.01, displayMax: 1, scaling: 'log10' },
   'reverb.diffusion':        { block: 'reverb', name: 'diffusion', displayLabel: "Diffusion",        pidLow: 0x0042, pidHigh: 0x0019, unit: 'percent', displayMin: 0, displayMax: 100 },
   'reverb.diffusion_time':   { block: 'reverb', name: 'diffusion_time', displayLabel: "Diffusion Time",   pidLow: 0x0042, pidHigh: 0x001a, unit: 'percent', displayMin: 0, displayMax: 100 },
   'reverb.pickup_spacing':   { block: 'reverb', name: 'pickup_spacing', displayLabel: "Pickup Spacing",   pidLow: 0x0042, pidHigh: 0x001d, unit: 'percent', displayMin: 0, displayMax: 100 },
-  'reverb.frequency_1':      { block: 'reverb', name: 'frequency_1', displayLabel: "Frequency 1",      pidLow: 0x0042, pidHigh: 0x001e, unit: 'hz', displayMin: 20, displayMax: 2000 },
-  'reverb.frequency_2':      { block: 'reverb', name: 'frequency_2', displayLabel: "Frequency 2",      pidLow: 0x0042, pidHigh: 0x001f, unit: 'hz', displayMin: 100, displayMax: 10000 },
+  'reverb.frequency_1':      { block: 'reverb', name: 'frequency_1', displayLabel: "Frequency 1",      pidLow: 0x0042, pidHigh: 0x001e, unit: 'hz', displayMin: 20, displayMax: 2000, scaling: 'log10' },
+  'reverb.frequency_2':      { block: 'reverb', name: 'frequency_2', displayLabel: "Frequency 2",      pidLow: 0x0042, pidHigh: 0x001f, unit: 'hz', displayMin: 100, displayMax: 10000, scaling: 'log10' },
   'reverb.q_1':              { block: 'reverb', name: 'q_1', displayLabel: "Q 1",              pidLow: 0x0042, pidHigh: 0x0020, unit: 'count', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   'reverb.q_2':              { block: 'reverb', name: 'q_2', displayLabel: "Q 2",              pidLow: 0x0042, pidHigh: 0x0021, unit: 'count', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   'reverb.gain_1':           { block: 'reverb', name: 'gain_1', displayLabel: "Gain 1",           pidLow: 0x0042, pidHigh: 0x0022, unit: 'db', displayMin: -12, displayMax: 12 },
   'reverb.gain_2':           { block: 'reverb', name: 'gain_2', displayLabel: "Gain 2",           pidLow: 0x0042, pidHigh: 0x0023, unit: 'db', displayMin: -12, displayMax: 12 },
-  'reverb.low_decay':        { block: 'reverb', name: 'low_decay', displayLabel: "Low Decay",        pidLow: 0x0042, pidHigh: 0x0025, unit: 'seconds', displayMin: 0.02, displayMax: 2, scaling: 'log10' },
-  'reverb.xover_frequency':  { block: 'reverb', name: 'xover_frequency', displayLabel: "Xover Frequency",  pidLow: 0x0042, pidHigh: 0x0026, unit: 'hz', displayMin: 100, displayMax: 10000 },
+  'reverb.low_decay': {
+    block: 'reverb', name: 'low_decay',
+    displayLabel: 'Low Decay',
+    pidLow: 0x0042, pidHigh: 0x0025,
+    unit: 'seconds', displayMin: 0.02, displayMax: 2,
+    scaling: 'log10',
+    displayUnit: 'x',
+  },
+  'reverb.xover_frequency':  { block: 'reverb', name: 'xover_frequency', displayLabel: "Xover Frequency",  pidLow: 0x0042, pidHigh: 0x0026, unit: 'hz', displayMin: 100, displayMax: 10000, scaling: 'log10' },
   'reverb.threshold':        { block: 'reverb', name: 'threshold', displayLabel: "Threshold",        pidLow: 0x0042, pidHigh: 0x0029, unit: 'db', displayMin: -80, displayMax: 20 },
   'reverb.release_time':     { block: 'reverb', name: 'release_time', displayLabel: "Release Time",     pidLow: 0x0042, pidHigh: 0x002a, unit: 'ms', displayMin: 0, displayMax: 1000, scaling: 'log10' },
   'reverb.early_diffusion':  { block: 'reverb', name: 'early_diffusion', displayLabel: "Early Diffusion",  pidLow: 0x0042, pidHigh: 0x002b, unit: 'percent', displayMin: 0, displayMax: 100 },
@@ -4028,15 +4126,15 @@ export const KNOWN_PARAMS = {
   'reverb.voice_balance':    { block: 'reverb', name: 'voice_balance', displayLabel: "Voice Balance",    pidLow: 0x0042, pidHigh: 0x003f, unit: 'bipolar_percent', displayMin: -100, displayMax: 100 },
   'reverb.feedback':         { block: 'reverb', name: 'feedback', displayLabel: "Feedback",         pidLow: 0x0042, pidHigh: 0x0041, unit: 'percent', displayMin: 0, displayMax: 100 },
   'reverb.echo_mix':         { block: 'reverb', name: 'echo_mix', displayLabel: "Echo Mix",         pidLow: 0x0042, pidHigh: 0x0042, unit: 'percent', displayMin: 0, displayMax: 100 },
-  'reverb.pitch_high_cut':   { block: 'reverb', name: 'pitch_high_cut', displayLabel: "Shimmer Tone",   pidLow: 0x0042, pidHigh: 0x0043, unit: 'hz', displayMin: 200, displayMax: 20000 },
+  'reverb.pitch_high_cut':   { block: 'reverb', name: 'pitch_high_cut', displayLabel: "Shimmer Tone",   pidLow: 0x0042, pidHigh: 0x0043, unit: 'hz', displayMin: 200, displayMax: 20000, scaling: 'log10' },
   'reverb.tonetype':         { block: 'reverb', name: 'tonetype',         pidLow: 0x0042, pidHigh: 0x0045, unit: 'db', displayMin: 0, displayMax: 3 },
   'reverb.low_cut_q':        { block: 'reverb', name: 'low_cut_q', displayLabel: "Low Cut Q",        pidLow: 0x0042, pidHigh: 0x0047, unit: 'count', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   'reverb.high_cut_q':       { block: 'reverb', name: 'high_cut_q', displayLabel: "High Cut Q",       pidLow: 0x0042, pidHigh: 0x0048, unit: 'count', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   // DELAY mirrors.
   'delay.tempo_1':           { block: 'delay',  name: 'tempo_1',           pidLow: 0x0046, pidHigh: 0x000f, unit: 'percent', displayMin: 0, displayMax: 100 },
   'delay.echo_pan':          { block: 'delay',  name: 'echo_pan', displayLabel: "Echo Pan",          pidLow: 0x0046, pidHigh: 0x0011, unit: 'bipolar_percent', displayMin: -100, displayMax: 100 },
-  'delay.mod_rate':          { block: 'delay',  name: 'mod_rate', displayLabel: "Mod Rate",          pidLow: 0x0046, pidHigh: 0x0016, unit: 'hz', displayMin: 0.1, displayMax: 10 },
-  'delay.rate':              { block: 'delay',  name: 'rate', displayLabel: "Rate",              pidLow: 0x0046, pidHigh: 0x0017, unit: 'hz', displayMin: 0.2, displayMax: 20 },
+  'delay.mod_rate':          { block: 'delay',  name: 'mod_rate', displayLabel: "Mod Rate",          pidLow: 0x0046, pidHigh: 0x0016, unit: 'hz', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
+  'delay.rate':              { block: 'delay',  name: 'rate', displayLabel: "Rate",              pidLow: 0x0046, pidHigh: 0x0017, unit: 'hz', displayMin: 0.2, displayMax: 20, scaling: 'log10' },
   'delay.mod_depth':         { block: 'delay',  name: 'mod_depth', displayLabel: "Mod Depth",         pidLow: 0x0046, pidHigh: 0x0018, unit: 'percent', displayMin: 0, displayMax: 100 },
   'delay.mod_depth_depth2':  { block: 'delay',  name: 'mod_depth_depth2', displayLabel: "Mod Depth",  pidLow: 0x0046, pidHigh: 0x0019, unit: 'percent', displayMin: 0, displayMax: 100 },
   'delay.time_r':            { block: 'delay',  name: 'time_r', displayLabel: "Time R",            pidLow: 0x0046, pidHigh: 0x001e, unit: 'ms', displayMin: 0, displayMax: 8000 },
@@ -4049,14 +4147,14 @@ export const KNOWN_PARAMS = {
   'delay.modulation_phase':  { block: 'delay',  name: 'modulation_phase', displayLabel: "Modulation Phase",  pidLow: 0x0046, pidHigh: 0x0028, unit: 'degrees', displayMin: 0, displayMax: 180 },
   'delay.lfo_phase_2':       { block: 'delay',  name: 'lfo_phase_2', displayLabel: "LFO Phase",       pidLow: 0x0046, pidHigh: 0x0029, unit: 'degrees', displayMin: 0, displayMax: 180 },
   'delay.crossfade_time':    { block: 'delay',  name: 'crossfade_time', displayLabel: "Crossfade Time",    pidLow: 0x0046, pidHigh: 0x002a, unit: 'ms', displayMin: 1, displayMax: 255 },
-  'delay.sweep_rate':        { block: 'delay',  name: 'sweep_rate', displayLabel: "Sweep Rate",        pidLow: 0x0046, pidHigh: 0x0038, unit: 'hz', displayMin: 0.1, displayMax: 10 },
+  'delay.sweep_rate':        { block: 'delay',  name: 'sweep_rate', displayLabel: "Sweep Rate",        pidLow: 0x0046, pidHigh: 0x0038, unit: 'hz', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   'delay.sweep_phase':       { block: 'delay',  name: 'sweep_phase', displayLabel: "Sweep Phase",       pidLow: 0x0046, pidHigh: 0x003a, unit: 'degrees', displayMin: 0, displayMax: 180 },
-  'delay.sweep_start_freq':  { block: 'delay',  name: 'sweep_start_freq', displayLabel: "Sweep Start Freq",  pidLow: 0x0046, pidHigh: 0x003c, unit: 'hz', displayMin: 100, displayMax: 1000 },
-  'delay.sweep_stop_freq':   { block: 'delay',  name: 'sweep_stop_freq', displayLabel: "Sweep Stop Freq",   pidLow: 0x0046, pidHigh: 0x003d, unit: 'hz', displayMin: 500, displayMax: 5000 },
+  'delay.sweep_start_freq':  { block: 'delay',  name: 'sweep_start_freq', displayLabel: "Sweep Start Freq",  pidLow: 0x0046, pidHigh: 0x003c, unit: 'hz', displayMin: 100, displayMax: 1000, scaling: 'log10' },
+  'delay.sweep_stop_freq':   { block: 'delay',  name: 'sweep_stop_freq', displayLabel: "Sweep Stop Freq",   pidLow: 0x0046, pidHigh: 0x003d, unit: 'hz', displayMin: 500, displayMax: 5000, scaling: 'log10' },
   'delay.sweep_resonance':   { block: 'delay',  name: 'sweep_resonance', displayLabel: "Sweep Resonance",   pidLow: 0x0046, pidHigh: 0x003e, unit: 'count', displayMin: 0.2, displayMax: 20, scaling: 'log10' },
   'delay.motor_speed':       { block: 'delay',  name: 'motor_speed', displayLabel: "Motor Speed",       pidLow: 0x0046, pidHigh: 0x0048, unit: 'count', displayMin: 0.5, displayMax: 2, scaling: 'log10' },
   'delay.right_post_delay':  { block: 'delay',  name: 'right_post_delay', displayLabel: "Right Post Delay",  pidLow: 0x0046, pidHigh: 0x0049, unit: 'ms', displayMin: 0, displayMax: 100 },
-  'delay.pan_rate':          { block: 'delay',  name: 'pan_rate', displayLabel: "Pan Rate",          pidLow: 0x0046, pidHigh: 0x0052, unit: 'hz', displayMin: 0.1, displayMax: 10 },
+  'delay.pan_rate':          { block: 'delay',  name: 'pan_rate', displayLabel: "Pan Rate",          pidLow: 0x0046, pidHigh: 0x0052, unit: 'hz', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   'delay.pan_depth':         { block: 'delay',  name: 'pan_depth', displayLabel: "Pan Depth",         pidLow: 0x0046, pidHigh: 0x0054, unit: 'percent', displayMin: 0, displayMax: 100 },
   'delay.lfo_phase_4':       { block: 'delay',  name: 'lfo_phase_4', displayLabel: "LFO Phase",       pidLow: 0x0046, pidHigh: 0x0055, unit: 'degrees', displayMin: 0, displayMax: 180 },
   // 2026-05-17: Phase 3 — REVERB + DELAY enums + tempo-
@@ -4150,28 +4248,28 @@ export const KNOWN_PARAMS = {
   'chorus.right_depth':      { block: 'chorus', name: 'right_depth', displayLabel: "Right Depth",       pidLow: 0x004e, pidHigh: 0x001e, unit: 'percent', displayMin: 0, displayMax: 100 },
   // FLANGER mirrors (10).
   'flanger.dry_delay':       { block: 'flanger', name: 'dry_delay', displayLabel: "Dry Delay",        pidLow: 0x0052, pidHigh: 0x0010, unit: 'percent', displayMin: 0, displayMax: 100 },
-  'flanger.smooth_steps':    { block: 'flanger', name: 'smooth_steps', displayLabel: "Smooth Steps",     pidLow: 0x0052, pidHigh: 0x0013, unit: 'count', displayMin: 0.5, displayMax: 50 },
-  'flanger.high_cut':        { block: 'flanger', name: 'high_cut', displayLabel: "High Cut",         pidLow: 0x0052, pidHigh: 0x0017, unit: 'hz', displayMin: 200, displayMax: 20000 },
+  'flanger.smooth_steps':    { block: 'flanger', name: 'smooth_steps', displayLabel: "Smooth Steps",     pidLow: 0x0052, pidHigh: 0x0013, unit: 'count', displayMin: 0.5, displayMax: 50, scaling: 'log10' },
+  'flanger.high_cut':        { block: 'flanger', name: 'high_cut', displayLabel: "High Cut",         pidLow: 0x0052, pidHigh: 0x0017, unit: 'hz', displayMin: 200, displayMax: 20000, scaling: 'log10' },
   'flanger.drive':           { block: 'flanger', name: 'drive', displayLabel: "Drive",            pidLow: 0x0052, pidHigh: 0x0018, unit: 'knob_0_10', displayMin: 0, displayMax: 10, scaling: 'log10' },
-  'flanger.low_cut':         { block: 'flanger', name: 'low_cut', displayLabel: "Low Cut",          pidLow: 0x0052, pidHigh: 0x0019, unit: 'hz', displayMin: 20, displayMax: 2000 },
+  'flanger.low_cut':         { block: 'flanger', name: 'low_cut', displayLabel: "Low Cut",          pidLow: 0x0052, pidHigh: 0x0019, unit: 'hz', displayMin: 20, displayMax: 2000, scaling: 'log10' },
   'flanger.stereo_spread':   { block: 'flanger', name: 'stereo_spread', displayLabel: "Stereo Spread",    pidLow: 0x0052, pidHigh: 0x001a, unit: 'percent', displayMin: 0, displayMax: 100 },
   'flanger.bass_focus':      { block: 'flanger', name: 'bass_focus', displayLabel: "Bass Focus",       pidLow: 0x0052, pidHigh: 0x001e, unit: 'knob_0_10', displayMin: 0, displayMax: 10, scaling: 'log10' },
   'flanger.min_time':        { block: 'flanger', name: 'min_time', displayLabel: "Min Time",         pidLow: 0x0052, pidHigh: 0x0020, unit: 'ms', displayMin: 0, displayMax: 2 },
   'flanger.max_time':        { block: 'flanger', name: 'max_time', displayLabel: "Max Time",         pidLow: 0x0052, pidHigh: 0x0021, unit: 'ms', displayMin: 0, displayMax: 20 },
   'flanger.vpo_exponent':    { block: 'flanger', name: 'vpo_exponent', displayLabel: "VPO Exponent",     pidLow: 0x0052, pidHigh: 0x0023, unit: 'count', displayMin: 0.01, displayMax: 100, scaling: 'log10' },
   // PHASER mirrors (12).
-  'phaser.min_frequency':    { block: 'phaser', name: 'min_frequency', displayLabel: "Min Frequency",     pidLow: 0x005a, pidHigh: 0x0011, unit: 'hz', displayMin: 5, displayMax: 500 },
-  'phaser.max_frequency':    { block: 'phaser', name: 'max_frequency', displayLabel: "Max Frequency",     pidLow: 0x005a, pidHigh: 0x0012, unit: 'hz', displayMin: 200, displayMax: 20000 },
+  'phaser.min_frequency':    { block: 'phaser', name: 'min_frequency', displayLabel: "Min Frequency",     pidLow: 0x005a, pidHigh: 0x0011, unit: 'hz', displayMin: 5, displayMax: 500, scaling: 'log10' },
+  'phaser.max_frequency':    { block: 'phaser', name: 'max_frequency', displayLabel: "Max Frequency",     pidLow: 0x005a, pidHigh: 0x0012, unit: 'hz', displayMin: 200, displayMax: 20000, scaling: 'log10' },
   'phaser.bias':             { block: 'phaser', name: 'bias', displayLabel: "Bias",              pidLow: 0x005a, pidHigh: 0x0014, unit: 'bipolar_percent', displayMin: -100, displayMax: 100 },
   'phaser.feedback_point':   { block: 'phaser', name: 'feedback_point', displayLabel: "Feedback Point",    pidLow: 0x005a, pidHigh: 0x0016, unit: 'count', displayMin: 0, displayMax: 11 },
   'phaser.q':                { block: 'phaser', name: 'q', displayLabel: "Q",                 pidLow: 0x005a, pidHigh: 0x0019, unit: 'count', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   'phaser.shape_vcrk':       { block: 'phaser', name: 'shape_vcrk', displayLabel: "Shape",        pidLow: 0x005a, pidHigh: 0x001d, unit: 'count', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   'phaser.shape':            { block: 'phaser', name: 'shape', displayLabel: "Shape",             pidLow: 0x005a, pidHigh: 0x001e, unit: 'count', displayMin: 0.01, displayMax: 0.99 },
-  'phaser.high_cut':         { block: 'phaser', name: 'high_cut', displayLabel: "High Cut",          pidLow: 0x005a, pidHigh: 0x001f, unit: 'count', displayMin: 0.5, displayMax: 50 },
+  'phaser.high_cut':         { block: 'phaser', name: 'high_cut', displayLabel: "High Cut",          pidLow: 0x005a, pidHigh: 0x001f, unit: 'count', displayMin: 0.5, displayMax: 50, scaling: 'log10' },
   'phaser.attack':           { block: 'phaser', name: 'attack', displayLabel: "Attack",            pidLow: 0x005a, pidHigh: 0x0020, unit: 'ms', displayMin: 0, displayMax: 1000, scaling: 'log10' },
   'phaser.release':          { block: 'phaser', name: 'release', displayLabel: "Release",           pidLow: 0x005a, pidHigh: 0x0021, unit: 'ms', displayMin: 0, displayMax: 100, scaling: 'log10' },
-  'phaser.low_cut':          { block: 'phaser', name: 'low_cut', displayLabel: "Low Cut",           pidLow: 0x005a, pidHigh: 0x0023, unit: 'hz', displayMin: 20, displayMax: 200 },
-  'phaser.high_cut_lpf':     { block: 'phaser', name: 'high_cut_lpf', displayLabel: "High Cut",      pidLow: 0x005a, pidHigh: 0x0024, unit: 'hz', displayMin: 2000, displayMax: 20000 },
+  'phaser.low_cut':          { block: 'phaser', name: 'low_cut', displayLabel: "Low Cut",           pidLow: 0x005a, pidHigh: 0x0023, unit: 'hz', displayMin: 20, displayMax: 200, scaling: 'log10' },
+  'phaser.high_cut_lpf':     { block: 'phaser', name: 'high_cut_lpf', displayLabel: "High Cut",      pidLow: 0x005a, pidHigh: 0x0024, unit: 'hz', displayMin: 2000, displayMax: 20000, scaling: 'log10' },
   // FILTER mirrors (15).
   'filter.q':                { block: 'filter', name: 'q', displayLabel: "Q",                 pidLow: 0x0072, pidHigh: 0x000c, unit: 'count', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   'filter.gain':             { block: 'filter', name: 'gain', displayLabel: "Gain",              pidLow: 0x0072, pidHigh: 0x000d, unit: 'db', displayMin: -20, displayMax: 20 },
@@ -4185,19 +4283,19 @@ export const KNOWN_PARAMS = {
   'filter.pan_left':         { block: 'filter', name: 'pan_left', displayLabel: "Pan Left",          pidLow: 0x0072, pidHigh: 0x000f, unit: 'bipolar_percent', displayMin: -100, displayMax: 100 },
   'filter.pan_right':        { block: 'filter', name: 'pan_right', displayLabel: "Pan Right",         pidLow: 0x0072, pidHigh: 0x0010, unit: 'bipolar_percent', displayMin: -100, displayMax: 100 },
   'filter.delay_time':       { block: 'filter', name: 'delay_time', displayLabel: "Delay Time",        pidLow: 0x0072, pidHigh: 0x0014, unit: 'ms', displayMin: 0, displayMax: 40 },
-  'filter.rate':             { block: 'filter', name: 'rate', displayLabel: "Rate",              pidLow: 0x0072, pidHigh: 0x0018, unit: 'hz', displayMin: 0.1, displayMax: 10 },
+  'filter.rate':             { block: 'filter', name: 'rate', displayLabel: "Rate",              pidLow: 0x0072, pidHigh: 0x0018, unit: 'hz', displayMin: 0.1, displayMax: 10, scaling: 'log10' },
   'filter.lfo_duty':         { block: 'filter', name: 'lfo_duty', displayLabel: "Duty Cycle",          pidLow: 0x0072, pidHigh: 0x0019, unit: 'percent', displayMin: 0, displayMax: 100 },
-  'filter.mod_frequency':    { block: 'filter', name: 'mod_frequency', displayLabel: "Mod Freq",     pidLow: 0x0072, pidHigh: 0x001a, unit: 'hz', displayMin: 20, displayMax: 20000 },
+  'filter.mod_frequency':    { block: 'filter', name: 'mod_frequency', displayLabel: "Mod Freq",     pidLow: 0x0072, pidHigh: 0x001a, unit: 'hz', displayMin: 20, displayMax: 20000, scaling: 'log10' },
   'filter.resonance':        { block: 'filter', name: 'resonance', displayLabel: "Resonance",         pidLow: 0x0072, pidHigh: 0x001e, unit: 'knob_0_10', displayMin: 0, displayMax: 10, scaling: 'log10' },
-  'filter.start_frequency':  { block: 'filter', name: 'start_frequency', displayLabel: "Start Frequency",   pidLow: 0x0072, pidHigh: 0x001f, unit: 'hz', displayMin: 100, displayMax: 10000 },
-  'filter.stop_frequency':   { block: 'filter', name: 'stop_frequency', displayLabel: "Stop Frequency",    pidLow: 0x0072, pidHigh: 0x0020, unit: 'hz', displayMin: 100, displayMax: 10000 },
+  'filter.start_frequency':  { block: 'filter', name: 'start_frequency', displayLabel: "Start Frequency",   pidLow: 0x0072, pidHigh: 0x001f, unit: 'hz', displayMin: 100, displayMax: 10000, scaling: 'log10' },
+  'filter.stop_frequency':   { block: 'filter', name: 'stop_frequency', displayLabel: "Stop Frequency",    pidLow: 0x0072, pidHigh: 0x0020, unit: 'hz', displayMin: 100, displayMax: 10000, scaling: 'log10' },
   'filter.sensitivity':      { block: 'filter', name: 'sensitivity', displayLabel: "Sensitivity",       pidLow: 0x0072, pidHigh: 0x0021, unit: 'count', displayMin: 0.1, displayMax: 40, scaling: 'log10' },
   'filter.attack_time':      { block: 'filter', name: 'attack_time', displayLabel: "Attack Time",       pidLow: 0x0072, pidHigh: 0x0022, unit: 'ms', displayMin: 0, displayMax: 1000, scaling: 'log10' },
   'filter.release_time':     { block: 'filter', name: 'release_time', displayLabel: "Release Time",      pidLow: 0x0072, pidHigh: 0x0023, unit: 'ms', displayMin: 0, displayMax: 2000, scaling: 'log10' },
   'filter.emphasis':         { block: 'filter', name: 'emphasis', displayLabel: "Emphasis",          pidLow: 0x0072, pidHigh: 0x0027, unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
   // TREMOLO mirrors (4).
   'tremolo.duty':            { block: 'tremolo', name: 'duty', displayLabel: "Duty",             pidLow: 0x006a, pidHigh: 0x000e, unit: 'percent', displayMin: 0, displayMax: 100 },
-  'tremolo.crossover_freq':  { block: 'tremolo', name: 'crossover_freq', displayLabel: "Crossover Freq",   pidLow: 0x006a, pidHigh: 0x0015, unit: 'hz', displayMin: 200, displayMax: 2000 },
+  'tremolo.crossover_freq':  { block: 'tremolo', name: 'crossover_freq', displayLabel: "Crossover Freq",   pidLow: 0x006a, pidHigh: 0x0015, unit: 'hz', displayMin: 200, displayMax: 2000, scaling: 'log10' },
   'tremolo.trigger_threshold': { block: 'tremolo', name: 'trigger_threshold', displayLabel: "Trigger Threshold", pidLow: 0x006a, pidHigh: 0x0016, unit: 'db', displayMin: -60, displayMax: 20 },
   'tremolo.shape':           { block: 'tremolo', name: 'shape', displayLabel: "Shape",            pidLow: 0x006a, pidHigh: 0x0017, unit: 'percent', displayMin: 0, displayMax: 100 },
   // ENHANCER mirrors (2).
@@ -4319,21 +4417,66 @@ export const KNOWN_PARAMS = {
   // vs amp.mid).
 
   // Second-cab mirrors of existing first-cab entries (HIGH confidence).
-  'amp.bank_2':           { block: 'amp', name: 'bank_2',           displayLabel: 'Bank',           pidLow: 0x003e, pidHigh: 0x000b, unit: 'enum', displayMin: 0, displayMax: 31 },
-  'amp.cab_2':            { block: 'amp', name: 'cab_2',            displayLabel: 'Cab #',          pidLow: 0x003e, pidHigh: 0x000d, unit: 'count', displayMin: 0, displayMax: 511 },
+  'amp.bank_2': {
+    block: 'amp', name: 'bank_2',
+    displayLabel: 'Bank',
+    pidLow: 0x003e, pidHigh: 0x000b,
+    unit: 'enum', displayMin: 0, displayMax: 0,
+    enumValues: { 0: 'USER' },
+  },
+  'amp.cab_2': {
+    block: 'amp', name: 'cab_2',
+    displayLabel: 'Cab #',
+    pidLow: 0x003e, pidHigh: 0x000d,
+    unit: 'count', displayMin: 0, displayMax: 255,
+  },
   'amp.pan_2':            { block: 'amp', name: 'pan_2',            displayLabel: 'Pan',            pidLow: 0x003e, pidHigh: 0x0011, unit: 'bipolar_percent', displayMin: -100, displayMax: 100 },
-  'amp.low_slope_2':      { block: 'amp', name: 'low_slope_2',      displayLabel: 'Low Slope',      pidLow: 0x003e, pidHigh: 0x003c, unit: 'enum', displayMin: 0, displayMax: 7 },
-  'amp.high_slope_2':     { block: 'amp', name: 'high_slope_2',     displayLabel: 'High Slope',     pidLow: 0x003e, pidHigh: 0x003e, unit: 'enum', displayMin: 0, displayMax: 7 },
-  'amp.dynacab_2':        { block: 'amp', name: 'dynacab_2',        displayLabel: 'DynaCab',        pidLow: 0x003e, pidHigh: 0x0046, unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
+  'amp.low_slope_2': {
+    block: 'amp', name: 'low_slope_2',
+    displayLabel: 'Low Slope',
+    pidLow: 0x003e, pidHigh: 0x003c,
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: { 0: '6 dB/OCT', 1: '12 dB/OCT', 2: '18 dB/OCT', 3: '24 dB/OCT' },
+  },
+  'amp.high_slope_2': {
+    block: 'amp', name: 'high_slope_2',
+    displayLabel: 'High Slope',
+    pidLow: 0x003e, pidHigh: 0x003e,
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: { 0: '6 dB/OCT', 1: '12 dB/OCT', 2: '18 dB/OCT', 3: '24 dB/OCT' },
+  },
+  'amp.dynacab_2': {
+    block: 'amp', name: 'dynacab_2',
+    displayLabel: 'DynaCab',
+    pidLow: 0x003e, pidHigh: 0x0046,
+    unit: 'knob_0_10', displayMin: -10, displayMax: 10,
+  },
 
   // Per-cab level + proximity + mute (LEVEL1/2 have no XML label —
   // firmware-internal, but the names follow the established `_N`
   // suffix convention).
   'amp.cab_level_1':      { block: 'amp', name: 'cab_level_1',      pidLow: 0x003e, pidHigh: 0x000e, unit: 'db', displayMin: -80, displayMax: 20 },
   'amp.cab_level_2':      { block: 'amp', name: 'cab_level_2',      pidLow: 0x003e, pidHigh: 0x000f, unit: 'db', displayMin: -80, displayMax: 20 },
-  'amp.proximity_1':      { block: 'amp', name: 'proximity_1',      displayLabel: 'Proximity',      pidLow: 0x003e, pidHigh: 0x0014, unit: 'percent', displayMin: 0, displayMax: 100 },
-  'amp.cab_mute_1':       { block: 'amp', name: 'cab_mute_1',       displayLabel: 'M',              pidLow: 0x003e, pidHigh: 0x0016, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
-  'amp.cab_mute_2':       { block: 'amp', name: 'cab_mute_2',       displayLabel: 'M',              pidLow: 0x003e, pidHigh: 0x0017, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
+  'amp.proximity_1': {
+    block: 'amp', name: 'proximity_1',
+    displayLabel: 'Proximity',
+    pidLow: 0x003e, pidHigh: 0x0014,
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+  },
+  'amp.cab_mute_1': {
+    block: 'amp', name: 'cab_mute_1',
+    displayLabel: 'M',
+    pidLow: 0x003e, pidHigh: 0x0016,
+    unit: 'enum', displayMin: 0, displayMax: 1,
+    enumValues: { 0: '--', 1: 'MUTE' },
+  },
+  'amp.cab_mute_2': {
+    block: 'amp', name: 'cab_mute_2',
+    displayLabel: 'M',
+    pidLow: 0x003e, pidHigh: 0x0017,
+    unit: 'enum', displayMin: 0, displayMax: 1,
+    enumValues: { 0: '--', 1: 'MUTE' },
+  },
 
   // Master / cab-level Hz filters (LOCUT = master low cut on the
   // Cab Master EQ page; LOCUT1 = per-cab-1 low cut on the Cab page).
@@ -4341,33 +4484,122 @@ export const KNOWN_PARAMS = {
   // wired to CABINET_PROXFREQ (catalog id 34) — a -era
   // misname that's left as-is for backward compatibility; this new
   // `master_low_cut` is the true CABINET_LOCUT control.
-  'amp.master_low_cut':   { block: 'amp', name: 'master_low_cut',   displayLabel: 'Low Cut',        pidLow: 0x003e, pidHigh: 0x001f, unit: 'hz', displayMin: 20, displayMax: 20000 },
-  'amp.cab_1_low_cut':    { block: 'amp', name: 'cab_1_low_cut',    displayLabel: 'Low Cut',        pidLow: 0x003e, pidHigh: 0x0035, unit: 'hz', displayMin: 20, displayMax: 20000 },
+  'amp.master_low_cut': {
+    block: 'amp', name: 'master_low_cut',
+    displayLabel: 'Low Cut',
+    pidLow: 0x003e, pidHigh: 0x001f,
+    unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
+  },
+  'amp.cab_1_low_cut': {
+    block: 'amp', name: 'cab_1_low_cut',
+    displayLabel: 'Low Cut',
+    pidLow: 0x003e, pidHigh: 0x0035,
+    unit: 'hz', displayMin: 20, displayMax: 200,
+    scaling: 'log10',
+  },
 
   // Mic-preamp tone-stack on the Cab Mic Preamp page (BASS/MID at
   // catalog ids 37/38; the existing `cab_mic_preamp_treble` at
   // pidHigh=0x27 already covers TREBLE at id 39). PRETYPE is the
   // Type dropdown on the same page (mic-preamp circuit selector).
-  'amp.cab_pretype':      { block: 'amp', name: 'cab_pretype',      displayLabel: 'Type',           pidLow: 0x003e, pidHigh: 0x0024, unit: 'count', displayMin: 0, displayMax: 15 },
-  'amp.cab_bass':         { block: 'amp', name: 'cab_bass',         displayLabel: 'Bass',           pidLow: 0x003e, pidHigh: 0x0025, unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
-  'amp.cab_mid':          { block: 'amp', name: 'cab_mid',          displayLabel: 'Mid',            pidLow: 0x003e, pidHigh: 0x0026, unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
+  'amp.cab_pretype': {
+    block: 'amp', name: 'cab_pretype',
+    displayLabel: 'Type',
+    pidLow: 0x003e, pidHigh: 0x0024,
+    unit: 'enum', displayMin: 0, displayMax: 11,
+    enumValues: {
+      0: 'NONE', 1: 'TUBE', 2: 'BIPOLAR', 3: 'FET I', 4: 'FET II', 5: 'TRANSFORMER',
+      6: 'TAPE 70us', 7: 'TAPE 50us', 8: 'TAPE 35us', 9: 'VINTAGE', 10: 'MODERN', 11: 'EXCITER',
+    },
+  },
+  'amp.cab_bass': {
+    block: 'amp', name: 'cab_bass',
+    displayLabel: 'Bass',
+    pidLow: 0x003e, pidHigh: 0x0025,
+    unit: 'db', displayMin: -12, displayMax: 12,
+  },
+  'amp.cab_mid': {
+    block: 'amp', name: 'cab_mid',
+    displayLabel: 'Mid',
+    pidLow: 0x003e, pidHigh: 0x0026,
+    unit: 'db', displayMin: -12, displayMax: 12,
+  },
 
   // SMOOTH1/2 / ORDER / GAINMONITOR — no XML labels (firmware-
-  // internal). LOWER confidence: shipped as 'count' so the agent
-  // can write any in-range value without claiming an interpretation.
-  // HW-NNN capture needed to confirm semantics.
-  'amp.cab_smooth_1':     { block: 'amp', name: 'cab_smooth_1',     pidLow: 0x003e, pidHigh: 0x0029, unit: 'count', displayMin: 0, displayMax: 10 },
-  'amp.cab_smooth_2':     { block: 'amp', name: 'cab_smooth_2',     pidLow: 0x003e, pidHigh: 0x002a, unit: 'count', displayMin: 0, displayMax: 10 },
+  // internal). SMOOTH1/2 carry knob-shaped cache records (scale 10);
+  // ORDER / GAINMONITOR cache records are degenerate (no info), so
+  // their shipped shapes are kept as-is.
+  'amp.cab_smooth_1': {
+    block: 'amp', name: 'cab_smooth_1',
+    pidLow: 0x003e, pidHigh: 0x0029,
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+  },
+  'amp.cab_smooth_2': {
+    block: 'amp', name: 'cab_smooth_2',
+    pidLow: 0x003e, pidHigh: 0x002a,
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+  },
   'amp.cab_order':        { block: 'amp', name: 'cab_order',        pidLow: 0x003e, pidHigh: 0x002b, unit: 'count', displayMin: 1, displayMax: 12 },
   'amp.cab_gain_monitor': { block: 'amp', name: 'cab_gain_monitor', pidLow: 0x003e, pidHigh: 0x0033, unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
 
   // DynaCab quad (TYPE1/2/MIC1/2). XML has empty `name=""` in regular
   // layout and "Cab"/"Mic" in expert layout — the audit picks the
   // first XML hit, so these will MATCH (empty display).
-  'amp.dynacab_type_1':   { block: 'amp', name: 'dynacab_type_1', displayLabel: "Cab",   pidLow: 0x003e, pidHigh: 0x0041, unit: 'count', displayMin: 0, displayMax: 31 },
-  'amp.dynacab_type_2':   { block: 'amp', name: 'dynacab_type_2', displayLabel: "Cab",   pidLow: 0x003e, pidHigh: 0x0042, unit: 'count', displayMin: 0, displayMax: 31 },
-  'amp.dynacab_mic_1':    { block: 'amp', name: 'dynacab_mic_1', displayLabel: "Mic",    pidLow: 0x003e, pidHigh: 0x0043, unit: 'count', displayMin: 0, displayMax: 31 },
-  'amp.dynacab_mic_2':    { block: 'amp', name: 'dynacab_mic_2', displayLabel: "Mic",    pidLow: 0x003e, pidHigh: 0x0044, unit: 'count', displayMin: 0, displayMax: 31 },
+  'amp.dynacab_type_1': {
+    block: 'amp', name: 'dynacab_type_1',
+    displayLabel: 'Cab',
+    pidLow: 0x003e, pidHigh: 0x0041,
+    unit: 'enum', displayMin: 0, displayMax: 44,
+    enumValues: {
+      0: '1x8 5F1 TWEED', 1: '1x8 PRINCETONE', 2: '1x10 BF PRINCETONE', 3: '1x10 METRO BLUES',
+      4: '1x10 SF PRINCETONE', 5: '1x12 AC20', 6: '1x12 BLACK MAGICK', 7: '1x12 CAR AMBLER',
+      8: '1x12 DELUXE TWEED', 9: '1x12 DELUXE VERB', 10: '1x12 DIV13 CJ11', 11: '1x12 G12T-100',
+      12: '1x12 HOT KITTY', 13: '1x12 JR BLUES', 14: '1x12 NUCLEAR TONE', 15: '1x12 SCHOLZ',
+      16: '1x12 TWEED 20112', 17: '1x12 VIBRATO LUX', 18: '1x15 HEART KEY', 19: '1x15 PORTABASS',
+      20: '1x15 VIBROVERB', 21: '2x10 HEART KEY', 22: '2x10 SUPER 6G4', 23: '2x12 5153 STEALTH',
+      24: '2x12 65 BASSGUY', 25: '2x12 CHIEFMAN', 26: '2x12 CLASS-A 30W', 27: '2x12 DOUBLE VERB',
+      28: '2x12 LEAD 80', 29: '2x12 TEXAS STAR', 30: '4x10 BASSGUY RI', 31: '4x12 1960TV',
+      32: '4x12 5153', 33: '4x12 5153 STEALTH', 34: '4x12 CITRUS', 35: '4x12 FRIEDMAN GB',
+      36: '4x12 FRIEDMAN V30', 37: '4x12 LERXST', 38: '4x12 RECTO SLANT',
+      39: '4x12 RECTO STRAIGHT', 40: '4x12 RUMBLE EV12L', 41: '4x12 RUMBLE EV12S',
+      42: '4x12 SOLO 100', 43: '4x12 USA MC90', 44: '8x10 SV BASS',
+    },
+  },
+  'amp.dynacab_type_2': {
+    block: 'amp', name: 'dynacab_type_2',
+    displayLabel: 'Cab',
+    pidLow: 0x003e, pidHigh: 0x0042,
+    unit: 'enum', displayMin: 0, displayMax: 44,
+    enumValues: {
+      0: '1x8 5F1 TWEED', 1: '1x8 PRINCETONE', 2: '1x10 BF PRINCETONE', 3: '1x10 METRO BLUES',
+      4: '1x10 SF PRINCETONE', 5: '1x12 AC20', 6: '1x12 BLACK MAGICK', 7: '1x12 CAR AMBLER',
+      8: '1x12 DELUXE TWEED', 9: '1x12 DELUXE VERB', 10: '1x12 DIV13 CJ11', 11: '1x12 G12T-100',
+      12: '1x12 HOT KITTY', 13: '1x12 JR BLUES', 14: '1x12 NUCLEAR TONE', 15: '1x12 SCHOLZ',
+      16: '1x12 TWEED 20112', 17: '1x12 VIBRATO LUX', 18: '1x15 HEART KEY', 19: '1x15 PORTABASS',
+      20: '1x15 VIBROVERB', 21: '2x10 HEART KEY', 22: '2x10 SUPER 6G4', 23: '2x12 5153 STEALTH',
+      24: '2x12 65 BASSGUY', 25: '2x12 CHIEFMAN', 26: '2x12 CLASS-A 30W', 27: '2x12 DOUBLE VERB',
+      28: '2x12 LEAD 80', 29: '2x12 TEXAS STAR', 30: '4x10 BASSGUY RI', 31: '4x12 1960TV',
+      32: '4x12 5153', 33: '4x12 5153 STEALTH', 34: '4x12 CITRUS', 35: '4x12 FRIEDMAN GB',
+      36: '4x12 FRIEDMAN V30', 37: '4x12 LERXST', 38: '4x12 RECTO SLANT',
+      39: '4x12 RECTO STRAIGHT', 40: '4x12 RUMBLE EV12L', 41: '4x12 RUMBLE EV12S',
+      42: '4x12 SOLO 100', 43: '4x12 USA MC90', 44: '8x10 SV BASS',
+    },
+  },
+  'amp.dynacab_mic_1': {
+    block: 'amp', name: 'dynacab_mic_1',
+    displayLabel: 'Mic',
+    pidLow: 0x003e, pidHigh: 0x0043,
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: { 0: 'Condenser', 1: 'Ribbon', 2: 'Dynamic 1', 3: 'Dynamic 2' },
+  },
+  'amp.dynacab_mic_2': {
+    block: 'amp', name: 'dynacab_mic_2',
+    displayLabel: 'Mic',
+    pidLow: 0x003e, pidHigh: 0x0044,
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: { 0: 'Condenser', 1: 'Ribbon', 2: 'Dynamic 1', 3: 'Dynamic 2' },
+  },
 
   // ============================================================
   // GLOBAL family (pidLow = 0x0001) — 98 entries.
@@ -4394,24 +4626,22 @@ export const KNOWN_PARAMS = {
 
   // tuning reference Hz convention — HW unverified
   'global.tuningref': { block: 'global', name: 'tuningref', displayLabel: "Calibration", pidLow: 0x0001, pidHigh: 0x000d, unit: 'hz', displayMin: 430, displayMax: 450 },
-  // safe placeholder — tuner mute type; likely on Tuner page but exact UI location unconfirmed
-  'global.tunermute': { block: 'global', name: 'tunermute', displayLabel: "Mute Type", pidLow: 0x0001, pidHigh: 0x000e, unit: 'count', displayMin: 0, displayMax: 127 },
+  // cache oracle + deep-verify (2026-06-10, roster n=4): enum, not a count placeholder
+  'global.tunermute': { block: 'global', name: 'tunermute', displayLabel: "Mute Type", pidLow: 0x0001, pidHigh: 0x000e, unit: 'enum', displayMin: 0, displayMax: 3, enumValues: { 0: 'Auto In', 1: 'Auto Out', 2: 'Manual In', 3: 'Manual Out' } },
   // confirmed 2026-06-05: OFF/DELAY/REVERB/DELAY+REVERB
   'global.delayspill': { block: 'global', name: 'delayspill', displayLabel: "Spillover", pidLow: 0x0001, pidHigh: 0x000f, unit: 'enum', displayMin: 0, displayMax: 3, enumValues: { 0: 'Off', 1: 'Delay', 2: 'Reverb', 3: 'Delay & Rev' } },
-  // safe placeholder — not found on front-panel Setup menu; may be editor-only
-  'global.usetuneoffsets': { block: 'global', name: 'usetuneoffsets', displayLabel: "Use Offsets", pidLow: 0x0001, pidHigh: 0x0010, unit: 'count', displayMin: 0, displayMax: 127 },
-  // per-string tuning offset — HW unverified
-  'global.offset1': { block: 'global', name: 'offset1', displayLabel: "E 1", pidLow: 0x0001, pidHigh: 0x0011, unit: 'semitones', displayMin: -1, displayMax: 1 },
-  // per-string tuning offset — HW unverified
-  'global.offset2': { block: 'global', name: 'offset2', displayLabel: "B 2", pidLow: 0x0001, pidHigh: 0x0012, unit: 'semitones', displayMin: -1, displayMax: 1 },
-  // per-string tuning offset — HW unverified
-  'global.offset3': { block: 'global', name: 'offset3', displayLabel: "G 3", pidLow: 0x0001, pidHigh: 0x0013, unit: 'semitones', displayMin: -1, displayMax: 1 },
-  // per-string tuning offset — HW unverified
-  'global.offset4': { block: 'global', name: 'offset4', displayLabel: "D 4", pidLow: 0x0001, pidHigh: 0x0014, unit: 'semitones', displayMin: -1, displayMax: 1 },
-  // per-string tuning offset — HW unverified
-  'global.offset5': { block: 'global', name: 'offset5', displayLabel: "A 5", pidLow: 0x0001, pidHigh: 0x0015, unit: 'semitones', displayMin: -1, displayMax: 1 },
-  // per-string tuning offset — HW unverified
-  'global.offset6': { block: 'global', name: 'offset6', displayLabel: "E 6", pidLow: 0x0001, pidHigh: 0x0016, unit: 'semitones', displayMin: -1, displayMax: 1 },
+  // cache oracle + deep-verify (2026-06-10, roster n=2): OFF/ON enum
+  'global.usetuneoffsets': { block: 'global', name: 'usetuneoffsets', displayLabel: "Use Offsets", pidLow: 0x0001, pidHigh: 0x0010, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
+  // cache oracle: per-string tuning offset ±25 step 0.05 (tc unit-family 7).
+  // 'cents' display suffix inferred from tuner context (UNCONFIRMED); range
+  // and shape are device-true. Was semitones ±1 (wrong shape). deep-verify
+  // 2026-06-10 read in-range [-25..25].
+  'global.offset1': { block: 'global', name: 'offset1', displayLabel: "E 1", pidLow: 0x0001, pidHigh: 0x0011, unit: 'count', displayMin: -25, displayMax: 25, displayUnit: 'cents' },
+  'global.offset2': { block: 'global', name: 'offset2', displayLabel: "B 2", pidLow: 0x0001, pidHigh: 0x0012, unit: 'count', displayMin: -25, displayMax: 25, displayUnit: 'cents' },
+  'global.offset3': { block: 'global', name: 'offset3', displayLabel: "G 3", pidLow: 0x0001, pidHigh: 0x0013, unit: 'count', displayMin: -25, displayMax: 25, displayUnit: 'cents' },
+  'global.offset4': { block: 'global', name: 'offset4', displayLabel: "D 4", pidLow: 0x0001, pidHigh: 0x0014, unit: 'count', displayMin: -25, displayMax: 25, displayUnit: 'cents' },
+  'global.offset5': { block: 'global', name: 'offset5', displayLabel: "A 5", pidLow: 0x0001, pidHigh: 0x0015, unit: 'count', displayMin: -25, displayMax: 25, displayUnit: 'cents' },
+  'global.offset6': { block: 'global', name: 'offset6', displayLabel: "E 6", pidLow: 0x0001, pidHigh: 0x0016, unit: 'count', displayMin: -25, displayMax: 25, displayUnit: 'cents' },
   // GEQ band ±12 dB convention — HW unverified
   'global.out2eq1': { block: 'global', name: 'out2eq1', pidLow: 0x0001, pidHigh: 0x0022, unit: 'db', displayMin: -12, displayMax: 12 },
   // GEQ band ±12 dB convention — HW unverified
@@ -4592,7 +4822,12 @@ export const KNOWN_PARAMS = {
   // amp Extras / Speaker pages until HW captures pin exact ranges.
 
   // ---- CABINET (pidLow=0x003e) — 4 entries ----
-  'amp.cab_proximity_2':       { block: 'amp', name: 'cab_proximity_2',       displayLabel: 'Proximity', pidLow: 0x003e, pidHigh: 0x0015, unit: 'percent',     displayMin: 0,   displayMax: 100 },
+  'amp.cab_proximity_2': {
+    block: 'amp', name: 'cab_proximity_2',
+    displayLabel: 'Proximity',
+    pidLow: 0x003e, pidHigh: 0x0015,
+    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+  },
   // confirmed 2026-06-05: zooms the IR graph display in AM4-Edit — display-only, no audio effect
   'amp.cab_zoom':              { block: 'amp', name: 'cab_zoom', displayLabel: "Cab IR Graph Zoom", pidLow: 0x003e, pidHigh: 0x0021, unit: 'enum',       displayMin: 0,   displayMax: 1, enumValues: { 0: 'Normal', 1: 'Zoomed Out' } },
   'amp.cab_dynacab_z_1':       { block: 'amp', name: 'cab_dynacab_z_1',       displayLabel: 'Distance', pidLow: 0x003e, pidHigh: 0x0047, unit: 'percent',     displayMin: 0,   displayMax: 100 },
@@ -4600,7 +4835,13 @@ export const KNOWN_PARAMS = {
 
   // ---- DISTORT / amp Extras + Speaker pages (pidLow=0x003a) — 18 entries ----
   'amp.in_boost_sw':           { block: 'amp', name: 'in_boost_sw',           displayLabel: 'In Boost Sw',           pidLow: 0x003a, pidHigh: 0x002f, unit: 'enum',  displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
-  'amp.saturation_sw':         { block: 'amp', name: 'saturation_sw',         displayLabel: 'Saturation Sw',         pidLow: 0x003a, pidHigh: 0x003d, unit: 'enum',  displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
+  'amp.saturation_sw': {
+    block: 'amp', name: 'saturation_sw',
+    displayLabel: 'Saturation Sw',
+    pidLow: 0x003a, pidHigh: 0x003d,
+    unit: 'enum', displayMin: 0, displayMax: 2,
+    enumValues: { 0: 'OFF', 1: 'ON', 2: 'ON (IDEAL)' },
+  },
   // DROPDOWN (editorControlLabels DISTORT_PRETUBETYPE = dropdownExpert).
   // enumValues HARDWARE-SWEPT 2026-05-31 (FW 2.00): wire order = the DEVICE
   // front-panel knob order (clockwise from start = index 0), which differs from
@@ -4618,27 +4859,95 @@ export const KNOWN_PARAMS = {
   // read back 0x005d). Distinct from "Power Tube Type" (the 5881/6L6/EL34 list,
   // a separate register).
   'amp.power_type':            { block: 'amp', name: 'power_type',            displayLabel: 'Power Type',            pidLow: 0x003a, pidHigh: 0x005d, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'AC', 1: 'DC' } },
-  'amp.preamp_sag':            { block: 'amp', name: 'preamp_sag',            displayLabel: 'Preamp Sag',            pidLow: 0x003a, pidHigh: 0x0067, unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
+  'amp.preamp_sag': {
+    block: 'amp', name: 'preamp_sag',
+    displayLabel: 'Preamp Sag',
+    pidLow: 0x003a, pidHigh: 0x0067,
+    unit: 'enum', displayMin: 0, displayMax: 1,
+    enumValues: { 0: 'OFF', 1: 'ON' },
+  },
   // DROPDOWN (editorControlLabels DISTORT_INEQTYPE = dropdownExpert), the amp
   // Input EQ "Type". enumValues HARDWARE-SWEPT 2026-05-31 (device front-panel
   // knob order = wire order; differs from the AM4-Edit dropdown order).
   'amp.in_eq_type':            { block: 'amp', name: 'in_eq_type',            displayLabel: 'Type',                  pidLow: 0x003a, pidHigh: 0x006d, unit: 'enum', displayMin: 0, displayMax: 3, enumValues: { 0: 'LOWSHELF', 1: 'PEAKING', 2: 'HIGHSHELF', 3: 'TILT EQ' } },
-  'amp.pres_shift':            { block: 'amp', name: 'pres_shift',            displayLabel: 'Pres. Shift',           pidLow: 0x003a, pidHigh: 0x006f, unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
+  'amp.pres_shift': {
+    block: 'amp', name: 'pres_shift',
+    displayLabel: 'Pres. Shift',
+    pidLow: 0x003a, pidHigh: 0x006f,
+    unit: 'enum', displayMin: 0, displayMax: 1,
+    enumValues: { 0: 'OFF', 1: 'ON' },
+  },
   // eq_location = the GRAPHIC-EQ location (distinct from the Tonestack
   // "Location"). HARDWARE-SWEPT 2026-05-31 (device knob order = wire order).
   'amp.eq_location':           { block: 'amp', name: 'eq_location',           displayLabel: 'Location',              pidLow: 0x003a, pidHigh: 0x0075, unit: 'enum', displayMin: 0, displayMax: 2, enumValues: { 0: 'OUTPUT', 1: 'PRE P.A.', 2: 'INPUT' } },
   // in_boost_type HARDWARE-SWEPT 2026-05-31 (device knob order = wire order).
   'amp.in_boost_type':         { block: 'amp', name: 'in_boost_type',         displayLabel: 'In Boost Type',         pidLow: 0x003a, pidHigh: 0x0082, unit: 'enum', displayMin: 0, displayMax: 14, enumValues: { 0: 'NEUTRAL', 1: 'T808', 2: 'T808 MOD', 3: 'SUPER OD', 4: 'FULL OD', 5: 'AC BOOST', 6: 'SHIMMER', 7: 'FAS BOOST', 8: 'GRINDER', 9: 'TREBLE BOOST', 10: 'MID BOOST', 11: 'CC BOOST', 12: 'SHRED BOOST', 13: 'RCB BOOST', 14: 'JP IIC+ SHRED' } },
   'amp.eq_onoff':              { block: 'amp', name: 'eq_onoff',              displayLabel: 'Off / On',              pidLow: 0x003a, pidHigh: 0x0085, unit: 'enum',  displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
-  'amp.spkr_imp_curve':        { block: 'amp', name: 'spkr_imp_curve',        displayLabel: 'Spkr Imp. Curve',       pidLow: 0x003a, pidHigh: 0x0087, unit: 'count', displayMin: 0, displayMax: 127 },
+  'amp.spkr_imp_curve': {
+    block: 'amp', name: 'spkr_imp_curve',
+    displayLabel: 'Spkr Imp. Curve',
+    pidLow: 0x003a, pidHigh: 0x0087,
+    unit: 'enum', displayMin: 0, displayMax: 92,
+    enumValues: {
+      0: 'Resistive Load', 1: '1x8 5F1 Tweed', 2: '1x10 Princetone NR', 3: '1x10 BF Princetone',
+      4: '1x10 SF Princetone', 5: '1x12 Tweed Emmi', 6: '1x12 Vibrato Lux', 7: '1x12 Deluxe Verb',
+      8: '1x12 Deluxe Verb RI', 9: '1x12 JR Blues', 10: '1x12 Brit G12H55', 11: '1x12 Brit G12H75',
+      12: '1x12 Div13 CJ11', 13: '1x12 Brit G12T', 14: '1x12 V30', 15: '1x12 AC-20 DLX',
+      16: '1x12 Car Ambler', 17: '1x12 AST BV25', 18: '1x15 Vibrato Verb', 19: '1x15 Portabass',
+      20: '2x10 Super', 21: '2x10 Vibrato Lux', 22: '2x12 Bassguy', 23: '2x12 Double Verb',
+      24: '2x12 Double Verb SF', 25: '1x12 Class-A 15W', 26: '2x12 Class-A 30W',
+      27: '2x12 TX Star', 28: '2x12 Match Chief', 29: '1x12 Hot Kitty', 30: '2x12 Jazz 120',
+      31: '4x10 Bassguy', 32: '4x10 Brit JM45', 33: '4x10 Super Verb', 34: '4x10 SV Bass',
+      35: '4x12 Brit TV', 36: '4x12 Brit Greenback', 37: '4x12 Basketweave', 38: '4x12 Brit 800',
+      39: '4x12 Brit AX', 40: '4x12 Hipower', 41: '4x12 USA MC90', 42: '4x12 Recto Large',
+      43: '4x12 Recto Small', 44: '4x12 Recto Slant', 45: '4x12 Recto Straight', 46: '4x12 5153',
+      47: '4x12 Citrus', 48: '4x12 Rumble', 49: '2x12 Lead 80', 50: '4x12 Solo 100',
+      51: 'Load Box LB-2 UK', 52: 'Load Box LB-2 US', 53: '4x12 Friedman', 54: '2x12 Bassbuster',
+      55: '1x12 Tweed Alnico Blue', 56: '4x12 PVH 6160', 57: '4x12 Euro', 58: '2x12 Recto',
+      59: '2x12 Godzilla', 60: '1x12 Tweed C12Q', 61: '1x12 Dirty Shirley EV12L',
+      62: '1x12 USA Ext EV12L', 63: '2x12 Band Commander SRO', 64: '2x12 Guy Tron Alnico Blue',
+      65: '1x12 G12T-75', 66: '2x12 Class-A Greenback', 67: '2x12 Two Stone 1265',
+      68: '4x12 Lerxst Omega', 69: '1x12 Deluxe Oxford', 70: '4x12 Hipower Pete T',
+      71: '4x12 USA Semi-Open', 72: '2x12 Dizzy RV', 73: '4x12 Hipower Lindsey B',
+      74: '4x12 London Town Tall', 75: 'Oxbow Loadbox', 76: 'Double Notes Loadbox',
+      77: '1x10 Metro Blues', 78: '4x10 Bassguy RI', 79: '2x12 Class-A 30W Silver',
+      80: '2x10 Heart Key', 81: '4x12 1960BV', 82: '1x12 Deluxe Tweed', 83: '1x15 Heart Key',
+      84: '2x12 USA C90 Open Back', 85: '1x12 Friedman', 86: '2x12 5153 Stealth',
+      87: '4x12 5153 Stealth', 88: '1x12 Scholz', 89: '1x8 Princetone', 90: '1x12 Black Magick',
+      91: '8x10 SV Bass', 92: 'Suhr Reactive Load',
+    },
+  },
   'amp.power_amp_modeling':    { block: 'amp', name: 'power_amp_modeling',    displayLabel: 'Power Amp Modeling',    pidLow: 0x003a, pidHigh: 0x008d, unit: 'enum',  displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
-  'amp.spkr_breakup':          { block: 'amp', name: 'spkr_breakup',          displayLabel: 'Breakup',               pidLow: 0x003a, pidHigh: 0x008e, unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
+  'amp.spkr_breakup': {
+    block: 'amp', name: 'spkr_breakup',
+    displayLabel: 'Breakup',
+    pidLow: 0x003a, pidHigh: 0x008e,
+    unit: 'enum', displayMin: 0, displayMax: 2,
+    enumValues: { 0: 'SOFT', 1: 'MEDIUM', 2: 'HARD' },
+  },
   // confirmed 2026-06-05: front panel "Plate Suppression Diodes" under Power Tubes section
   'amp.plate_suppr_diodes':    { block: 'amp', name: 'plate_suppr_diodes',    displayLabel: 'Plate Suppression Diodes', pidLow: 0x003a, pidHigh: 0x0090, unit: 'enum', displayMin: 0, displayMax: 1, enumValues: { 0: 'Off', 1: 'On' } },
   'amp.dynamatch':             { block: 'amp', name: 'dynamatch',             displayLabel: 'DynaMatch',             pidLow: 0x003a, pidHigh: 0x0092, unit: 'enum',  displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
-  'amp.nfb_compensation':      { block: 'amp', name: 'nfb_compensation',      displayLabel: 'NFB Compensation',      pidLow: 0x003a, pidHigh: 0x0093, unit: 'knob_0_10', displayMin: 0, displayMax: 10 },
-  'amp.mid_gain_boost':        { block: 'amp', name: 'mid_gain_boost',        displayLabel: 'Mid/Gain Boost',        pidLow: 0x003a, pidHigh: 0x0094, unit: 'enum',  displayMin: 0, displayMax: 1, enumValues: { 0: 'OFF', 1: 'ON' } },
-  'amp.tubes':                 { block: 'amp', name: 'tubes',                 displayLabel: 'Tubes',                 pidLow: 0x003a, pidHigh: 0x0095, unit: 'count', displayMin: 0, displayMax: 127 },
+  'amp.nfb_compensation': {
+    block: 'amp', name: 'nfb_compensation',
+    displayLabel: 'NFB Compensation',
+    pidLow: 0x003a, pidHigh: 0x0093,
+    unit: 'enum', displayMin: 0, displayMax: 1,
+    enumValues: { 0: 'OFF', 1: 'ON' },
+  },
+  'amp.mid_gain_boost': {
+    block: 'amp', name: 'mid_gain_boost',
+    displayLabel: 'Mid/Gain Boost',
+    pidLow: 0x003a, pidHigh: 0x0094,
+    unit: 'enum', displayMin: 0, displayMax: 3,
+    enumValues: { 0: 'mode 1', 1: 'mode 2', 2: 'mode 3', 3: 'mode 4' },
+  },
+  'amp.tubes': {
+    block: 'amp', name: 'tubes',
+    displayLabel: 'Tubes',
+    pidLow: 0x003a, pidHigh: 0x0095,
+    unit: 'count', displayMin: 0, displayMax: 3,
+  },
 
   // ---- PATCH (pidLow=0x00ce) — 29 entries ----
   // Channel A/B/C/D LED color pickers. Live on the PATCH register family

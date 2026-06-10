@@ -180,6 +180,7 @@ primitives](#generic-midi-primitives-13-tools) below.
   registered: **Fractal AM4** ([USB driver](https://www.fractalaudio.com/am4-downloads/)),
   **Fractal Axe-Fx II XL+** (Q8.02 firmware, hardware-verified),
   the **modern Fractal family, Axe-Fx III / FM3 / FM9** (🟡 community beta, see Status above),
+  the **Fractal VP4** (🟡 community beta: reads, plus continuous-knob `set_param`, `set_bypass`, and `save_preset` writes decoded from a community capture),
   the original **Fractal Axe-Fx Standard/Ultra** (🟡 community beta, parameter set + read decoded from the published gen-1 SysEx spec, hardware-unconfirmed),
   **ASM Hydrasynth Explorer** (firmware 1.5.x). Unregistered USB MIDI
   devices still work through the generic-MIDI primitives.
@@ -203,7 +204,9 @@ confirm each device is visible to the server.
 
 Two tiers of Fractal support are decoded and shipping but not yet confirmed on the hardware they target. Both send real wire bytes, and both carry an unverified-on-hardware notice on every write-tool response, so the agent (and you) know the call is a hypothesis until an owner confirms front-panel behavior.
 
-**Modern Fractal family (Axe-Fx III / FM3 / FM9).** One shared gen-3 codec drives all three; they differ only by model byte, grid/scene shape, and a device-specific param catalog. The Axe-Fx III is the reference the other two are checked against, scaffolded from Fractal's published "Axe-Fx III MIDI for Third-Party Devices" v1.4 PDF and the AxeEdit III editor assets; FM3 and FM9 add param catalogs mined from their own editor binaries. Device identification, `describe_device`, `switch_preset`, and `switch_scene` work today. Write tools (`set_param`, `apply_preset`, `save_preset`) DO send wire bytes: the wire shape is byte-verified against the v1.4 spec plus public captures, but unverified end to end on real hardware.
+**Modern Fractal family (Axe-Fx III / FM3 / FM9).** One shared gen-3 codec drives all three; they differ only by model byte, grid/scene shape, and a device-specific param catalog. The Axe-Fx III is the reference the other two are checked against, built from Fractal's published "Axe-Fx III MIDI for Third-Party Devices" v1.4 PDF and the AxeEdit III editor assets; FM3 and FM9 add param catalogs mined from their own editor binaries. The full surface is drivable today: reads (`get_param` / `get_params`, `get_preset` including full stored-preset decode, `export_preset` `.syx` backups of the active or any stored preset), navigation (`switch_preset`, `switch_scene`), and writes (`set_param` including set-by-name for amp / drive / reverb models, `set_block`, `set_bypass`, `apply_preset`, `save_preset`, `rename`). Writes DO send wire bytes: the wire shape is byte-verified against the v1.4 spec plus device captures, but unverified end to end on real hardware, so every write response asks you to confirm the result on the device.
+
+**Fractal VP4.** A gen-3 sibling with an AM4-style serial 4-slot chain (no amp/cab). Reads work; `set_param` / `set_params` (continuous knobs, raw wire values), `set_bypass`, and `save_preset` are decoded byte-exact from a community capture (fw 4.03) and ship untested. Block placement, scene switching, and enum/TYPE sets stay gated until their wire shapes are decoded.
 
 **Axe-Fx Standard / Ultra (gen-1).** A descriptor decoded byte-exactly from the published gen-1 SysEx spec: 922 params across 35 blocks. This is a different codec from the modern family (nibble-split, model `0x01`). Both parameter writes and parameter reads are wired: `set_param` sends a value, and `get_param` queries the unit (function 0x02 with the set/query flag cleared) and reads back the live value plus the device's own label. The original hardware predates scenes and X/Y channels, so save / scene / channel tools and whole-preset dump are omitted. Everything is decoded from the spec but unconfirmed on hardware.
 
@@ -709,7 +712,7 @@ packages/
 ├── am4/                          # @mcp-midi-control/am4
 │   └── src/
 │       ├── tools/                #   AM4 MCP tool surface (split by family)
-│       └── (descriptor/, factoryBank, midi.ts, …)
+│       └── (descriptor/, midi.ts, …)
 ├── axe-fx-ii/                    # @mcp-midi-control/axe-fx-ii
 │   └── src/
 │       ├── tools/                #   Axe-Fx II XL+ tool surface
@@ -750,6 +753,18 @@ to your device once the descriptor is registered. No new tools needed.
   `docs/devices/axe-fx-ii/SYSEX-MAP.md` there.
 
 ---
+
+## Credits
+
+This project stands on community reverse-engineering. Thank you to:
+
+| Contributor | Contribution |
+|---|---|
+| **Andrew Mercurio** (`BoodieTraps`) — [fractal-syx-codec](https://github.com/drewmerc302/fractal-syx-codec) (Apache-2.0) | gen-3 (Axe-Fx III / FM3 / FM9) preset-file format spec and the read-ordinal model/type roster tables, independently cross-validated against our own hardware captures |
+| **Harp** | FM9 hardware captures (read path, scene switching, preset receive, enum-label sweeps) that anchored the gen-3 decode |
+| **Kevin** (`AggressiveFeckless`) | VP4 (fw 4.03) hardware captures that confirmed the VP4 read path and decoded the write path (parameter SET, save, bypass) — and surfaced the family-wide gen-3 `fn=0x01` read-path finding |
+
+Want your name here? See [Contributing](#contributing) — testing, captures, and protocol decode all count.
 
 ## Contributing
 

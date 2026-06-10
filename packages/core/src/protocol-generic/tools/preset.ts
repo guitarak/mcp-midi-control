@@ -1,11 +1,10 @@
 /**
- * Preset tools: full-preset apply, get, translate, and factory restore.
+ * Preset tools: full-preset apply, get, and translate.
  *
  * Tools registered here:
  *   - `get_preset(port)`
  *   - `apply_preset(port, spec, target_location?)`
  *   - `translate_preset(source_port, source_spec, target_port)`
- *   - `restore_defaults` — commented out (requires factory bank file not bundled in release)
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -134,7 +133,7 @@ export function registerPresetTools(server: McpServer): void {
   };
   server.registerTool('get_preset', {
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
-    description: 'Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. Use for state-anchoring before a tone edit (read, summarize, propose, then targeted set_param / set_params). Default: active-channel params only. Pass include_channel_state: true for the per-channel nested shape (params_by_channel; II X/Y, AM4 A/B/C/D). Use instance on set_param/set_params to target a specific block (e.g. Amp 2). Scope: active scene only; no scenes 2..N, no routing. Performance: II ~2 s default (include_channel_state markedly slower, a read per channel-bearing block); AM4 ~0.3 s default (include_channel_state walks B/C/D, several seconds). III / Hydra return capability_not_supported (use get_param / get_params); describe_device.capabilities.atomic_read gates support. DO NOT feed the snapshot back into apply_preset (FRESH-BUILD clears unlisted slots + scenes); use set_param / set_params for changed knobs. Re-call to verify; catches type-gated silent no-ops.',
+    description: 'Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. Use for state-anchoring before a tone edit (read, summarize, propose, then targeted set_param / set_params). Default: active-channel params only. Pass include_channel_state: true for the per-channel nested shape (params_by_channel; II X/Y, AM4 A/B/C/D). Use instance on set_param/set_params to target a specific block (e.g. Amp 2). Scope: active scene only; no scenes 2..N, no routing. GEN-3 (Axe-Fx III / FM3 / FM9): pass `location` (integer preset number) to read a STORED preset and get the FULL decoded patch in `whole_preset` (routing grid, per-channel A/B/C/D block types, all 8 scene names plus per-scene bypass/channel, amp model plus knobs, modifiers, scene controllers; FM9-confirmed). Without location, gen-3 reads the live buffer via the fn=0x1F block-inventory poll (no decoded grid). Performance: II ~2 s; AM4 ~0.3 s; gen-3 location read ~1-2 s. Hydra returns capability_not_supported. DO NOT feed the snapshot back into apply_preset (FRESH-BUILD clears unlisted slots plus scenes); use set_param / set_params for changed knobs. Re-call to verify.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       include_channel_state: z
@@ -143,10 +142,25 @@ export function registerPresetTools(server: McpServer): void {
         .describe(
           'II: default false returns active-channel state only (fast, ~2 s). Pass true for the full per-channel X/Y nested shape (adds a per-param read per channel-bearing block; markedly slower). AM4: default false returns active-channel only (~0.3 s); pass true to read all channels (B/C/D), a per-param read per channel that can take several seconds.',
         ),
+      location: z
+        .union([z.string(), z.number()])
+        .optional()
+        .describe(
+          'gen-3 only (Axe-Fx III / FM3 / FM9): stored preset number to read instead of the active buffer. Dumps that stored slot (fn=0x03) and returns the full decoded patch in `whole_preset`. Ignored on II/AM4/Hydra (they read the active buffer).',
+        ),
     },
-  }, async ({ port, include_channel_state }) => {
+  }, async ({ port, include_channel_state, location }) => {
     try {
-      const result = await executeGetPreset({ port, include_channel_state });
+      const locNum =
+        location === undefined
+          ? undefined
+          : typeof location === 'number'
+            ? location
+            : Number.parseInt(String(location), 10);
+      if (locNum !== undefined && (!Number.isInteger(locNum) || locNum < 0)) {
+        return asError(new Error(`get_preset: location must be a non-negative integer, got ${JSON.stringify(location)}`));
+      }
+      const result = await executeGetPreset({ port, include_channel_state, location: locNum });
       return asText(result);
     } catch (err) {
       return asError(err);
@@ -155,11 +169,11 @@ export function registerPresetTools(server: McpServer): void {
 
   server.registerTool('export_preset', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    description: "Back up a preset to a byte-exact `.syx` file on disk. Two modes: (1) omit `location` to dump the ACTIVE working-buffer preset (available on AM4 and Axe-Fx II; other devices return capability_not_supported); (2) pass `location` as an integer preset number to dump that STORED preset slot directly from device flash (gen-3 devices only: Axe-Fx III / FM3 / FM9, wire-confirmed on FM9). The .syx file is Fractal-compatible and can be synced (point `directory` at OneDrive), reloaded in the manufacturer's editor, or restored via import_preset. One preset per call. Writes to `directory` when given, else a `mcp-midi-backups` folder under the user's home directory; the file is named `<device>-<preset>-<timestamp>.syx`. Returns the absolute file_path, byte_length, and frame_count. Does NOT write to the hardware.",
+    description: "Back up a preset to a byte-exact `.syx` file on disk. Two modes: (1) omit `location` to dump the ACTIVE working-buffer preset, INCLUDING unsaved edits (AM4, Axe-Fx II, gen-3 family; Hydrasynth and Axe-Fx Standard/Ultra return capability_not_supported); (2) pass `location` as an integer preset index to dump that STORED slot from device flash without touching the working buffer (AM4: index 0..103 = locations A01..Z04; gen-3 family: 0-based preset number, FM9 wire-confirmed). The .syx is Fractal-compatible: sync it (point `directory` at OneDrive), reload in the manufacturer's editor, or restore via import_preset. Writes to `directory`, else a `mcp-midi-backups` folder under the user's home; file named `<device>-<preset>-<timestamp>.syx`. Returns file_path, byte_length, frame_count, and a `source` field saying exactly what was dumped. Does NOT write to the hardware.",
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       location: z.union([z.string(), z.number()]).optional().describe(
-        'Optional stored preset location to export (integer preset number, 0-based). When given, exports that stored preset slot directly from device flash; when omitted, exports the active working-buffer preset. Only supported on gen-3 devices (Axe-Fx III / FM3 / FM9).',
+        'Optional stored preset location to export (integer index, 0-based). When given, exports that stored slot directly from device flash, leaving the working buffer untouched; when omitted, exports the active working-buffer preset. Stored-location export: AM4 (0..103 = A01..Z04, e.g. M03 = 12*4+2 = 50) and gen-3 (Axe-Fx III / FM3 / FM9 / VP4). Active-buffer export also works on the Axe-Fx II.',
       ),
       directory: z.string().optional().describe(
         'Destination folder for the .syx file. Optional. Defaults to a `mcp-midi-backups` folder under the user\'s home directory. Point this at a cloud-synced folder (e.g. a OneDrive path) so backups reach the user\'s other devices. Created if it does not exist.',
@@ -192,6 +206,7 @@ export function registerPresetTools(server: McpServer): void {
         device: dump.device,
         name: dump.name,
         source: dump.source,
+        ...(dump.warning !== undefined ? { warning: dump.warning } : {}),
         byte_length: dump.byte_length,
         frame_count: dump.frame_count,
         format: dump.format,
@@ -237,7 +252,7 @@ export function registerPresetTools(server: McpServer): void {
       ),
       on_active_preset_edited: ON_EDITED_SCHEMA.describe(ON_EDITED_DESCRIPTION),
       verify_chain: z.boolean().optional().describe(
-        'When true, run a read-after-write chain integrity check after the apply ops ack. On grid devices (Axe-Fx II / III) the check reads the working-buffer grid and surfaces any cell past col 1 with `routing_mask == 0` (broken cable, signal won\'t flow). On linear devices (AM4) and synths (Hydrasynth) the check returns a trivial pass since they have no chain-routing semantics. Use when you need certainty the preset will produce sound before the user plugs in. On a returned chain_break, surface the broken cells to the user (with their row/col) BEFORE claiming the preset is ready to play. Adds ~50-100 ms per call on grid devices.',
+        'Run a read-after-write chain integrity check after the apply ops ack. DEFAULTS ON when the spec includes explicit routing[] edges (a non-linear path is where a broken cable is most likely); otherwise defaults off. Pass true/false to override either way. On the Axe-Fx II the check reads the working-buffer grid and surfaces any cell past col 1 with `routing_mask == 0` (broken cable, signal won\'t flow). Devices without an implemented chain read (AM4, Hydrasynth, and the gen-3 family for now) return a trivial pass. On a returned chain_break, surface the broken cells to the user (with their row/col) BEFORE claiming the preset is ready to play. Adds ~50-100 ms per call on grid devices.',
       ),
     },
     outputSchema: applyPresetOutputShape,
@@ -286,24 +301,29 @@ export function registerPresetTools(server: McpServer): void {
 
   server.registerTool('translate_preset', {
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    description: 'Translate a preset spec between layout-class devices (AM4 / Axe-Fx II / III). Pure transform: returns the translated spec + warnings; does NOT apply, audition, or save. To write it, take the returned applied_spec and call apply_preset(target_port, spec). Bridges chain topology (linear slots to grid), block availability (II/III cab vs AM4 integrated), param aliases, enum mappings, channel collapse (A/B/C/D to X/Y), and scene count (4 vs 8). Read warnings[] first; cross-device gaps are lossy, override scenes/slots if the loss matters. Returns {ok, port_summary, applied_spec, warnings}. ~5 ms.',
+    description: 'Translate a preset between layout-class devices (AM4 / Axe-Fx II / III / FM3 / FM9). Pure transform: returns the translated spec + warnings; does NOT apply, audition, or save. To write it, take the returned applied_spec and call apply_preset(target_port, spec). Source TWO ways: (1) source_spec, a preset you already have in the SOURCE device vocab; or (2) source_location (gen-3 only: Axe-Fx III / FM3 / FM9), a STORED preset number the server reads from the source device, decodes (grid, per-channel block types, scenes, amp model + knobs), and translates in one call. Pass exactly one. Bridges chain topology (linear slots to grid), block availability (II/III cab vs AM4 integrated), param aliases, enum mappings, channel collapse (A/B/C/D to X/Y), and scene count (4 vs 8). gen-3 caveat: non-amp knob values aren\'t decoded (non-amp blocks translate type-only); amp model + knobs carry. Read warnings[] first; gaps are lossy. Returns {ok, port_summary, applied_spec, warnings}.',
     inputSchema: {
       source_port: z.string().describe(`Source device port (the preset's home device). ${PORT_DESC}`),
-      source_spec: presetShape.describe(
+      source_spec: presetShape.optional().describe(
         'Source preset specification (slots, optional scenes, optional name) in the SOURCE device\'s vocabulary.'
-        + ' Param names + enum strings should match what the source device accepts;'
-        + ' the translator handles the cross-device rewrite.',
+        + ' Param names + enum strings should match what the source device accepts; the translator handles the'
+        + ' cross-device rewrite. Pass this OR source_location, not both.',
+      ),
+      source_location: z.union([z.string(), z.number()]).optional().describe(
+        'gen-3 source only (Axe-Fx III / FM3 / FM9): a STORED preset number to read + decode from the source'
+        + ' device and use as the source. The one-call alternative to building source_spec by hand. Pass this OR source_spec.',
       ),
       target_port: z.string().describe(
         `Target device port (where the translated preset will land if the caller later applies it).`
         + ` Must differ from source_port. ${PORT_DESC}`,
       ),
     },
-  }, async ({ source_port, source_spec, target_port }) => {
+  }, async ({ source_port, source_spec, source_location, target_port }) => {
     try {
       const result = await executePortPreset({
         source_port,
-        source_spec: source_spec as unknown as PresetSpec,
+        source_spec: source_spec as unknown as PresetSpec | undefined,
+        source_location,
         target_port,
         dry_run: true,
       });
@@ -313,43 +333,4 @@ export function registerPresetTools(server: McpServer): void {
     }
   });
 
-  // Removed from surface: requires factory bank file not bundled in release. See backlog.
-  // Executor code (executeRestoreDefaults) is preserved in dispatcher/preset.ts for dev use.
-  //
-  // server.registerTool('restore_defaults', {
-  //   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-  //   description: [
-  //     'DESTRUCTIVE: reset preset locations to factory state. Overwrites user content with no working-buffer recovery. Always run scan_locations first and get explicit user approval before clobbering non-empty slots.',
-  //     'Two shapes: pass only `from` for one location; pass `from` + `to` for an inclusive range (max 26 per call).',
-  //     '- Working buffer + active location pointer untouched; the user can keep playing while the restore runs.',
-  //     '- Range options: on_error stop/continue, dry_run, verify (default true; empty post-restore name is a hard fail).',
-  //     '- Performance: ~350 ms per location. 20 slots = ~5-7 s.',
-  //     '- See describe_device.capabilities.supports_factory_restore.',
-  //   ].join(' '),
-  //   inputSchema: {
-  //     port: z.string().describe(PORT_DESC),
-  //     from: z.union([z.string(), z.number()]).describe(
-  //       'Single target, or inclusive start of a range (e.g. "G01" or 24).',
-  //     ),
-  //     to: z.union([z.string(), z.number()]).optional().describe(
-  //       'Inclusive end of a range. Omit for single-location restore.',
-  //     ),
-  //     on_error: z.enum(['stop', 'continue']).optional().describe(
-  //       'Range only. "stop" (default) halts on first error; "continue" logs and proceeds.',
-  //     ),
-  //     dry_run: z.boolean().optional().describe(
-  //       'Range only. Validate without sending any wire bytes.',
-  //     ),
-  //     verify: z.boolean().optional().describe(
-  //       'Read name pre/post and compare. Default true.',
-  //     ),
-  //   },
-  // }, async ({ port, from, to, on_error, dry_run, verify }) => {
-  //   try {
-  //     const result = await executeRestoreDefaults({ port, from, to, on_error, dry_run, verify });
-  //     return asText(result);
-  //   } catch (err) {
-  //     return asError(err);
-  //   }
-  // });
 }

@@ -1,12 +1,10 @@
 /**
- * Preset executors — `apply_preset`, `apply_setlist`, `restore_defaults`
- * full-lifecycle dispatch.
+ * Preset executors — `apply_preset`, `apply_setlist` full-lifecycle dispatch.
  *
  * `apply_preset` works in two modes: working-buffer only (no
  * target_location) or atomic switch + apply + save (with target_location).
  * `apply_setlist` iterates apply_preset across an N-entry batch with one
- * shared inbound capture. `restore_defaults` resets one location or a
- * range to factory; the descriptor decides which writer hook to call.
+ * shared inbound capture.
  */
 
 import {
@@ -19,9 +17,6 @@ import {
   type PresetSlotSpec,
   type PresetSpec,
   type RestorePresetResult,
-  type RestoreDefaultsRangeOptions,
-  type RestoreDefaultsRangeResult,
-  type RestoreDefaultsResult,
   type SetlistApplyOptions,
   type SetlistEntrySpec,
   type ValidationError,
@@ -32,6 +27,7 @@ import { invalidateBlockLayoutCache } from './blockLayoutCache.js';
 import { openCtx, requireDevice } from './core.js';
 import { collectApplyPresetPreflight } from './preflight.js';
 import { translatePresetSpec, type TranslatePresetResult } from '../port-preset.js';
+import { gen3WholePresetToSpec } from '../gen3-source.js';
 import {
   materializeBlockStackRecipe,
   RecipeMaterializeError,
@@ -365,6 +361,7 @@ function stripDroppedKnobsFromSlotParams(
 export async function executeGetPreset(args: {
   port: string;
   include_channel_state?: boolean;
+  location?: string | number;
 }): Promise<PresetSnapshot> {
   const descriptor = requireDevice(args.port);
   if (descriptor.reader.getPreset === undefined) {
@@ -375,7 +372,10 @@ export async function executeGetPreset(args: {
     );
   }
   const ctx = openCtx(descriptor);
-  return descriptor.reader.getPreset(ctx, { include_channel_state: args.include_channel_state });
+  return descriptor.reader.getPreset(ctx, {
+    include_channel_state: args.include_channel_state,
+    location: args.location,
+  });
 }
 
 /**
@@ -408,8 +408,10 @@ export async function executeExportActivePreset(args: {
 /**
  * Byte-exact backup of a stored preset at `location` (integer index).
  * Backs the `export_preset` tool when a `location` argument is given.
- * Uses the gen-3 fn=0x03 REQUEST_PRESET_DUMP / 0x77/0x78/0x79 chain.
- * Wire-confirmed on FM9 fw 11.00 (capture 2026-06-04).
+ * gen-3: fn=0x03 REQUEST_PRESET_DUMP / 0x77/0x78/0x79 chain,
+ * wire-confirmed on FM9 fw 11.00 (capture 2026-06-04). AM4: fn=0x03
+ * [bank, sub, 0x00], hardware-confirmed 2026-06-10 (no working-buffer
+ * side effect).
  */
 export async function executeExportStoredPreset(args: {
   port: string;
@@ -420,7 +422,7 @@ export async function executeExportStoredPreset(args: {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
-      `export_preset with a location argument requires stored-preset dump support; ${descriptor.display_name} does not implement it yet. Stored-preset dump (fn=0x03) is available on gen-3 devices (Axe-Fx III / FM3 / FM9). Use export_preset without a location to dump the active preset.`,
+      `export_preset with a location argument requires stored-preset dump support; ${descriptor.display_name} does not implement it yet. Stored-preset dump (fn=0x03) is available on the AM4 and the gen-3 devices (Axe-Fx III / FM3 / FM9 / VP4). Use export_preset without a location to dump the active preset.`,
     );
   }
   const ctx = openCtx(descriptor);
@@ -524,11 +526,17 @@ export async function executeApplyPreset(args: {
       `apply_preset is not implemented for ${descriptor.display_name}.`,
     );
   }
-  if (args.target_location !== undefined && !descriptor.capabilities.supports_save) {
+  // Gate on STORE-envelope presence (writer.savePreset), not the
+  // supports_save (= persistence hardware-VERIFIED) flag — mirrors the
+  // save_preset gate. A device whose store envelope is wired (evidence-backed,
+  // e.g. gen-3's captured fn=0x01 sub=0x26) can save-to-location, marked
+  // untested. The destructive store fires only on save_authorized (the writer
+  // honors options.save); without it, target_location is a reversible audition.
+  if (args.target_location !== undefined && descriptor.writer.savePreset === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
-      `apply_preset(target_location=...) requires a device that supports save; ${descriptor.display_name} does not.`,
+      `apply_preset(target_location=...) requires a device whose preset-store envelope is wired; ${descriptor.display_name} has no writer.savePreset.`,
     );
   }
 
@@ -715,11 +723,17 @@ export async function executeApplyPreset(args: {
   ];
   const validation_info = combinedInfo.length > 0 ? combinedInfo : undefined;
 
-  // BK-057: optional read-after-write chain integrity check. Only runs
-  // when the caller opted in (verify_chain: true) AND the apply itself
-  // succeeded; a failed apply doesn't have anything to verify.
+  // BK-057: read-after-write chain integrity check. Runs when the caller
+  // opted in (verify_chain: true), OR by default when the spec carries
+  // explicit routing[] edges (a non-linear path is exactly where a broken
+  // cable is most likely; ~50-100 ms on grid devices, trivial pass
+  // elsewhere). Pass verify_chain: false to suppress. Only runs when the
+  // apply itself succeeded; a failed apply has nothing to verify.
+  const specHasRouting = (wireSpec as { routing?: readonly unknown[] }).routing !== undefined
+    && ((wireSpec as { routing?: readonly unknown[] }).routing?.length ?? 0) > 0;
+  const verifyChainRequested = args.verify_chain ?? specHasRouting;
   let chain_integrity = undefined as ApplyResult['chain_integrity'];
-  if (args.verify_chain === true && result.ok) {
+  if (verifyChainRequested && result.ok) {
     if (descriptor.writer.verifyChain !== undefined) {
       chain_integrity = await descriptor.writer.verifyChain(ctx, normalizedSpec);
     } else {
@@ -849,17 +863,22 @@ export interface PortPresetResult extends TranslatePresetResult {
  * so callers can use this in dry-run mode without any device
  * connected.
  *
- * v1 limitation: this tool does NOT read the source preset from the
- * source device. The caller supplies the `source_spec` directly.
- * v2 (HW-118, post-MVP) layers a device-read on top so the caller
- * can ask for `source_location: 'M03'` and the dispatcher handles the
- * source-side dump. For now, agents should construct the source spec
- * via the existing read tools (`get_block_layout`, `get_param`,
- * `get_params`) before calling `port_preset`.
+ * Source reads are wired for gen-3: pass `source_location` and the
+ * dispatcher dumps the stored preset from the source device, decodes
+ * it, and uses it as the source spec. For any other source device the
+ * caller supplies `source_spec` directly, constructed via the existing
+ * read tools (`get_block_layout`, `get_param`, `get_params`) before
+ * calling `port_preset`.
  */
 export async function executePortPreset(args: {
   source_port: string;
-  source_spec: PresetSpec;
+  source_spec?: PresetSpec;
+  /**
+   * gen-3 source only: read a STORED preset by integer number from the source
+   * device, decode it, and use it as the source spec. Exactly one of
+   * source_spec / source_location must be given.
+   */
+  source_location?: string | number;
   target_port: string;
   target_location?: string | number;
   dry_run?: boolean;
@@ -903,18 +922,73 @@ export async function executePortPreset(args: {
     );
   }
 
+  // Resolve the source spec: either supplied directly, or read + decoded from a
+  // stored gen-3 preset (source_location). Exactly one must be given.
+  let sourceSpec = args.source_spec;
+  const sourceNotes: string[] = [];
+  if (sourceSpec === undefined) {
+    if (args.source_location === undefined) {
+      throw new DispatchError(
+        'value_out_of_range',
+        sourceDescriptor.display_name,
+        'translate_preset needs either source_spec (the preset in the source device\'s vocabulary) ' +
+          'or source_location (a stored gen-3 preset number to read + decode). Neither was given.',
+      );
+    }
+    if (sourceDescriptor.reader.getPreset === undefined) {
+      throw new DispatchError(
+        'capability_not_supported',
+        sourceDescriptor.display_name,
+        `translate_preset(source_location) reads the source preset via get_preset, which ${sourceDescriptor.display_name} does not implement. Pass source_spec directly.`,
+      );
+    }
+    const loc =
+      typeof args.source_location === 'number'
+        ? args.source_location
+        : Number.parseInt(String(args.source_location), 10);
+    if (!Number.isInteger(loc) || loc < 0) {
+      throw new DispatchError(
+        'bad_location',
+        sourceDescriptor.display_name,
+        `translate_preset: source_location must be a non-negative integer preset number, got ${JSON.stringify(args.source_location)}.`,
+      );
+    }
+    const snapshot = await sourceDescriptor.reader.getPreset(openCtx(sourceDescriptor), { location: loc });
+    if (snapshot.whole_preset === undefined) {
+      throw new DispatchError(
+        'capability_not_supported',
+        sourceDescriptor.display_name,
+        `translate_preset(source_location) currently supports gen-3 sources (Axe-Fx III / FM3 / FM9), which decode a stored preset into a full structure. ${sourceDescriptor.display_name} returned no decoded whole_preset for location ${loc}. Read the preset with the source device's read tools and pass source_spec directly.`,
+      );
+    }
+    const built = gen3WholePresetToSpec(snapshot.whole_preset);
+    sourceSpec = built.spec;
+    sourceNotes.push(...built.notes);
+  } else if (args.source_location !== undefined) {
+    throw new DispatchError(
+      'value_out_of_range',
+      sourceDescriptor.display_name,
+      'translate_preset: pass either source_spec OR source_location, not both.',
+    );
+  }
+
   const translation = translatePresetSpec(
     sourceDescriptor,
-    args.source_spec,
+    sourceSpec,
     targetDescriptor,
   );
+  // Surface the source-decode notes alongside the translator's own warnings.
+  const mergedTranslation =
+    sourceNotes.length > 0
+      ? { ...translation, warnings: [...sourceNotes, ...translation.warnings] }
+      : translation;
 
   // Translator-only modes: no apply, just return the translated spec.
   const translatorOnly =
     args.dry_run === true || args.target_location === undefined;
-  if (translatorOnly || !translation.ok) {
+  if (translatorOnly || !mergedTranslation.ok) {
     return {
-      ...translation,
+      ...mergedTranslation,
       source_device: sourceDescriptor.display_name,
       target_device: targetDescriptor.display_name,
       dry_run: true,
@@ -927,71 +1001,17 @@ export async function executePortPreset(args: {
   // enforces the safe-edit gates the same as direct apply_preset.
   const applyResult = await executeApplyPreset({
     port: args.target_port,
-    spec: translation.applied_spec,
+    spec: mergedTranslation.applied_spec,
     target_location: args.target_location,
     save_authorized: args.save_authorized,
     on_active_preset_edited: args.on_active_preset_edited,
   });
 
   return {
-    ...translation,
+    ...mergedTranslation,
     source_device: sourceDescriptor.display_name,
     target_device: targetDescriptor.display_name,
     apply_result: applyResult,
     dry_run: false,
   };
-}
-
-/**
- * Full lifecycle for `restore_defaults`. Two shapes — single location or
- * inclusive range — picked by `to`. Devices without a factory bank
- * (descriptor.capabilities.supports_factory_restore=false) reject.
- */
-export async function executeRestoreDefaults(args: {
-  port: string;
-  from: string | number;
-  to?: string | number;
-  on_error?: 'stop' | 'continue';
-  dry_run?: boolean;
-  verify?: boolean;
-}): Promise<(RestoreDefaultsResult | RestoreDefaultsRangeResult) & { device: string; shape: 'single' | 'range' }> {
-  const descriptor = requireDevice(args.port);
-  if (!descriptor.capabilities.supports_factory_restore) {
-    throw new DispatchError(
-      'capability_not_supported',
-      descriptor.display_name,
-      `${descriptor.display_name} does not expose a factory-restore capability.`,
-    );
-  }
-  const ctx = openCtx(descriptor);
-  if (args.to === undefined || args.to === args.from) {
-    if (descriptor.writer.restoreDefaults === undefined) {
-      throw new DispatchError(
-        'capability_not_supported',
-        descriptor.display_name,
-        `restore_defaults (single) not implemented for ${descriptor.display_name}.`,
-      );
-    }
-    const result = await descriptor.writer.restoreDefaults(ctx, args.from, { verify: args.verify });
-    // BK-075: factory restore overwrites the location; if the user is
-    // currently sitting at it the working buffer reflects the factory
-    // preset (different blocks). Invalidate cache.
-    invalidateBlockLayoutCache(descriptor.id);
-    return { ...result, device: descriptor.display_name, shape: 'single' };
-  }
-  if (descriptor.writer.restoreDefaultsRange === undefined) {
-    throw new DispatchError(
-      'capability_not_supported',
-      descriptor.display_name,
-      `restore_defaults (range) not implemented for ${descriptor.display_name}.`,
-    );
-  }
-  const opts: RestoreDefaultsRangeOptions = {
-    on_error: args.on_error,
-    dry_run: args.dry_run,
-    verify: args.verify,
-  };
-  const result = await descriptor.writer.restoreDefaultsRange(ctx, args.from, args.to, opts);
-  invalidateBlockLayoutCache(descriptor.id);
-  return { ...result, device: descriptor.display_name, shape: 'range' };
 }

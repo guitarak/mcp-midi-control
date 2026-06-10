@@ -9,8 +9,7 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-display-q16-fixedpoint
 relates_to: [display-log10-scaling]
 consumed_in:
-  - packages/core/src/coercion/q16.ts (if exists)
-  - fractal-midi/src/shared/coercion.ts (pending consolidation; Q16 currently scattered in src/am4/setParam.ts + src/axe-fx-iii/params.ts)
+  - fractal-midi/src/am4/setParam.ts (the `u32 as Q16` continuous-float coercion)
 ---
 
 # Q16 fixed-point display ↔ wire coercion

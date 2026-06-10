@@ -33,6 +33,7 @@ import {
   FN_MULTIPURPOSE_RESPONSE,
   AXE_FX_III_MODEL_ID,
 } from 'fractal-midi/axe-fx-iii';
+import { encode16to3, huffmanCompress, computeRawPatchCrc } from './presetHuffman.js';
 
 const SYSEX_START = 0xf0;
 const SYSEX_END = 0xf7;
@@ -136,6 +137,48 @@ function buildEditBufferDump(modelByte: number): number[][] {
   return [head, ...bodies];
 }
 
+/** fn=0x03 REQUEST_PRESET_DUMP → 0x77 head / 0x78 chunks / 0x79 footer. */
+const FN_REQUEST_PRESET_DUMP = 0x03;
+const FN_PRESET_DUMP_HEAD = 0x77;
+const FN_PRESET_DUMP_CHUNK = 0x78;
+const FN_PRESET_DUMP_FOOTER = 0x79;
+
+/**
+ * Build the device's reply to an fn=0x03 stored-preset dump request: a CRC-valid
+ * single-chunk 0x77/0x78/0x79 dump carrying a preset name + 8 scene names, so
+ * `get_preset(location)` and `translate_preset(source_location)` decode end to
+ * end (CRC validates, `decodeGen3PresetDump` yields a `whole_preset`). The grid
+ * + block chain are left empty (zero); the decode is exercised, the preset is
+ * just sparse. Built with the real codec (encode16to3 + huffmanCompress + CRC),
+ * so it round-trips through the production reader exactly like a device dump.
+ */
+function buildStoredPresetDump(modelByte: number, presetName = 'Mock Preset'): number[][] {
+  // Decompressed body: scene names live at body[4 + i*32].
+  const body = new Uint8Array(0x300);
+  const sceneNames = ['Clean', 'Crunch', 'Rhythm', 'Lead', 'Ambient', 'Dry', 'Solo', 'Verb'];
+  for (let i = 0; i < 8; i++) {
+    const s = sceneNames[i];
+    for (let j = 0; j < s.length && j < 31; j++) body[4 + i * 32 + j] = s.charCodeAt(j);
+  }
+  const comp = huffmanCompress(body);
+  // raw_patch: 1 chunk = 1024 words = 2048 bytes. CRC@0x04, name@0x08,
+  // decompSize@0x48, compSize@0x4A, Huffman body@0x4C.
+  const rawPatch = new Uint8Array(2048);
+  for (let j = 0; j < presetName.length && j < 31; j++) rawPatch[0x08 + j] = presetName.charCodeAt(j);
+  rawPatch[0x48] = body.length & 0xff; rawPatch[0x49] = (body.length >> 8) & 0xff;
+  rawPatch[0x4a] = comp.length & 0xff; rawPatch[0x4b] = (comp.length >> 8) & 0xff;
+  rawPatch.set(comp, 0x4c);
+  const crc = computeRawPatchCrc(rawPatch);
+  rawPatch[0x04] = crc & 0xff; rawPatch[0x05] = (crc >> 8) & 0xff;
+  const packed = encode16to3(rawPatch); // 1024 words → 3072 packed bytes
+  const chunkPayload = [0x00, 0x00, ...Array.from(packed)]; // 2-byte discriminator + 3072
+  return [
+    envelope(modelByte, FN_PRESET_DUMP_HEAD, [0x00, 0x01, 0x00, 0x40, 0x00]),
+    envelope(modelByte, FN_PRESET_DUMP_CHUNK, chunkPayload),
+    envelope(modelByte, FN_PRESET_DUMP_FOOTER, [0x00, 0x00, 0x00]),
+  ];
+}
+
 export interface Gen3ParityMockOptions {
   /** SysEx model byte (III 0x10, FM3 0x11, FM9 0x12). Defaults to the III. */
   modelByte?: number;
@@ -175,6 +218,9 @@ export function makeGen3BroadcastMockResponder(opts: Gen3ParityMockOptions = {})
     if (outgoing[4] !== modelByte) return [];
     // Edit-buffer dump request (export_preset): reply with head + body run.
     if (outgoing[5] === FN_REQUEST_EDIT_BUFFER_DUMP) return buildEditBufferDump(modelByte);
+    // Stored-preset dump request (get_preset(location) / translate source_location,
+    // export_preset(location)): reply with a CRC-valid 0x77/0x78/0x79 dump.
+    if (outgoing[5] === FN_REQUEST_PRESET_DUMP) return buildStoredPresetDump(modelByte);
     if (outgoing.length < 10) return [];
     if (outgoing[5] !== FN_BLOCK_BULK_READ) return [];
     const effectId = (outgoing[6] & 0x7f) | ((outgoing[7] & 0x7f) << 7);

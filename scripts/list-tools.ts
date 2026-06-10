@@ -52,6 +52,12 @@ const DESCRIPTION_BUDGET_OVERRIDES: ReadonlyMap<string, number> = new Map([
   // and the audition-vs-save discipline all live in the description.
   // Migration to describe_device.agent_guidance pending post-announce.
   ['apply_preset', 1600],
+  // describe_device: carries the supports_save/save_note semantics inline
+  // (an agent reading `supports_save: false` without that pointer concludes
+  // save_preset is unavailable on gen-3 community-beta devices and refuses
+  // a working tool: the 0.3.0 underselling class). Migration of the
+  // capabilities-semantics prose to a structured field is the trim path.
+  ['describe_device', 1300],
   // lookup_lineage: three call shapes (forward / reverse / structured)
   // plus the loudness-data callout. Migration to a per-call-shape
   // structured response is queued post-announce.

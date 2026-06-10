@@ -8,7 +8,7 @@ verified_on:
   - axe-fx-ii-q9.04
 firmware_sensitive: true
 golden: scripts/cookbook-verify.ts#case-fn28-enum-dump
-relates_to: [trim-tolerant-display-match]
+relates_to: [trim-tolerant-display-match, editor-cache-section-record-grammar]
 consumed_in:
   - scripts/extract-axe-fx-ii-params.ts (ENUM_VALUE_OVERRIDES generator)
   - scripts/_research/probe-axefx2-enum-dump.ts
@@ -63,8 +63,9 @@ example, but 4 others surfaced in the same  sweep).
 
 `scripts/cookbook-verify.ts#case-fn28-enum-dump` runs against the
 captured `samples/captured/probe-axefx2-enum-dump.syx` fixture. Asserts:
-- 145 enum tables dumped without truncation (one known truncation case
-  at amp.effect_type — 2048-byte node-midi cap; documented limitation)
+- 145 enum tables dumped without truncation (the original fixture has one
+  truncation case at amp.effect_type, an artifact of node-midi's 2048-byte
+  WinMM fragmentation, since fixed; see Refinement history)
 - 1112 labels recovered total
 - Trim-tolerant comparison against catalog: 0 mismatches
 
@@ -82,3 +83,14 @@ captured `samples/captured/probe-axefx2-enum-dump.syx` fixture. Asserts:
   the fn 0x28 sweep against  catalog dropped mismatch count
   64 → 9; the remaining 9 were trailing-whitespace device padding,
   closed via [[trim-tolerant-display-match]] (mismatch count 9 → 0).
+- 2026-06-09: the truncation was never a device limit. node-midi's WinMM
+  backend fragments any inbound SysEx longer than 2048 bytes into
+  multiple `message` events and the old receive path dropped the
+  continuations; the II transport and the probe now reassemble fragments
+  via the shared `createSysExAssembler`. The post-fix re-run captured
+  the full amp table in ONE untruncated frame: 266 labels (ordinals
+  0..265), 266/266 display-equal vs the shipped catalog, 0 mismatches.
+  The 7 names the old capture lost (ordinals 259..265) were
+  independently confirmed by the Axe-Edit cache roster
+  ([[editor-cache-section-record-grammar]]). The II amp roster is
+  complete and hardware-confirmed.

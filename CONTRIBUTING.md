@@ -319,6 +319,40 @@ Hardware-gated generators (e.g. `npm run extract-factory-data`, which
 reads 104 presets from a real AM4) must be run manually with the
 relevant device connected and at factory state.
 
+### Sourcing and legal hygiene (read before contributing a decode)
+
+This project decodes communication protocols for interoperability, which
+is well-protected, but only when contributions are sourced cleanly. Two
+rules keep the project on solid ground:
+
+1. **Source facts from clean inputs.** Derive every decoded fact from one
+   of: (a) a manufacturer's **publicly published** spec (e.g. Fractal's
+   "MIDI for Third-Party Devices" doc or the gen-1 SysEx wiki page),
+   (b) **wire traffic you captured from hardware you own**, or (c) a
+   manufacturer editor binary **only where that editor's license does not
+   prohibit reverse engineering**. Prefer (a) and (b); they are the
+   lowest-risk sources. If you must inspect an editor binary, you are
+   responsible for knowing whether its EULA bars it.
+
+2. **Ship facts, never expression.** Contribute decoded *facts* (parameter
+   IDs, byte offsets, value ranges, enum value lists, checksum rules)
+   re-expressed in our own schema and our own words. Do **not** paste
+   decompiler output, manufacturer source code, verbatim manual or help
+   text, tooltip strings, or factory preset content into the repo. Facts
+   are free; copied expression is not.
+
+**Cite provenance.** Every decode written into a `SYSEX-MAP.md` or cookbook
+entry must say how it was learned (capture file + byte offset, or the
+published-spec section). This is both how the next contributor verifies it
+and the project's evidence that the work is independent.
+
+The project does not accept contributions derived from circumventing
+encryption, code signing, or any access control, or from reverse
+engineering an editor in violation of a license the contributor agreed to.
+Background and citations: the maintainer keeps a legal-basis writeup
+(private for now) summarizing why protocol decoding for interoperability is
+protected and where the lines are.
+
 ## Questions / security issues
 
 - General questions → open a GitHub issue.

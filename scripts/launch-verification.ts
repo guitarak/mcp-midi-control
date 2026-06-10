@@ -1,40 +1,40 @@
 /**
- * Non-destructive launch verification battery — AM4 + Axe-Fx II.
+ * Non-destructive launch verification battery, hardware-present.
  *
  * Drives the shipped MCP server (dist/server/index.js) via
  * StdioClientTransport, the same JSON-RPC path Claude Desktop uses.
  * Runs read-only and working-buffer-only checks: no flash saves, no
- * save_preset, no restore_defaults. Working-buffer changes revert
- * naturally when the user switches presets.
+ * save_preset. Working-buffer changes revert naturally when the user
+ * switches presets. Each device's checks run only if its port is visible
+ * in list_midi_ports; an absent device is skipped, not failed.
  *
- * What it verifies:
- *   • Port discovery — both devices visible via list_midi_ports.
- *   • describe_device sanity per port (capabilities, location format).
- *   • AM4 read surface — get_param, list_params, scan_locations,
- *     lookup_lineage with v0.4 frontPanelKnobs / notExposed annotations.
- *   • AM4 unpadded location format (A1..Z4, matches device display).
- *   • AM4 audition apply_preset (no target_location, no save).
- *   • AM4 audition-at-target apply_preset (target_location, no
- *     save_authorized — v0.4 three-mode behavior).
- *   • AM4 apply_preset rejects routing[] (linear device contract).
- *   • AM4 apply_preset rejects instance≠1 (linear device contract).
- *   • AM4 apply_preset skip-with-warning on type-gated params.
- *   • Axe-Fx II read surface — describe_device, get_param.
- *   • Axe-Fx II audition apply_preset (no target_location).
- *   • Axe-Fx II v0.4 routing-walk audition (BK-054) — wet/dry parallel
- *     chain via explicit routing[] edges. Confirms the dispatcher
- *     accepts the topology and the device acks every cable.
+ * What it verifies, per device:
+ *   • AM4: read surface (get_param, list_params, scan_locations,
+ *     lookup_lineage with frontPanelKnobs / notExposed annotations),
+ *     unpadded location format (A1..Z4), audition apply_preset (with and
+ *     without target_location), and linear-device-contract rejections
+ *     (routing[] and instance != 1 refused, type-gated params skip-warn).
+ *   • Axe-Fx II: read surface, audition apply_preset, routing-walk
+ *     audition (wet/dry parallel chain via explicit routing[] edges).
+ *   • Axe-Fx Standard/Ultra (gen-1): describe_device + community-beta
+ *     guidance, list_params, set_param (fire-and-forget), get_param wired
+ *     (read-back), save_preset refuses with capability_not_supported.
+ *   • FM9 (gen-3): describe_device + community-beta guidance that
+ *     advertises set-by-name, list_params, set_param amp/drive type
+ *     BY MODEL NAME (device-true rosters), get_param wired.
+ *   • Hydrasynth: describe_device, NRPN apply_patch (no flash-save claim).
  *
  * NOT covered (would require flash writes):
- *   • save_preset wire path — exercised by mcp-test-safe-edit-scenarios --write.
- *   • restore_defaults — destructive.
- *   • Axe-Fx II routing-walk persisted to a slot + audio sign-off — that
- *     requires a target slot the founder is willing to overwrite.
+ *   • save_preset wire path, exercised by mcp-test-safe-edit-scenarios --write.
+ *   • Persisted routing-walk + audio sign-off (needs an overwritable slot).
  *
  * USAGE:
- *   npm run launch-verify                    # both ports
- *   npm run launch-verify -- --port am4      # AM4 only
- *   npm run launch-verify -- --port axefx2   # Axe-Fx II only
+ *   npm run launch-verify                       # all default ports
+ *   npm run launch-verify -- --port am4         # AM4 only
+ *   npm run launch-verify -- --port axefx2      # Axe-Fx II only
+ *   npm run launch-verify -- --port axefx-gen1  # gen-1 only
+ *   npm run launch-verify -- --port fm9         # FM9 only
+ *   npm run launch-verify -- --port hydrasynth  # Hydrasynth only
  *
  * EXIT CODES:
  *   0 — every applicable check passed
@@ -56,7 +56,7 @@ interface CliOpts {
 }
 
 function parseCli(argv: string[]): CliOpts {
-  const opts: CliOpts = { ports: ['am4', 'axefx2', 'axefx-gen1', 'hydrasynth'] };
+  const opts: CliOpts = { ports: ['am4', 'axefx2', 'axefx-gen1', 'fm9', 'hydrasynth'] };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--port') opts.ports = [argv[++i]];
@@ -901,6 +901,86 @@ async function verifyHydrasynth(client: Client): Promise<void> {
   }
 }
 
+async function verifyFm9(client: Client): Promise<void> {
+  console.log('\n── FM9 (gen-3) ───────────────────────────────────────────────');
+
+  // describe_device — capabilities + device_note advertises set-by-name.
+  {
+    const r = await client.callTool({ name: 'describe_device', arguments: { port: 'fm9' } });
+    const t = extractText(r);
+    let parsed: unknown;
+    try { parsed = JSON.parse(t); } catch { parsed = undefined; }
+    const caps = (parsed as { capabilities?: Record<string, unknown> })?.capabilities;
+    const guidance = (parsed as { agent_guidance?: Record<string, string> })?.agent_guidance;
+    record('fm9 describe_device returns capabilities', !isError(r) && !!caps, t.slice(0, 200));
+    record(
+      'fm9 support_tier is community-beta',
+      (caps as { support_tier?: string } | undefined)?.support_tier === 'community-beta',
+      `support_tier=${String((caps as Record<string, unknown> | undefined)?.support_tier)}`,
+    );
+    // The guidance must ADVERTISE set-by-name, not undersell it.
+    record(
+      'fm9 device_note advertises set-by-name with model names (not numeric-only)',
+      !!guidance?.device_note && /by name/i.test(guidance.device_note) && /Texas Star Clean|Blues OD|Music Hall/i.test(guidance.device_note),
+      `device_note present=${!!guidance?.device_note}`,
+    );
+    // supports_save=false must come WITH the save_note clarification, or an
+    // agent reading capabilities concludes save_preset is unavailable (the
+    // 0.3.0 underselling class: the tool works, only auto-save is gated).
+    const saveNote = (caps as { save_note?: string } | undefined)?.save_note;
+    record(
+      'fm9 capabilities.save_note clarifies that explicit save_preset works',
+      typeof saveNote === 'string' && /save_preset/.test(saveNote) && /ARE available|does NOT mean/i.test(saveNote),
+      `save_note=${String(saveNote).slice(0, 120)}`,
+    );
+  }
+
+  // list_params amp — catalog present.
+  {
+    const r = await client.callTool({ name: 'list_params', arguments: { port: 'fm9', block: 'amp' } });
+    const t = extractText(r);
+    record('fm9 list_params amp returns catalog', !isError(r) && /type|gain|drive|level/i.test(t), t.slice(0, 200));
+  }
+
+  // set_param amp.type BY NAME — the headline 0.3.0 capability. The dispatch
+  // must resolve the FM9-true roster name to its ordinal and build the wire
+  // without error (no capability gate, no "numeric only" rejection).
+  {
+    const r = await client.callTool({
+      name: 'set_param',
+      arguments: { port: 'fm9', block: 'amp', name: 'type', value: 'Texas Star Clean' },
+    });
+    const t = extractText(r);
+    record('fm9 set_param amp.type "Texas Star Clean" (set-by-name) succeeds', !isError(r), t.slice(0, 300));
+    record(
+      'fm9 set_param response does NOT claim flash save',
+      !isError(r) && !/saved to|persisted to|stored to|wrote to flash/i.test(t),
+      t.slice(0, 300),
+    );
+  }
+
+  // set_param drive.type BY NAME.
+  {
+    const r = await client.callTool({
+      name: 'set_param',
+      arguments: { port: 'fm9', block: 'drive', name: 'type', value: 'Blues OD' },
+    });
+    const t = extractText(r);
+    record('fm9 set_param drive.type "Blues OD" (set-by-name) succeeds', !isError(r), t.slice(0, 300));
+  }
+
+  // get_param amp.type — read leg labels the ordinal back to a model name.
+  {
+    const r = await client.callTool({
+      name: 'get_param',
+      arguments: { port: 'fm9', block: 'amp', name: 'type' },
+    });
+    const t = extractText(r);
+    record('fm9 get_param amp.type is wired (not capability_not_supported)',
+      !/capability_not_supported/i.test(t), t.slice(0, 300));
+  }
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -940,6 +1020,7 @@ async function main(): Promise<void> {
     const hasAm4 = /am4/i.test(portsText);
     const hasAxefx = /axe[- ]fx/i.test(portsText);
     const hasAxefxGen1 = /axe[- ]fx.*(ultra|standard)/i.test(portsText);
+    const hasFm9 = /fm9/i.test(portsText);
     const hasHydra = /hydrasynth|hydra/i.test(portsText);
 
     if (opts.ports.includes('am4')) {
@@ -966,6 +1047,15 @@ async function main(): Promise<void> {
         console.log('  For offline verification, run with a virtual port named "Axe-Fx Ultra".');
       } else {
         await verifyAxefxGen1(client);
+      }
+    }
+    if (opts.ports.includes('fm9')) {
+      if (!hasFm9) {
+        console.log('\n── FM9 (gen-3) ───────────────────────────────────────────────');
+        console.log('  ⊘ FM9 not visible in list_midi_ports — skipping checks.');
+        console.log('  Note: FM9 verification runs against a real port matching /fm9/i (or a loopMIDI port named "FM9").');
+      } else {
+        await verifyFm9(client);
       }
     }
     if (opts.ports.includes('hydrasynth')) {

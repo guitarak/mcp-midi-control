@@ -19,8 +19,7 @@
  *   - `navigation.ts`  — `executeSwitchPreset`, `executeSavePreset`,
  *                        `executeSwitchScene`, `executeRename`,
  *                        `executeScanLocations`.
- *   - `preset.ts`      — `executeApplyPreset`, `executeApplySetlist`,
- *                        `executeRestoreDefaults`.
+ *   - `preset.ts`      — `executeApplyPreset`, `executeApplySetlist`.
  *
  * Consumers continue to import from `@/protocol/generic/dispatcher.js`;
  * the per-family layout is an internal detail. The 6-step request
@@ -72,7 +71,6 @@ export {
   executeExportStoredPreset,
   executeGetPreset,
   executePortPreset,
-  executeRestoreDefaults,
   executeRestorePreset,
   type PortPresetResult,
 } from './dispatcher/preset.js';

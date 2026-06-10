@@ -29,13 +29,17 @@
  *
  * # Limitations
  *
- * - **node-midi truncates inbound SysEx at 2048 bytes** on Windows
- *   (see `node_modules/midi/CHANGELOG.md`). Large enum tables (AMP
- *   amp.type has 259 entries → ~3500 bytes) are silently cut off
- *   mid-string. Until we work around this (custom rtmidi bindings or
- *   the device chunking response into multiple ≤2048B frames), each
- *   probe captures only the first ~150 strings. The findings clearly
- *   flag truncated frames.
+ * - **node-midi fragments inbound SysEx at 2048 bytes** on Windows
+ *   (RT_SYSEX_BUFFER_SIZE=2048 in `node_modules/midi/binding.gyp`):
+ *   a SysEx longer than the buffer arrives as multiple `message`
+ *   events (first fragment F0...no-F7, continuations with no status
+ *   byte), NOT as one truncated frame. Earlier runs of this probe
+ *   dropped the continuation fragments (they don't start with F0) and
+ *   so captured only the first ~150 of 266 amp strings. Fixed
+ *   2026-06-09: fragments are now reassembled with the shared
+ *   `createSysExAssembler` from `packages/core`, the same reassembler
+ *   the production transports use. Frames that still end without F7
+ *   are flagged truncated in the findings.
  * - **Requires a placed block** for fn 0x28 to return anything useful.
  *   Most blocks expose enum params even when not placed; the script
  *   picks the canonical instance-1 effect IDs and assumes the device
@@ -61,12 +65,12 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { KNOWN_PARAMS, AXE_FX_II_BLOCKS } from 'fractal-midi/axe-fx-ii';
 import type { AxeFxIIParam } from 'fractal-midi/axe-fx-ii';
+import { createSysExAssembler } from '../../packages/core/src/midi/transport.js';
 
 const AXE_FX_II_MODEL = 0x07;
 const FRACTAL_MFR = [0x00, 0x01, 0x74] as const;
 const SYSEX_START = 0xf0;
 const SYSEX_END = 0xf7;
-const NODEMIDI_FRAME_CAP = 2048;
 
 function fractalChecksum(bytes: number[]): number {
   return bytes.reduce((acc, b) => acc ^ b, 0) & 0x7f;
@@ -129,7 +133,10 @@ function decodeEnumStrings(frameBytes: number[]): {
   return {
     strings,
     trailingPartial: String.fromCharCode(...cur),
-    truncated: !terminated || frameBytes.length >= NODEMIDI_FRAME_CAP,
+    // With fragment reassembly in place, a frame is truncated only if it
+    // genuinely never received its F7 (device stopped mid-message or the
+    // listen window closed before the last fragment landed).
+    truncated: !terminated,
   };
 }
 
@@ -216,8 +223,15 @@ async function main(): Promise<void> {
   output.openPort(outIdx);
   input.ignoreTypes(false, true, true);
   const collected: number[][] = [];
-  input.on('message', (_dt, bytes) => {
+  // Reassemble WinMM fragments into whole F0..F7 frames before
+  // collecting. Filtering on bytes[0] === 0xf0 directly on raw
+  // `message` events is what previously dropped every continuation
+  // fragment of >2048-byte responses (the fn 0x28 amp table is ~3.5 KB).
+  const assemble = createSysExAssembler((bytes) => {
     if (bytes[0] === 0xf0) collected.push(bytes.slice());
+  });
+  input.on('message', (_dt, bytes) => {
+    assemble(bytes);
   });
   input.openPort(inIdx);
   console.log(`Ports open. Pre-cleaning inbound queue ...\n`);
@@ -387,7 +401,7 @@ async function main(): Promise<void> {
   console.log(
     `\nTotals: ${totalCaptured} strings captured, ${totalExact} display-equal ` +
       `matches (trim-tolerant), ${totalDiff} mismatches, ${truncCount}/${results.length} ` +
-      `probes hit the 2048B frame cap.`,
+      `probes ended with an unterminated (no-F7) frame.`,
   );
 
   input.closePort();

@@ -12,6 +12,13 @@
  * here matches the corresponding hand-authored KNOWN_PARAMS entry
  * byte-for-byte (same pidLow/pidHigh, same unit, same displayMin/
  * displayMax). Preflight runs this verification.
+ *
+ * 2026-06-09 accuracy pass: amp-bank rows and the typecode family-4/5
+ * taper set corrected from the 2026-06-09 zero-resync cache walk
+ * (effectDefinitions_15_2p0, solved record grammar; the log10 family is
+ * hardware-anchored by a geometric-mean knob reading on the Axe-Fx II).
+ * These corrections supersede the original generator output; mirror
+ * them in any future regeneration.
  */
 import type { Param } from './params.js';
 
@@ -84,7 +91,8 @@ export const CACHE_PARAMS = {
   'amp.proximity': {
     block: 'amp', name: 'proximity',
     pidLow: 0x003a, pidHigh: 0x0015,
-    unit: 'db', displayMin: 400, displayMax: 40000,
+    unit: 'hz', displayMin: 400, displayMax: 40000,
+    scaling: 'log10',
   },
   'amp.depth': {
     block: 'amp', name: 'depth',
@@ -166,25 +174,26 @@ export const CACHE_PARAMS = {
   'amp.distance': {
     block: 'amp', name: 'distance',
     pidLow: 0x003a, pidHigh: 0x0047,
-    unit: 'ms', displayMin: 0, displayMax: 25,
+    unit: 'ms', displayMin: 0.25, displayMax: 25,
     scaling: 'log10',
   },
   'amp.distance_dynacab_z2': {
     block: 'amp', name: 'distance_dynacab_z2',
     pidLow: 0x003a, pidHigh: 0x0048,
-    unit: 'ms', displayMin: 0, displayMax: 50,
+    unit: 'ms', displayMin: 0.5, displayMax: 50,
     scaling: 'log10',
   },
   'amp.compressor_clarity': {
     block: 'amp', name: 'compressor_clarity',
     pidLow: 0x003a, pidHigh: 0x004d,
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+    unit: 'knob_0_10', displayMin: 0.1, displayMax: 10,
     scaling: 'log10',
   },
   'amp.input_eq_frequency': {
     block: 'amp', name: 'input_eq_frequency',
     pidLow: 0x003a, pidHigh: 0x004f,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'amp.overdrive': {
     block: 'amp', name: 'overdrive',
@@ -226,11 +235,12 @@ export const CACHE_PARAMS = {
     block: 'amp', name: 'high_cut',
     pidLow: 0x003a, pidHigh: 0x005a,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'amp.dynpres': {
     block: 'amp', name: 'dynpres',
     pidLow: 0x003a, pidHigh: 0x005b,
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+    unit: 'knob_0_10', displayMin: -10, displayMax: 10,
   },
   'amp.dyndepth': {
     block: 'amp', name: 'dyndepth',
@@ -240,7 +250,8 @@ export const CACHE_PARAMS = {
   'amp.tremfreq': {
     block: 'amp', name: 'tremfreq',
     pidLow: 0x003a, pidHigh: 0x0060,
-    unit: 'db', displayMin: 0.20000000298023224, displayMax: 20,
+    unit: 'hz', displayMin: 0.2, displayMax: 20,
+    scaling: 'log10',
   },
   'amp.tremdepth': {
     block: 'amp', name: 'tremdepth',
@@ -265,29 +276,29 @@ export const CACHE_PARAMS = {
   'amp.indynamics': {
     block: 'amp', name: 'indynamics',
     pidLow: 0x003a, pidHigh: 0x006a,
-    unit: 'knob_0_10', displayMin: 0, displayMax: 10,
+    unit: 'knob_0_10', displayMin: -10, displayMax: 10,
   },
   'amp.gridhardness': {
     block: 'amp', name: 'gridhardness',
     pidLow: 0x003a, pidHigh: 0x006e,
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'percent', displayMin: 10, displayMax: 100,
   },
   'amp.triode2extime': {
     block: 'amp', name: 'triode2extime',
     pidLow: 0x003a, pidHigh: 0x0072,
-    unit: 'ms', displayMin: 0, displayMax: 100,
+    unit: 'ms', displayMin: 0.1, displayMax: 100,
     scaling: 'log10',
   },
   'amp.triode2rectime': {
     block: 'amp', name: 'triode2rectime',
     pidLow: 0x003a, pidHigh: 0x0073,
-    unit: 'ms', displayMin: 0, displayMax: 200,
+    unit: 'ms', displayMin: 0.2, displayMax: 200,
     scaling: 'log10',
   },
   'amp.triode1ratio': {
     block: 'amp', name: 'triode1ratio',
     pidLow: 0x003a, pidHigh: 0x0077,
-    unit: 'percent', displayMin: 0, displayMax: 100,
+    unit: 'bipolar_percent', displayMin: -200, displayMax: 200,
   },
   'amp.cfhardness': {
     block: 'amp', name: 'cfhardness',
@@ -385,11 +396,13 @@ export const CACHE_PARAMS = {
     block: 'drive', name: 'low_cut',
     pidLow: 0x0076, pidHigh: 0x0010,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'drive.high_cut': {
     block: 'drive', name: 'high_cut',
     pidLow: 0x0076, pidHigh: 0x0011,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'drive.bias_bias': {
     block: 'drive', name: 'bias_bias',
@@ -410,6 +423,7 @@ export const CACHE_PARAMS = {
     block: 'drive', name: 'mid_freq',
     pidLow: 0x0076, pidHigh: 0x0016,
     unit: 'hz', displayMin: 200, displayMax: 2000,
+    scaling: 'log10',
   },
   'drive.treble': {
     block: 'drive', name: 'treble',
@@ -562,6 +576,7 @@ export const CACHE_PARAMS = {
     block: 'reverb', name: 'rate',
     pidLow: 0x0042, pidHigh: 0x0016,
     unit: 'hz', displayMin: 0.01, displayMax: 1,
+    scaling: 'log10',
   },
   'reverb.diffusion': {
     block: 'reverb', name: 'diffusion',
@@ -592,11 +607,13 @@ export const CACHE_PARAMS = {
     block: 'reverb', name: 'frequency_1',
     pidLow: 0x0042, pidHigh: 0x001e,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'reverb.frequency_2': {
     block: 'reverb', name: 'frequency_2',
     pidLow: 0x0042, pidHigh: 0x001f,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'reverb.q_1': {
     block: 'reverb', name: 'q_1',
@@ -625,11 +642,13 @@ export const CACHE_PARAMS = {
     pidLow: 0x0042, pidHigh: 0x0025,
     unit: 'seconds', displayMin: 0.02, displayMax: 2,
     scaling: 'log10',
+    displayUnit: 'x',
   },
   'reverb.xover_frequency': {
     block: 'reverb', name: 'xover_frequency',
     pidLow: 0x0042, pidHigh: 0x0026,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'reverb.threshold': {
     block: 'reverb', name: 'threshold',
@@ -721,6 +740,7 @@ export const CACHE_PARAMS = {
     block: 'reverb', name: 'pitch_high_cut',
     pidLow: 0x0042, pidHigh: 0x0043,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'reverb.tonetype': {
     block: 'reverb', name: 'tonetype',
@@ -794,21 +814,25 @@ export const CACHE_PARAMS = {
     block: 'delay', name: 'low_cut',
     pidLow: 0x0046, pidHigh: 0x0014,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'delay.high_cut': {
     block: 'delay', name: 'high_cut',
     pidLow: 0x0046, pidHigh: 0x0015,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'delay.mod_rate': {
     block: 'delay', name: 'mod_rate',
     pidLow: 0x0046, pidHigh: 0x0016,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'delay.rate': {
     block: 'delay', name: 'rate',
     pidLow: 0x0046, pidHigh: 0x0017,
     unit: 'hz', displayMin: 0.2, displayMax: 20,
+    scaling: 'log10',
   },
   'delay.mod_depth': {
     block: 'delay', name: 'mod_depth',
@@ -910,6 +934,7 @@ export const CACHE_PARAMS = {
     block: 'delay', name: 'sweep_rate',
     pidLow: 0x0046, pidHigh: 0x0038,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'delay.sweep_phase': {
     block: 'delay', name: 'sweep_phase',
@@ -920,11 +945,13 @@ export const CACHE_PARAMS = {
     block: 'delay', name: 'sweep_start_freq',
     pidLow: 0x0046, pidHigh: 0x003c,
     unit: 'hz', displayMin: 100, displayMax: 1000,
+    scaling: 'log10',
   },
   'delay.sweep_stop_freq': {
     block: 'delay', name: 'sweep_stop_freq',
     pidLow: 0x0046, pidHigh: 0x003d,
     unit: 'hz', displayMin: 500, displayMax: 5000,
+    scaling: 'log10',
   },
   'delay.sweep_resonance': {
     block: 'delay', name: 'sweep_resonance',
@@ -947,11 +974,13 @@ export const CACHE_PARAMS = {
     block: 'delay', name: 'eq_freq_1',
     pidLow: 0x0046, pidHigh: 0x0041,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'delay.eq_freq_2': {
     block: 'delay', name: 'eq_freq_2',
     pidLow: 0x0046, pidHigh: 0x0042,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'delay.eq_q_1': {
     block: 'delay', name: 'eq_q_1',
@@ -1001,11 +1030,13 @@ export const CACHE_PARAMS = {
     block: 'delay', name: 'master_time',
     pidLow: 0x0046, pidHigh: 0x004e,
     unit: 'percent', displayMin: 25, displayMax: 400,
+    scaling: 'log10',
   },
   'delay.lfo_rate': {
     block: 'delay', name: 'lfo_rate',
     pidLow: 0x0046, pidHigh: 0x004f,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'delay.lfo_depth': {
     block: 'delay', name: 'lfo_depth',
@@ -1016,6 +1047,7 @@ export const CACHE_PARAMS = {
     block: 'delay', name: 'pan_rate',
     pidLow: 0x0046, pidHigh: 0x0052,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'delay.pan_depth': {
     block: 'delay', name: 'pan_depth',
@@ -1062,6 +1094,7 @@ export const CACHE_PARAMS = {
     block: 'chorus', name: 'rate',
     pidLow: 0x004e, pidHigh: 0x000c,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'chorus.depth': {
     block: 'chorus', name: 'depth',
@@ -1072,6 +1105,7 @@ export const CACHE_PARAMS = {
     block: 'chorus', name: 'high_cut',
     pidLow: 0x004e, pidHigh: 0x000f,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'chorus.lfo_phase_pct': {
     block: 'chorus', name: 'lfo_phase_pct',
@@ -1082,6 +1116,7 @@ export const CACHE_PARAMS = {
     block: 'chorus', name: 'lfo_rate',
     pidLow: 0x004e, pidHigh: 0x0016,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'chorus.width': {
     block: 'chorus', name: 'width',
@@ -1098,6 +1133,7 @@ export const CACHE_PARAMS = {
     block: 'chorus', name: 'lfo_freq',
     pidLow: 0x004e, pidHigh: 0x0019,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'chorus.lfo_depth_2': {
     block: 'chorus', name: 'lfo_depth_2',
@@ -1139,6 +1175,7 @@ export const CACHE_PARAMS = {
     block: 'flanger', name: 'rate',
     pidLow: 0x0052, pidHigh: 0x000b,
     unit: 'hz', displayMin: 0.05, displayMax: 10,
+    scaling: 'log10',
   },
   'flanger.depth': {
     block: 'flanger', name: 'depth',
@@ -1159,11 +1196,13 @@ export const CACHE_PARAMS = {
     block: 'flanger', name: 'smooth_steps',
     pidLow: 0x0052, pidHigh: 0x0013,
     unit: 'count', displayMin: 0.5, displayMax: 50,
+    scaling: 'log10',
   },
   'flanger.high_cut': {
     block: 'flanger', name: 'high_cut',
     pidLow: 0x0052, pidHigh: 0x0017,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'flanger.drive': {
     block: 'flanger', name: 'drive',
@@ -1175,6 +1214,7 @@ export const CACHE_PARAMS = {
     block: 'flanger', name: 'low_cut',
     pidLow: 0x0052, pidHigh: 0x0019,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'flanger.stereo_spread': {
     block: 'flanger', name: 'stereo_spread',
@@ -1223,6 +1263,7 @@ export const CACHE_PARAMS = {
     block: 'phaser', name: 'rate',
     pidLow: 0x005a, pidHigh: 0x000c,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'phaser.feedback': {
     block: 'phaser', name: 'feedback',
@@ -1233,11 +1274,13 @@ export const CACHE_PARAMS = {
     block: 'phaser', name: 'min_frequency',
     pidLow: 0x005a, pidHigh: 0x0011,
     unit: 'hz', displayMin: 5, displayMax: 500,
+    scaling: 'log10',
   },
   'phaser.max_frequency': {
     block: 'phaser', name: 'max_frequency',
     pidLow: 0x005a, pidHigh: 0x0012,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'phaser.bias': {
     block: 'phaser', name: 'bias',
@@ -1270,6 +1313,7 @@ export const CACHE_PARAMS = {
     block: 'phaser', name: 'high_cut',
     pidLow: 0x005a, pidHigh: 0x001f,
     unit: 'count', displayMin: 0.5, displayMax: 50,
+    scaling: 'log10',
   },
   'phaser.attack': {
     block: 'phaser', name: 'attack',
@@ -1287,11 +1331,13 @@ export const CACHE_PARAMS = {
     block: 'phaser', name: 'low_cut',
     pidLow: 0x005a, pidHigh: 0x0023,
     unit: 'hz', displayMin: 20, displayMax: 200,
+    scaling: 'log10',
   },
   'phaser.high_cut_lpf': {
     block: 'phaser', name: 'high_cut_lpf',
     pidLow: 0x005a, pidHigh: 0x0024,
     unit: 'hz', displayMin: 2000, displayMax: 20000,
+    scaling: 'log10',
   },
   'wah.mix': {
     block: 'wah', name: 'mix',
@@ -1313,11 +1359,13 @@ export const CACHE_PARAMS = {
     block: 'wah', name: 'min_frequency',
     pidLow: 0x005e, pidHigh: 0x000b,
     unit: 'hz', displayMin: 100, displayMax: 1000,
+    scaling: 'log10',
   },
   'wah.max_frequency': {
     block: 'wah', name: 'max_frequency',
     pidLow: 0x005e, pidHigh: 0x000c,
     unit: 'hz', displayMin: 500, displayMax: 5000,
+    scaling: 'log10',
   },
   'wah.q_resonance': {
     block: 'wah', name: 'q_resonance',
@@ -1355,6 +1403,7 @@ export const CACHE_PARAMS = {
     block: 'wah', name: 'low_cut_frequency',
     pidLow: 0x005e, pidHigh: 0x0014,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'wah.graphic_eq_band_1': {
     block: 'wah', name: 'graphic_eq_band_1',
@@ -1433,6 +1482,7 @@ export const CACHE_PARAMS = {
     block: 'compressor', name: 'sidechain_low_cut',
     pidLow: 0x002e, pidHigh: 0x0011,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'compressor.type': {
     block: 'compressor', name: 'type',
@@ -1464,6 +1514,7 @@ export const CACHE_PARAMS = {
     block: 'compressor', name: 'sidechain_high_cut',
     pidLow: 0x002e, pidHigh: 0x001a,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'compressor.sidechain_gain': {
     block: 'compressor', name: 'sidechain_gain',
@@ -1474,6 +1525,7 @@ export const CACHE_PARAMS = {
     block: 'compressor', name: 'sidechain_frequency',
     pidLow: 0x002e, pidHigh: 0x001c,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'compressor.sidechain_q': {
     block: 'compressor', name: 'sidechain_q',
@@ -1507,6 +1559,7 @@ export const CACHE_PARAMS = {
     block: 'compressor', name: 'sidechain_emphasis_freq',
     pidLow: 0x002e, pidHigh: 0x0027,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'compressor.tone': {
     block: 'compressor', name: 'tone',
@@ -1610,6 +1663,7 @@ export const CACHE_PARAMS = {
     block: 'filter', name: 'freq',
     pidLow: 0x0072, pidHigh: 0x000b,
     unit: 'hz', displayMin: 20, displayMax: 20000,
+    scaling: 'log10',
   },
   'filter.q': {
     block: 'filter', name: 'q',
@@ -1636,11 +1690,13 @@ export const CACHE_PARAMS = {
     block: 'filter', name: 'low_cut',
     pidLow: 0x0072, pidHigh: 0x0012,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'filter.high_cut': {
     block: 'filter', name: 'high_cut',
     pidLow: 0x0072, pidHigh: 0x0013,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'filter.delay_time': {
     block: 'filter', name: 'delay_time',
@@ -1656,6 +1712,7 @@ export const CACHE_PARAMS = {
     block: 'filter', name: 'rate',
     pidLow: 0x0072, pidHigh: 0x0018,
     unit: 'hz', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'filter.lfo_duty': {
     block: 'filter', name: 'lfo_duty',
@@ -1666,6 +1723,7 @@ export const CACHE_PARAMS = {
     block: 'filter', name: 'mod_frequency',
     pidLow: 0x0072, pidHigh: 0x001a,
     unit: 'hz', displayMin: 20, displayMax: 20000,
+    scaling: 'log10',
   },
   'filter.order': {
     block: 'filter', name: 'order',
@@ -1682,11 +1740,13 @@ export const CACHE_PARAMS = {
     block: 'filter', name: 'start_frequency',
     pidLow: 0x0072, pidHigh: 0x001f,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'filter.stop_frequency': {
     block: 'filter', name: 'stop_frequency',
     pidLow: 0x0072, pidHigh: 0x0020,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'filter.sensitivity': {
     block: 'filter', name: 'sensitivity',
@@ -1731,6 +1791,7 @@ export const CACHE_PARAMS = {
     block: 'tremolo', name: 'rate',
     pidLow: 0x006a, pidHigh: 0x000c,
     unit: 'hz', displayMin: 0.2, displayMax: 20,
+    scaling: 'log10',
   },
   'tremolo.depth': {
     block: 'tremolo', name: 'depth',
@@ -1746,6 +1807,7 @@ export const CACHE_PARAMS = {
     block: 'tremolo', name: 'crossover_freq',
     pidLow: 0x006a, pidHigh: 0x0015,
     unit: 'hz', displayMin: 200, displayMax: 2000,
+    scaling: 'log10',
   },
   'tremolo.trigger_threshold': {
     block: 'tremolo', name: 'trigger_threshold',
@@ -1781,11 +1843,13 @@ export const CACHE_PARAMS = {
     block: 'enhancer', name: 'low_cut',
     pidLow: 0x007a, pidHigh: 0x000c,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'enhancer.high_cut': {
     block: 'enhancer', name: 'high_cut',
     pidLow: 0x007a, pidHigh: 0x000d,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'enhancer.type': {
     block: 'enhancer', name: 'type',
@@ -1878,26 +1942,31 @@ export const CACHE_PARAMS = {
     block: 'peq', name: 'channel_1_frequency',
     pidLow: 0x0036, pidHigh: 0x000a,
     unit: 'hz', displayMin: 20, displayMax: 2000,
+    scaling: 'log10',
   },
   'peq.channel_2_frequency': {
     block: 'peq', name: 'channel_2_frequency',
     pidLow: 0x0036, pidHigh: 0x000b,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'peq.channel_3_frequency': {
     block: 'peq', name: 'channel_3_frequency',
     pidLow: 0x0036, pidHigh: 0x000c,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'peq.channel_4_frequency': {
     block: 'peq', name: 'channel_4_frequency',
     pidLow: 0x0036, pidHigh: 0x000d,
     unit: 'hz', displayMin: 100, displayMax: 10000,
+    scaling: 'log10',
   },
   'peq.channel_5_frequency': {
     block: 'peq', name: 'channel_5_frequency',
     pidLow: 0x0036, pidHigh: 0x000e,
     unit: 'hz', displayMin: 200, displayMax: 20000,
+    scaling: 'log10',
   },
   'peq.channel_1_q': {
     block: 'peq', name: 'channel_1_q',
@@ -2003,12 +2072,14 @@ export const CACHE_PARAMS = {
   'rotary.low_time_constant': {
     block: 'rotary', name: 'low_time_constant',
     pidLow: 0x0056, pidHigh: 0x0012,
-    unit: 'count', displayMin: 0.1, displayMax: 10,
+    unit: 'seconds', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'rotary.high_time_constant': {
     block: 'rotary', name: 'high_time_constant',
     pidLow: 0x0056, pidHigh: 0x0013,
-    unit: 'count', displayMin: 0.1, displayMax: 10,
+    unit: 'seconds', displayMin: 0.1, displayMax: 10,
+    scaling: 'log10',
   },
   'rotary.stereo_spread': {
     block: 'rotary', name: 'stereo_spread',

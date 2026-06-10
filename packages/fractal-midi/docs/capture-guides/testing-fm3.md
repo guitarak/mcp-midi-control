@@ -1,6 +1,8 @@
 # Testing: FM3
 
 > **Highest value:** the write confirmation (T3 below). Nothing has been confirmed on real FM3 hardware yet. The FM3 shares the gen-3 codec with the III and FM9 -- any result here advances all three.
+>
+> Beyond the tests below, the two highest-value FM3 artifacts need no capture tools: the editor's cache file (the device's complete parameter dictionary, offline -- see [captures-gen3.md C2](captures-gen3.md)) and a run of the one-command read-only [harvest script](harvest-script.md).
 
 See [README.md](README.md) for setup. Want to record captures too? See [captures-gen3.md](captures-gen3.md).
 

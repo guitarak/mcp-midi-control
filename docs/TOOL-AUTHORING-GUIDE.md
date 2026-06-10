@@ -226,6 +226,48 @@ live in `scripts/mcp-test-agent-retry-paths.ts`.
 
 ---
 
+## Source-of-data contract: working buffer vs stored preset
+
+Every tool that reads, dumps, or restores preset data MUST state which
+source it actually touched — the ACTIVE WORKING BUFFER (edit RAM) or a
+STORED preset slot (flash) — and the claim must be derived from the wire
+operation's PROVEN semantics, never from the tool's intent. The two
+diverge exactly when the user has unsaved edits, which is exactly when a
+backup matters most: claiming "active working buffer" while dumping flash
+turns the backup feature into the data-loss scenario it exists to prevent
+(shipped bug, caught live 2026-06-10 on the Axe-Fx II; fixed the same day
+when a probe confirmed the II accepts the AM4-style edit-buffer sentinel).
+
+Per-device dump-request semantics (the wire ops behind `export_preset` /
+`get_preset(location)` / `import_preset`), all hardware-confirmed:
+
+| Device | Edit-buffer dump | Stored-slot dump |
+|---|---|---|
+| AM4 | fn 0x03 + sentinel `7F 7F 00` | fn 0x03 + `[bank, sub, 0x00]` (no buffer side effect) |
+| Axe-Fx II | fn 0x03 + sentinel `7F 7F` (tracks live edits, no side effect, round-trips) | fn 0x03 + `[hi, lo]` — **CAUTION: reloads the stored preset over the working buffer.** Not exposed as a tool path for this reason. |
+| Gen-3 (III/FM3/FM9/VP4) | fn 0x43 (edit-buffer dump) | fn 0x03 + preset# |
+| Gen-1, Hydrasynth | not implemented (capability_not_supported) | not implemented |
+
+Rules when authoring or changing one of these paths:
+
+1. The response's `source` field describes the wire op that ran, in
+   buffer/stored vocabulary. Never write "active working buffer" unless
+   the request provably targets the edit buffer (sentinel or dedicated fn).
+2. Live reads (`get_preset` with no location, `get_param`) read the
+   working buffer on every device; stored-location reads must say
+   "stored" in their response.
+3. A new device's reader doesn't ship `dumpActivePresetBinary` until the
+   buffer-vs-stored question is answered with evidence for ITS dump
+   request. "The request returned plausible bytes" is not that evidence —
+   rename/edit the buffer first, dump, and check WHICH version came back
+   and whether the buffer SURVIVED the request (the II's slot-addressed
+   dump request silently reloads flash over the buffer).
+4. Byte-exact dump comparisons need a volatile-bytes mask on some
+   devices (the AM4 dump drifts in a fixed offset cluster between
+   identical dumps; see the AM4 preset-dump research note).
+
+---
+
 ## Capability discoverability
 
 Capabilities are advertised via `describe_device(port).capabilities`.
@@ -240,7 +282,7 @@ Capabilities currently defined (`DeviceCapabilities` in `types.ts`):
 - `slot_model`: `'linear'` (AM4, Hydra) or `'grid'` (II, III)
 - `has_scenes`, `scene_count`: scene model
 - `has_channels`, `channel_names`, `channel_blocks`: channel model
-- `supports_save`, `supports_factory_restore`, `supports_lineage`: feature flags
+- `supports_save`, `supports_lineage`: feature flags
 - `atomic_read`: whether `get_preset` is implemented
 - `has_macros`: macro support
 

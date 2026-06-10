@@ -91,9 +91,17 @@ import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.j
  * being copy-pasted into every tool description.
  */
 const SERVER_INSTRUCTIONS = [
-  'mcp-midi-control is a USB MIDI control server for Fractal AM4, Fractal',
-  'Axe-Fx II XL+, ASM Hydrasynth Explorer, and any generic MIDI device the',
-  'OS exposes. Pick tools by intent, not by name length.',
+  'mcp-midi-control is a USB MIDI control server for Fractal and ASM gear',
+  'plus any generic MIDI device the OS exposes. First-class devices:',
+  'Fractal AM4, Fractal Axe-Fx II XL+, ASM Hydrasynth Explorer.',
+  'Community beta (fully drivable, hardware-unverified: drive the tools',
+  'normally and ask the user to confirm results by ear / front panel, do',
+  'NOT withhold tool calls): the modern Fractal family Axe-Fx III / FM3 /',
+  'FM9 (full build / edit / save / scene / preset surface), Fractal VP4',
+  '(reads + continuous-knob set_param / set_bypass / save_preset writes),',
+  'and the original Axe-Fx Standard/Ultra (parameter WRITES via',
+  'set_param / set_params plus parameter reads; no whole-preset ops).',
+  'Pick tools by intent, not by name length.',
   '',
   'DEFAULT BEHAVIOR — call the tools, do not write specs.',
   'When the user asks for an audible change on connected hardware (build a',

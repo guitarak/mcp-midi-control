@@ -244,31 +244,21 @@ interface GeneratedEntry {
  * displayMin <= 0 anyway. Confirm and add to LOG10_TYPECODES as
  * empirical data lands.
  */
-const LOG10_TYPECODES: ReadonlySet<number> = new Set([
-  64,
-  68,
-  // typecode 72 added 2026-05-04 from the Friedman BE-100 hardware
-  // test. amp.bright_cap (CABINET_BRIGHT, block=5 id=20, c=1000000
-  // a=1e-5 b=0.01 → display range 10..10000 pF) uses this typecode.
-  // Hardware confirmed log10 storage: write 220 → AM4 displays 220.0
-  // pF ✓ but a linear readback gave 4480 pF; (4480-10)/9990 = 0.4475
-  // matches log10 Q15 = log10(220/10)/log10(10000/10) = 0.4477.
-  72,
-  // typecode 80 added 2026-05-04. reverb.dwell (REVERB_DRIVE, block=0
-  // id=36, c=10 a=0.01 b=1) and filter.sensitivity (FILTER_SENS,
-  // block=8 id=33, c=10 a=0.1 b=40) both use this typecode and the
-  // founder's spotcheck observed compressed log curves on both: dwell
-  // wrote 1→5.00, 5→8.49, 9→9.77; sensitivity wrote 7 and the display
-  // moved DOWN from 5.00 to 3.25 (linear encoder + log firmware
-  // decode = inverse-mapped curve). Treating typecode 80 as log10
-  // corrects both. For filter.sensitivity to actually fire log10 at
-  // the runtime, the displayMin must be > 0 — see the paramNames.ts
-  // override that sets displayMin=0.1 for filter id=33.
-  80,
-]);
-
+/**
+ * 2026-06-09 SUPERSEDED the per-typecode allowlist: the AM4 typecode is a
+ * bitfield [family][unit] and the family nibble (high nibble) decides the
+ * taper. Families 4 and 5 are log10; everything else is linear. Hardware
+ * anchors: typecodes 0x40/0x44/0x48/0x50 (the old allowlist: compressor
+ * ratio/attack/release, amp.bright_cap pF, reverb.dwell + filter.sensitivity)
+ * all sit in families 4/5, and the family-wide rule was confirmed on a
+ * third device (an Axe-Fx II family-4 Hz knob reads exactly the geometric
+ * mean of its range at 12 o'clock; linear predicted 5x higher). A log10
+ * taper additionally requires displayMin > 0; the runtime decode falls back
+ * to linear otherwise.
+ */
 function inferScaling(typecode: number): 'linear' | 'log10' {
-  return LOG10_TYPECODES.has(typecode) ? 'log10' : 'linear';
+  const family = (typecode >> 4) & 0x0f;
+  return family === 4 || family === 5 ? 'log10' : 'linear';
 }
 
 function generate(): { entries: GeneratedEntry[]; usedEnums: Set<string>; warnings: string[] } {

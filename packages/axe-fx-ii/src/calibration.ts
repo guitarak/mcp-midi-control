@@ -162,6 +162,10 @@ const AM4_SHARED: Record<string, CalibrationEntry> = {
   'compressor.comp': { displayMin: 0, displayMax: 10, provenance: 'am4-shared' },
   'compressor.dynamics': { displayMin: 0, displayMax: 10, provenance: 'am4-shared' },
   'compressor.filter': { displayMin: 10, displayMax: 1000, displayScale: 'log10', provenance: 'editor-observed' },
+  // fn 0x16 GET_PARAM_INFO device-reported -20..20 (2026-06-10), NOT the -80..20
+  // the *level suffix rule assumes. Confirms the II compressor calibration
+  // divergence: comp ranges differ from the convention. Overlay overrides suffix.
+  'compressor.level': { displayMin: -20, displayMax: 20, provenance: 'hardware-swept' },
   'compressor.look_ahead': { displayMin: 0, displayMax: 2, provenance: 'am4-shared' },
   'compressor.emphasis': { displayMin: 0, displayMax: 20, provenance: 'am4-shared' },
   'compressor.mix': { displayMin: 0, displayMax: 100, provenance: 'am4-shared' },
@@ -237,6 +241,12 @@ const AM4_SHARED: Record<string, CalibrationEntry> = {
   'rotary.rotor_length': { displayMin: 0.1, displayMax: 100, provenance: 'am4-shared' },
   'rotary.stereo_spread': { displayMin: -200, displayMax: 200, provenance: 'am4-shared' },
   'volpan.balance': { displayMin: -100, displayMax: 100, provenance: 'am4-shared' },
+  // AM4 volpan.volume is a founder-audited 0..10 knob (audit-output
+  // volpan-volume.md); the II's Vol/Pan VOLUME is the same Fractal
+  // control (taper is the separate `taper` param). Without this the
+  // read side returned raw wire (65534 for a max'd knob) while the
+  // write side scaled display 0..10 — 0.3.0 dev-test finding.
+  'volpan.volume': { displayMin: 0, displayMax: 10, provenance: 'am4-shared' },
   'wah.balance': { displayMin: -100, displayMax: 100, provenance: 'am4-shared' },
   'wah.drive': { displayMin: 0, displayMax: 10, provenance: 'am4-shared' },
   'wah.fat': { displayMin: 0, displayMax: 10, provenance: 'am4-shared' },

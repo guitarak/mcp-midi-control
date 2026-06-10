@@ -33,7 +33,7 @@
  *   - SET_PRESET_NAME / SET_SCENE_NAME — names are query-only.
  */
 import { fractalChecksum } from '../shared/checksum.js';
-import { unpackValueChunked } from '../shared/packValue.js';
+import { packValueChunked, unpackValueChunked } from '../shared/packValue.js';
 
 /** Axe-Fx III model byte. From Fractal's published spec. */
 export const AXE_FX_III_MODEL_ID = 0x10;
@@ -176,36 +176,27 @@ function buildEnvelope(
 // 5-septet 32-bit unsigned (via `pack5Septet32`); tail[] variable
 // raw bytes (length = tailCount14).
 //
-// What the shipped `buildSetParameter` actually emits is the
-// captured FC-12 / typed-input layout — byte-verified against all 10
-// public captures in `docs/devices/axe-fx-iii/set-parameter-captures.md`:
+// CORRECTED 2026-06-08 (FM3 fw 12.00 lldb + our FM9 capture, BoodieTraps):
+// the value32 field IS a 5-septet float32 at pos 12-16 — exactly the
+// FUN_14033ec70 layout — interpreted as IEEE-754. The earlier "value at
+// pos 15-16 as a packValue16, pos 12-14 zero" reading was a MISREAD: for the
+// small ordinals in the public captures (e.g. reverb 16 = 2^4), float32's low
+// three septets are zero, so its nonzero high septets happen to land at pos
+// 15-16 where a packValue16 would sit — coincidental alignment that hid the
+// real field. `buildSetParameter` now emits:
 //
-//   pos 0-5:   F0 00 01 74 10 01            (envelope + fn=0x01)
-//   pos 6-7:   action14 / sub-action        (09 00 typed, 52 00 mouse-drag)
+//   pos 0-5:   F0 00 01 74 <model> 01       (envelope + fn=0x01)
+//   pos 6-7:   sub-action                   (09 00 discrete, 52 00 continuous)
 //   pos 8-9:   blockId14 / effect ID
 //   pos 10-11: paramId14
-//   pos 12-14: three zero bytes             (mouse-drag carries cursor
-//                                            context here; typed-input
-//                                            and all captures-of-record
-//                                            are zero)
-//   pos 15-17: value (3-byte packValue16)   (value's low 14 bits at
-//                                            pos 15-16; pos 17 is the
-//                                            16-bit overflow nibble,
-//                                            zero in every capture)
-//   pos 18-20: three zero bytes
+//   pos 12-16: value32 = 5-septet LE float32 (discrete = float32(ordinal);
+//                                            continuous = float32(normalized))
+//   pos 17-20: four zero bytes
 //   pos 21:    checksum
 //   pos 22:    F7
 //
-// This layout does NOT match a literal `pack5Septet32` at pos 12-16
-// — the captured frames place value's low bytes at pos 15-16 (3 zero
-// bytes preceding) while FUN_14033ec70 would place them at pos
-// 12-13. Both layouts share action14 / blockId14 / paramId14 (pos
-// 6-11) but diverge in the post-paramId region. For 14-bit values
-// with modifier=0 and tail=[], we ship the captured layout because
-// it is byte-verified; firmware acceptance of the FUN_14033ec70
-// alternative (modifier, tail, >14-bit values) is unverified and
-// not exposed in the public API. See cookbook refinement-history
-// dated 2026-05-22 for the structural reconciliation.
+// modifier / tailCount / tail (the rest of FUN_14033ec70) stay zero and are not
+// exposed. Byte-exact vs the 5 oracle frames in setparam.test.ts.
 
 /**
  * Pack a 16-bit unsigned value into the wire's three 7-bit septets.
@@ -254,15 +245,10 @@ export function unpackValue16(b0: number, b1: number, b2: number): number {
  * 14 bits LSB-first and bytes 2-4 are zero (the low-14-bit prefix is
  * identical to `packValue16(v).slice(0, 2)`).
  *
- * 🟡 Pure helper — NOT used by `buildSetParameter` on the wire. The
- * shipped builder emits the FC-12 / typed-input layout (3 zero bytes
- * + `packValue16` + 3 zero bytes), byte-verified against 10 public
- * captures. `pack5Septet32` is exposed for advanced callers who have
- * hardware-tested confidence in the FUN_14033ec70 layout (e.g. for
- * modifier or tail slots) and want to compose their own frames. Do
- * NOT wire this into a SET path without a captured frame to validate
- * against. See cookbook entry [[iii-fn01-set-parameter-envelope]]
- * refinement-history 2026-05-22.
+ * The integer packer underlying `encode5SeptetFloat32`, which `buildSetParameter`
+ * uses to place the float32 value32 field at pos 12-16. (The previous note that
+ * this was "not used on the wire" reflected the pos-15 packValue16 misread,
+ * corrected 2026-06-08.)
  */
 export function pack5Septet32(value: number): [number, number, number, number, number] {
   if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
@@ -303,6 +289,19 @@ export function decode5SeptetFloat32(s0: number, s1: number, s2: number, s3: num
 }
 
 /**
+ * Encode an IEEE-754 float32 as 5 LSB-first 7-bit septets — the inverse of
+ * `decode5SeptetFloat32` and the value field every gen-3 SET carries at payload
+ * pos 12. Discrete type/model selects pass `float32(read-ordinal)`; continuous
+ * knob drags pass `float32(normalized 0..1)`. Wire-confirmed on FM3 fw 12.00
+ * (BoodieTraps, 2026-06-08) and against our own FM9 capture (reverb ordinal 16 →
+ * float32 16.0 → septets [00,00,00,0c,04]).
+ */
+export function encode5SeptetFloat32(value: number): [number, number, number, number, number] {
+  _f32[0] = value;
+  return pack5Septet32(_u32[0]);
+}
+
+/**
  * Parse the 60-byte gen-3 SET value-echo response (FM9-confirmed). The
  * device answers a typed SET (`sub 09 00`) or a mouse-drag SET
  * (`sub 52 00`) with this synchronous echo: it carries the effectId,
@@ -336,57 +335,86 @@ export function parseGen3SetValueEcho(bytes: readonly number[]): {
  *
  *   { action14, blockId14, paramId14, value32, modifier14, tailCount14, tail[] }
  *
- * Emitted wire bytes (FC-12 / typed-input layout, byte-verified):
+ * Emitted wire bytes (DISCRETE select; the value32 field is a 5-septet float32
+ * at pos 12-16, corrected 2026-06-08):
  *
- *   `F0 00 01 74 10 01 09 00 [id_lo id_hi] [pid_lo pid_hi]
- *    00 00 00 [v0 v1 v2] 00 00 00 [cs] F7`
+ *   `F0 00 01 74 <model> 01 09 00 [id_lo id_hi] [pid_lo pid_hi]
+ *    [s0 s1 s2 s3 s4 = float32(ordinal)] 00 00 00 00 [cs] F7`
  *
- * 23 bytes. Byte-verified against all 10 public captures in
- * `docs/devices/axe-fx-iii/set-parameter-captures.md` (4 FC-12
- * footswitch frames + 6 Mountain Utilities forum frames from a public
- * forum capture (2019), AxeEdit III). The mouse-drag form (sub-action `52 00`)
- * carries non-zero context at pos 12-14 — the device accepts either,
- * but typed-input is the clean shape appropriate for programmatic
- * writes.
+ * 23 bytes. Byte-exact against the FM3 fw 12.00 + FM9 oracle frames (and the 10
+ * earlier public captures, which agree because float32(small ordinal) aliases the
+ * old pos-15 read). The continuous form (`buildSetParameterContinuous`, sub
+ * `52 00`) carries `float32(normalized)` in the SAME field; a bare 52 00 stream
+ * commits with no `56 00` begin-gesture.
  *
- * The 6-field model's `modifier14`, `tailCount14`, and `tail[]` slots
- * (and the wide value32 form of Field D) are NOT exposed in the
- * public API yet: no public capture exercises them, no III owner has
- * confirmed device acceptance, and shipping an opt-in code path that
- * silently emits untested bytes would be a real regression risk. To
- * enable them, capture an AxeEdit III frame that uses the relevant
- * slot (or get hardware-tested confirmation from a III owner), then
- * add a hardware-verified golden alongside the goldens in
- * `set-parameter-captures.md`. Field-D / value32 caveat: AxeEdit III
- * packs the value as a 32-bit LSB-first 5-septet (see `pack5Septet32`
- * helper); firmware acceptance of values requiring >14 bits is
- * unverified.
+ * The 6-field model's `modifier14`, `tailCount14`, and `tail[]` slots stay zero
+ * and are not exposed in the public API.
  *
- * 🟢 Outbound wire shape verified across 10 public captures spanning
- * two effect blocks (Drive 1/2, Delay 1) and two paramIds (40 boost,
- * 2 TIME), AND byte-exact against a real FM9 (model 0x12) hardware
- * capture of a Reverb TYPE change made in the editor. The device's
- * RESPONSE is a synchronous 60-byte value-echo (effectId, paramId, a
- * 5-septet float32 normalized value, then a descriptor block) — parse
- * it with `parseGen3SetValueEcho`. The real device→host edit broadcast
- * is the `0x74/0x75/0x76` burst, NOT `fn=0x01 04 01`. (The editor also
- * uses a mouse-drag SET sub-action `52 00` carrying a 5-septet float32
- * at pos 12-16; `buildSetParameter` emits the clean typed `09 00` form.)
+ * The device's RESPONSE to a SET is a synchronous 60-byte value-echo (effectId,
+ * paramId, a 5-septet float32 value, then a descriptor block) — parse it with
+ * `parseGen3SetValueEcho`. The real device→host edit broadcast is the
+ * `0x74/0x75/0x76` burst, NOT `fn=0x01 04 01`.
+ */
+/** Continuous mouse-drag SET sub-action (knob writes carry float32 normalized 0..1). */
+export const SUB_ACTION_SET_CONTINUOUS: readonly [number, number] = [0x52, 0x00];
+
+/**
+ * Low-level gen-3 SET frame: the value rides as a 5-septet LE float32 at payload
+ * pos 12 (NOT a packValue16 at pos 15), followed by FOUR trailing zero bytes.
+ * `subAction` selects discrete (`09 00`) vs continuous (`52 00`).
+ *
+ * Wire shape (23 bytes), byte-exact vs FM3 fw 12.00 + FM9 captures:
+ *   F0 00 01 74 <model> 01 <sub:2> <eid:14b LE> <pid:14b LE>
+ *      <float32:5-septet @12-16> 00 00 00 00 <xor cks> F7
+ */
+function buildSetParameterFloat(
+  effectId: number,
+  paramId: number,
+  floatValue: number,
+  subAction: readonly [number, number],
+  modelByte: number,
+): number[] {
+  return buildEnvelope(FN_PARAMETER_SETGET, [
+    ...subAction,
+    ...encode14(effectId),
+    ...encode14(paramId),
+    ...encode5SeptetFloat32(floatValue),
+    0x00, 0x00, 0x00, 0x00,
+  ], modelByte);
+}
+
+/**
+ * DISCRETE type/model SELECT (sub-action `09 00`). The value is the read-roster
+ * ORDINAL emitted as `float32(ordinal)` — e.g. Reverb type "Medium Spring" =
+ * ordinal 16 → float32 16.0 → septets [00,00,00,0c,04]. The read-roster ordinal
+ * IS the set value; there is no separate "raw-id" space (the 523/524/527/528/529
+ * we once recorded were float32(ordinal) misread as a packValue16 at pos 15,
+ * lossy across whole ordinal bands). Confirmed FM3 fw 12.00 (BoodieTraps) + our
+ * FM9 reverb capture, 2026-06-08.
  */
 export function buildSetParameter(
   effectId: number,
   paramId: number,
-  value: number,
+  ordinal: number,
   modelByte: number = AXE_FX_III_MODEL_ID,
 ): number[] {
-  return buildEnvelope(FN_PARAMETER_SETGET, [
-    ...SUB_ACTION_SET_TYPED,
-    ...encode14(effectId),
-    ...encode14(paramId),
-    0x00, 0x00, 0x00,
-    ...packValue16(value),
-    0x00, 0x00, 0x00,
-  ], modelByte);
+  return buildSetParameterFloat(effectId, paramId, ordinal, SUB_ACTION_SET_TYPED, modelByte);
+}
+
+/**
+ * CONTINUOUS knob SET (sub-action `52 00`). The value is `float32(normalized)`
+ * where `normalized` is in [0,1] (display→wire→/65534 at the catalog boundary).
+ * A bare `52 00` stream commits on its own — no `56 00` begin-gesture is required
+ * (FM3 fw 12.00 gain-sweep capture: 45 frames, zero 56 00). Pos-12 float, same
+ * field as the discrete form; only the sub-action and value semantics differ.
+ */
+export function buildSetParameterContinuous(
+  effectId: number,
+  paramId: number,
+  normalized: number,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  return buildSetParameterFloat(effectId, paramId, normalized, SUB_ACTION_SET_CONTINUOUS, modelByte);
 }
 
 /**
@@ -503,12 +531,16 @@ export function parseSetGetParameterResponse(
       subAction,
     };
   }
-  // SET / SET-echo layout (sub-action `09 00` or `52 00`).
+  // SET / SET-echo layout (sub-action `09 00` discrete or `52 00` continuous).
+  // The value is a 5-septet float32 at payload pos 6-10 (= frame bytes 12-16),
+  // NOT a packValue16 at pos 9-11 — see encode5SeptetFloat32 / the 2026-06-08
+  // FM3+FM9 confirmation. For a discrete select it is float32(ordinal); for a
+  // continuous drag it is float32(normalized 0..1).
   return {
     kind: 'set_echo',
     effectId: decode14(payload[2], payload[3]),
     paramId: decode14(payload[4], payload[5]),
-    value: unpackValue16(payload[9], payload[10], payload[11]),
+    value: decode5SeptetFloat32(payload[6], payload[7], payload[8], payload[9], payload[10]),
     subAction,
   };
 }
@@ -965,6 +997,111 @@ export function buildSetGridRouting(opts: {
   ], modelByte);
 }
 
+// ── CLEAR / RESET GRID CELL (fn=0x01 sub=0x30, companion sub=0x33) ─
+//
+// Ghidra FACT-tier decode (2026-06-09 mine of
+// `samples/captured/decoded/ghidra-axe-edit-iii-actions-and-shapes.txt`;
+// table: `docs/_private/III-SUBACTIONS-MINE-2026-06-09.md`). The gen-3
+// editor's "Clearing preset..." routine (FUN_140218f80, dump L9821-9976)
+// loops gridPos 0..0x53 (84 = the III/FM9 6x14 grid cell count), and per
+// cell emits a fn=0x01 sub=0x30 frame with the cell index in the value32
+// field, then a sub=0x33 companion carrying the same index. The thin
+// helper FUN_1403403e0 (dump L22283-22301) confirms the field map:
+// blockId14=0, paramId14=0, value32=gridPos (raw uint32, NOT a float32),
+// tailCount=0. After the loop, one final sub=0x30 with gridPos=0 is sent
+// (dump L9977-9988).
+//
+// Wire (23 bytes, same skeleton as every fn=0x01 frame):
+//
+//   `F0 00 01 74 <model> 01 30 00 00 00 00 00 <gp_lo> <gp_hi> 00 00 00
+//    00 00 00 00 <cks> F7`
+//
+// Cross-evidence: the byte-identical sub=0x30 frame was captured live as
+// the block-insert "cell SELECT companion" (loopMIDI editor emulation,
+// cookbook [[gen3-fn01-grid-set-position-insert]]), with gridPos in the
+// same 12-13 position. The mine grounds the semantics: the "Clearing
+// preset..." string anchors sub=0x30 as the cell reset/clear (the insert
+// transaction clears the target cell before inserting into it).
+//
+// Open points (decoded, hardware-unverified):
+//   - Whether sub=0x30 alone deletes the block or the sub=0x33 companion
+//     commits the clear is not disambiguated; the editor's clear loop
+//     always sends the pair, the insert transaction sends 0x30 alone.
+//   - The clear loop bound is 0x54 for ALL model bytes including FM3
+//     (whose grid is 4x12 = 48 cells), so the index space may be a
+//     model-agnostic 84-entry slot table rather than the literal grid.
+//     For III/FM9 (6x14 = 84) the two readings coincide.
+//
+// Scope: the editor only emits these sub-actions for model bytes
+// 0x10/0x11/0x12 (the dump's model gate). VP4 (0x14) has its own fn=0x01
+// shape with no sub-action; do not use these builders for it.
+
+export const SUB_ACTION_CLEAR_BLOCK = 0x30;
+export const SUB_ACTION_CLEAR_BLOCK_COMPANION = 0x33;
+
+function buildGridClearFrame(
+  subAction: number,
+  opts: { row: number; col: number; rows?: number },
+  modelByte: number,
+): number[] {
+  const { row, col, rows = 6 } = opts;
+  if (!Number.isInteger(rows) || rows < 1) {
+    throw new Error(`buildClearBlock: rows must be a positive integer: ${rows}`);
+  }
+  if (!Number.isInteger(row) || row < 1 || row > rows) {
+    throw new Error(`buildClearBlock: row out of range (1..${rows}): ${row}`);
+  }
+  if (!Number.isInteger(col) || col < 1 || col > 14) {
+    throw new Error(`buildClearBlock: col out of range (1..14): ${col}`);
+  }
+  const gridPos = (col - 1) * rows + (row - 1);
+  // Payload: [sub, pad, blockId14=0, paramId14=0, value32=gridPos
+  // (raw uint32 5-septet, not float32), modifier14=0, tailCount14=0].
+  return buildEnvelope(FN_PARAMETER_SETGET, [
+    subAction,
+    0x00,
+    0x00, 0x00,
+    0x00, 0x00,
+    ...pack5Septet32(gridPos),
+    0x00, 0x00,
+    0x00, 0x00,
+  ], modelByte);
+}
+
+/**
+ * CLEAR / RESET GRID CELL (fn=0x01 sub=0x30): reset the block occupying
+ * grid cell `(row, col)`. This is the editor's own per-cell clear op
+ * (issued over every cell under "Clearing preset...") and the cell
+ * companion it sends before a block insert. `rows` is the grid row
+ * count: 6 for III/FM9 (default), 4 for FM3.
+ *
+ * Decoded from the Axe-Edit III binary (Ghidra, FACT tier: string
+ * anchored) plus a live loopMIDI capture of the same frame; not yet
+ * hardware-confirmed as a standalone delete. The editor's clear loop
+ * follows each sub=0x30 with the `buildClearBlockCompanion` frame.
+ */
+export function buildClearBlock(
+  opts: { row: number; col: number; rows?: number },
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  return buildGridClearFrame(SUB_ACTION_CLEAR_BLOCK, opts, modelByte);
+}
+
+/**
+ * CLEAR-CELL COMPANION (fn=0x01 sub=0x33): the frame the editor's
+ * "Clearing preset..." loop sends immediately after each sub=0x30, with
+ * the same gridPos in the value32 field (the editor reuses its action
+ * struct, so the index rides through; dump L9916-9925). Semantics not
+ * separately anchored ("clear-preset companion step"); send it after
+ * `buildClearBlock` to replicate the editor's exact clear sequence.
+ */
+export function buildClearBlockCompanion(
+  opts: { row: number; col: number; rows?: number },
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  return buildGridClearFrame(SUB_ACTION_CLEAR_BLOCK_COMPANION, opts, modelByte);
+}
+
 // ── 0x09 SET_PRESET_NAME ───────────────────────────────────────────
 //
 // 🟡 NOT in v1.4 III spec — names are query-only there. Wire shape
@@ -981,7 +1118,9 @@ const FN_SET_PRESET_NAME = 0x09;
  * uses this for the working buffer only; pairing with the store op
  * (fn=0x01 sub=0x26) is what persists the rename to flash.
  *
- * 🟡 III-untested.
+ * 🟡 III-untested. The gen-3 editor's own name-write path is
+ * `fn=0x01 sub=0x28` (`buildRenamePreset`, below), decoded from the
+ * Axe-Edit III binary; prefer that one for gen-3 writes.
  */
 export function buildSetPresetName(
   name: string,
@@ -1000,6 +1139,139 @@ export function buildSetPresetName(
   return buildEnvelope(FN_SET_PRESET_NAME, [
     ...Array.from(padded, (c) => c.charCodeAt(0)),
   ], modelByte);
+}
+
+// ── NAME WRITES (fn=0x01 sub=0x28 preset, sub=0x2b scene) ──────────
+//
+// Ghidra FACT-tier decode (2026-06-09 mine of
+// `ghidra-axe-edit-iii-actions-and-shapes.txt`; table:
+// `docs/_private/III-SUBACTIONS-MINE-2026-06-09.md`). Two name-write
+// sub-actions, both carrying a 32-byte raw name as the fn=0x01 tail:
+//
+//   sub=0x28  preset-name write. Helper FUN_140340560 (dump L8014-8053):
+//             blockId14=0, paramId14=0, tailCount=32, tail = the 32-byte
+//             name field. The "Clearing preset..." routine uses it to
+//             write the literal "<EMPTY>" as the cleared preset's name
+//             (dump L10410-10432), which is exactly what empty gen-3
+//             preset slots display. value32 is 0 in that traced flow
+//             (the preceding step writes 0; dump L10360).
+//
+//   sub=0x2b  indexed name write. Helper FUN_1403404a0 (dump
+//             L10522-10561): blockId14=0, paramId14=INDEX, tailCount=32,
+//             tail = the 32-byte name field. The "Clear All Names"
+//             routine FUN_1402da550 (dump L17584-17612) loops index
+//             0..7 with an empty name, matching the gen-3 8-scene count,
+//             so the index is read as the scene index (decoded
+//             inference; the indexed byte shape itself is exact).
+//
+// Tail encoding: the canonical fn=0x01 builder (FUN_14033ec70) sizes its
+// payload as ceil(tailCount*8/7) + 15 and 8-to-7 septet-packs the tail
+// (cookbook [[iii-byte-stream-septet-pack-8to7]]); a 32-byte name packs
+// to 37 wire bytes, total frame 60 bytes. The packer is byte-identical
+// to `packValueChunked` (same sliding-window-with-carry algorithm,
+// cross-asserted in the golden tests).
+//
+// PAD CAVEAT: the editor formats the 32-byte field via FUN_140386ac0,
+// whose body is not in any dump we hold, so the pad byte for names
+// shorter than 32 chars is NOT cited. We space-pad (0x20), matching
+// every Fractal 32-char name field decoded so far (AM4 rename,
+// hardware-confirmed space-pad from `session-20-rename-preset.pcapng`;
+// II fn=0x09; gen-3 fn=0x0d responses). Flagged for capture
+// confirmation.
+//
+// Scope: model bytes 0x10/0x11/0x12 only (the dump's model gate); VP4
+// (0x14) has its own fn=0x01 shape. Decoded, hardware-unverified.
+
+export const SUB_ACTION_SET_PRESET_NAME = 0x28;
+export const SUB_ACTION_SET_SCENE_NAME = 0x2b;
+
+const NAME_FIELD_BYTES = 32;
+
+/** Validate and space-pad a name into the 32-byte raw field. */
+function encodeName32(name: string, builder: string): Uint8Array {
+  if (name.length > NAME_FIELD_BYTES) {
+    throw new Error(`${builder}: name too long (max ${NAME_FIELD_BYTES}): "${name}" (${name.length})`);
+  }
+  for (let i = 0; i < name.length; i++) {
+    const c = name.charCodeAt(i);
+    if (c < 0x20 || c > 0x7e) {
+      throw new Error(`${builder}: non-printable char at position ${i}: 0x${c.toString(16)}`);
+    }
+  }
+  const raw = new Uint8Array(NAME_FIELD_BYTES).fill(0x20);
+  for (let i = 0; i < name.length; i++) raw[i] = name.charCodeAt(i);
+  return raw;
+}
+
+function buildFn01NameFrame(
+  subAction: number,
+  paramId: number,
+  name: string,
+  builder: string,
+  modelByte: number,
+): number[] {
+  const tail = packValueChunked(encodeName32(name, builder));
+  // Payload: [sub, pad, blockId14=0, paramId14, value32=0, modifier14=0,
+  // tailCount14=32, 8-to-7-packed 32-byte name (37 wire bytes)].
+  return buildEnvelope(FN_PARAMETER_SETGET, [
+    subAction,
+    0x00,
+    0x00, 0x00,
+    ...encode14(paramId),
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00,
+    ...encode14(NAME_FIELD_BYTES),
+    ...tail,
+  ], modelByte);
+}
+
+/**
+ * RENAME PRESET (fn=0x01 sub=0x28): write the working-buffer preset
+ * name. This is the gen-3 editor's own name-write path (it supersedes
+ * the fn=0x09 II-port hypothesis in `buildSetPresetName` for gen-3).
+ * Persisting the rename to flash still requires the store op
+ * (`buildStorePreset`, fn=0x01 sub=0x26).
+ *
+ * Decoded from the Axe-Edit III binary (Ghidra FACT tier); pad byte
+ * convention-based (see section comment). Hardware-unverified.
+ */
+export function buildRenamePreset(
+  name: string,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  return buildFn01NameFrame(SUB_ACTION_SET_PRESET_NAME, 0, name, 'buildRenamePreset', modelByte);
+}
+
+/**
+ * SET SCENE NAME (fn=0x01 sub=0x2b): write the name of scene
+ * `sceneIndex` (0..7). The byte shape (index in the paramId14 field,
+ * 32-byte name tail) is exact per the dump; the scene-index reading of
+ * the field rests on the editor's "Clear All Names" loop running
+ * exactly 0..7. Decoded, hardware-unverified.
+ */
+export function buildSetSceneName(
+  sceneIndex: number,
+  name: string,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  if (!Number.isInteger(sceneIndex) || sceneIndex < 0 || sceneIndex > 7) {
+    throw new Error(`buildSetSceneName: sceneIndex ${sceneIndex} out of range (0..7)`);
+  }
+  return buildFn01NameFrame(SUB_ACTION_SET_SCENE_NAME, sceneIndex, name, 'buildSetSceneName', modelByte);
+}
+
+/**
+ * CLEAR ALL SCENE NAMES: the 8-frame sequence the editor's "Clear All
+ * Names" command emits (fn=0x01 sub=0x2b, index 0..7, empty name each;
+ * FUN_1402da550). Returns the frames in emission order; send them
+ * back-to-back to replicate the editor. Decoded, hardware-unverified.
+ */
+export function buildClearAllSceneNames(
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[][] {
+  const frames: number[][] = [];
+  for (let i = 0; i < 8; i++) frames.push(buildSetSceneName(i, '', modelByte));
+  return frames;
 }
 
 // ── STORE_PRESET (fn=0x01 sub=0x26) ────────────────────────────────
@@ -1051,6 +1323,100 @@ export function buildStorePreset(
     ...encode14(presetNumber),
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   ], modelByte);
+}
+
+// ── SCENE-BLOB TRANSFER (standalone fn=0x5a header + fn=0x5c trailer) ─
+//
+// Ghidra FACT-tier decode (2026-06-09 mine of
+// `ghidra-axe-edit-iii-actions-and-shapes.txt`, PART B; table:
+// `docs/_private/III-SUBACTIONS-MINE-2026-06-09.md`). The emitter
+// FUN_140328a10 (dump L22861-23053) builds a scene-targeted DATA
+// TRANSFER, not a bare scene switch:
+//
+//   1. fn=0x5a header, 6-byte payload (dump L22925-22941):
+//        byte 0    scene & 0x7f             (FACT: scene number)
+//        bytes 1-2 septet14(arg)            (caller-supplied 14-bit arg;
+//                                            semantics uncited)
+//        bytes 3-5 septet21(dataWordCount)  (uint32-word count of the
+//                                            data that follows)
+//   2. the data, streamed in chunks of up to 0x100 uint32 words
+//      (chunk-frame shape not decoded; FUN_1403359b0).
+//   3. fn=0x5c trailer, 5-byte payload = 5-septet XOR-32 checksum over
+//      all data words (XOR loop dump L23000-23019; emission L23025-23039;
+//      standalone form FUN_140336a40 L23059-23086. Byte 4 carries only
+//      the top 4 bits: `(xor32 >>> 28) & 0x0f`).
+//
+// The dump generator labeled this "fn=0x15 Change Scene"; the body shows
+// the real fn bytes are 0x5a/0x5c. The editor NEVER emits a bare fn=0x5a
+// with no data (a null data pointer aborts before any send, dump
+// L22915), so a zero-filled "switch scene" form of this frame would be a
+// guessed wire shape and is deliberately NOT provided. For a plain scene
+// switch use the spec-documented fn=0x0c (`buildSetScene`).
+//
+// What the blob payload IS (per-scene state? scene-manager copy?) is
+// undecoded; these builders exist so the header/trailer framing is
+// available to capture-replay and future decode work. Decoded,
+// hardware-unverified.
+
+export const FN_SCENE_BLOB_HEADER = 0x5a;
+export const FN_SCENE_BLOB_CHECKSUM = 0x5c;
+
+/**
+ * Scene-blob transfer HEADER (fn=0x5a). `scene` rides in payload byte 0
+ * (FACT); `arg14` is the caller-supplied 14-bit field at bytes 1-2
+ * (semantics uncited; the editor passes a runtime value); `dataWordCount`
+ * is the uint32-word count of the data that will follow (21-bit septet
+ * at bytes 3-5). This is NOT a scene switch; see the section comment.
+ */
+export function buildSceneBlobHeader(
+  opts: { scene: number; arg14: number; dataWordCount: number },
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  const { scene, arg14, dataWordCount } = opts;
+  if (!Number.isInteger(scene) || scene < 0 || scene > 7) {
+    throw new Error(`buildSceneBlobHeader: scene ${scene} out of range (0..7)`);
+  }
+  if (!Number.isInteger(arg14) || arg14 < 0 || arg14 > 0x3fff) {
+    throw new Error(`buildSceneBlobHeader: arg14 ${arg14} out of range (0..16383)`);
+  }
+  if (!Number.isInteger(dataWordCount) || dataWordCount < 0 || dataWordCount > 0x1fffff) {
+    throw new Error(`buildSceneBlobHeader: dataWordCount ${dataWordCount} out of range (0..2097151)`);
+  }
+  return buildEnvelope(FN_SCENE_BLOB_HEADER, [
+    scene & 0x7f,
+    ...encode14(arg14),
+    dataWordCount & 0x7f,
+    (dataWordCount >> 7) & 0x7f,
+    (dataWordCount >> 14) & 0x7f,
+  ], modelByte);
+}
+
+/**
+ * Scene-blob transfer CHECKSUM trailer (fn=0x5c). `xor32` is the XOR of
+ * all uint32 data words (compute with `xorChecksum32Words`); it rides as
+ * a 5-septet LSB-first field whose top byte carries only bits 28-31.
+ */
+export function buildSceneBlobChecksum(
+  xor32: number,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  if (!Number.isInteger(xor32) || xor32 < 0 || xor32 > 0xffffffff) {
+    throw new Error(`buildSceneBlobChecksum: xor32 out of range (0..2^32-1): ${xor32}`);
+  }
+  return buildEnvelope(FN_SCENE_BLOB_CHECKSUM, [
+    xor32 & 0x7f,
+    (xor32 >>> 7) & 0x7f,
+    (xor32 >>> 14) & 0x7f,
+    (xor32 >>> 21) & 0x7f,
+    (xor32 >>> 28) & 0x0f,
+  ], modelByte);
+}
+
+/** XOR-32 checksum over uint32 data words, as the fn=0x5c trailer expects. */
+export function xorChecksum32Words(words: readonly number[]): number {
+  let acc = 0;
+  for (const w of words) acc = (acc ^ w) >>> 0;
+  return acc >>> 0;
 }
 
 // ── MIDI Program Change (preset switch via standard MIDI) ──────────
@@ -1121,6 +1487,70 @@ export function buildSwitchPresetPC(
     0xb0 | ch0, 0x20, bankLsb, // CC 32 = Bank LSB
     0xc0 | ch0, pc & 0x7f,     // Program Change
   ];
+}
+
+// ── SWITCH PRESET via SysEx (fn=0x01 sub=0x27) ─────────────────────
+//
+// The gen-3 editor switches the active preset with an undocumented
+// fn=0x01 sub-action 0x27 — a SysEx-native alternative to the MIDI
+// Program Change + Bank Select path above. Captured from FM3-Edit and
+// live-confirmed on FM3 fw 12.00 hardware (BoodieTraps, 2026-06-10): a
+// server-issued frame switched the unit from preset 475 to 100.
+//
+// Two things this clears up about the gen-3 fn=0x01 family:
+//   • The "wiki / AxeFxControl set-preset" function fn=0x3C is a HARD
+//     NACK on FM3 — the unit replies fn=0x64 (multipurpose) with result
+//     0x05, the same received-but-rejected signature as the legacy
+//     fn=0x02 mistake. Do NOT emit fn=0x3C. (We never did; our default
+//     switch_preset uses Program Change — see buildSwitchPresetPC.)
+//   • The preset number in this frame is a PLAIN 14-bit LE septet int at
+//     value pos 12 (encode14, same packing as the effectId/paramId
+//     fields), NOT the 5-septet float32 that the discrete (0x09) /
+//     continuous (0x52) value field carries. So the pos-12 value slot in
+//     a gen-3 fn=0x01 frame is int-or-float depending on sub-action. It
+//     is also LITTLE-endian here, unlike the BIG-endian preset# in the
+//     fn=0x03 REQUEST_PRESET_DUMP request.
+//
+// Wire envelope (23 bytes), byte-exact vs the FM3 capture:
+//
+//   F0 00 01 74 <model> 01 27 00 00 00 00 00 <preset_lo preset_hi>
+//      00 00 00 00 00 00 00 <cks> F7
+//
+// blockId14 and paramId14 are both zero (pos 8-11). gen-3 family-shared
+// (model 0x10/0x11/0x12); FM3-confirmed, III/FM9 share the codec and are
+// hardware-unverified for this sub-action.
+
+/** Preset-switch sub-action for the gen-3 fn=0x01 SysEx-native path. */
+export const SUB_ACTION_SWITCH_PRESET: readonly [number, number] = [0x27, 0x00];
+
+/**
+ * SWITCH PRESET via SysEx (fn=0x01 sub=0x27). The preset number rides as a
+ * 14-bit LE septet int at payload pos 12 (NOT a float32; NOT the BE form the
+ * fn=0x03 dump request uses). FM3-confirmed (BoodieTraps, 2026-06-10): a
+ * server-issued frame moved the unit 475→100.
+ *
+ * This is a SysEx-native alternative to {@link buildSwitchPresetPC} (MIDI
+ * Program Change + Bank Select). The codec's default switch_preset path stays
+ * Program Change; this builder is exposed for callers that prefer the
+ * SysEx-native route (no MIDI channel / bank-select-mode dependency). Do NOT
+ * use fn=0x3C — it hard-NACKs on FM3.
+ */
+export function buildSwitchPresetSysEx(
+  presetNumber: number,
+  modelByte: number = AXE_FX_III_MODEL_ID,
+): number[] {
+  if (!Number.isInteger(presetNumber) || presetNumber < 0 || presetNumber > 0x3fff) {
+    throw new Error(
+      `buildSwitchPresetSysEx: preset out of range (0..16383): ${presetNumber}`,
+    );
+  }
+  return buildEnvelope(FN_PARAMETER_SETGET, [
+    ...SUB_ACTION_SWITCH_PRESET,
+    0x00, 0x00, // blockId14 = 0
+    0x00, 0x00, // paramId14 = 0
+    ...encode14(presetNumber), // preset# = 14-bit LE int at pos 12
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 7 trailing zeros
+  ], modelByte);
 }
 
 // ── 0x0A SET/GET BYPASS ────────────────────────────────────────────
@@ -1774,7 +2204,10 @@ export function parseGetParameterResponse(
 
 export interface ModernFractalCodec {
   readonly modelByte: number;
+  /** DISCRETE SET (sub 09 00): `value` is the read-roster ordinal → float32(ordinal) @pos12. */
   buildSetParameter(effectId: number, paramId: number, value: number): number[];
+  /** CONTINUOUS SET (sub 52 00): `normalized` in [0,1] → float32(normalized) @pos12. */
+  buildSetParameterContinuous(effectId: number, paramId: number, normalized: number): number[];
   buildGetParameter(effectId: number, paramId: number): number[];
   isGetParameterResponse(bytes: readonly number[]): boolean;
   parseGetParameterResponse(
@@ -1788,6 +2221,8 @@ export interface ModernFractalCodec {
   buildSetPresetName(name: string): number[];
   buildStorePreset(presetNumber: number): number[];
   buildSwitchPresetPC(presetNumber: number, channel?: number): number[];
+  /** SysEx-native preset switch (fn=0x01 sub=0x27); alternative to buildSwitchPresetPC. */
+  buildSwitchPresetSysEx(presetNumber: number): number[];
   isSetGetParameterResponse(bytes: readonly number[]): boolean;
   parseSetGetParameterResponse(
     bytes: readonly number[],
@@ -1822,6 +2257,7 @@ export function createModernFractalCodec(
   return {
     modelByte,
     buildSetParameter: (e, p, v) => buildSetParameter(e, p, v, modelByte),
+    buildSetParameterContinuous: (e, p, v) => buildSetParameterContinuous(e, p, v, modelByte),
     buildGetParameter: (e, p) => buildGetParameter(e, p, modelByte),
     buildSetBypass: (e, b) => buildSetBypass(e, b, modelByte),
     buildSetChannel: (e, c) => buildSetChannel(e, c, modelByte),
@@ -1831,6 +2267,7 @@ export function createModernFractalCodec(
     buildSetPresetName: (n) => buildSetPresetName(n, modelByte),
     buildStorePreset: (n) => buildStorePreset(n, modelByte),
     buildSwitchPresetPC: (n, ch) => buildSwitchPresetPC(n, ch, bankSelect),
+    buildSwitchPresetSysEx: (n) => buildSwitchPresetSysEx(n, modelByte),
     isSetGetParameterResponse: (b) => isSetGetParameterResponse(b, modelByte),
     parseSetGetParameterResponse: (b) => parseSetGetParameterResponse(b, modelByte),
     isGetParameterResponse: (b) => isGetParameterResponse(b, modelByte),

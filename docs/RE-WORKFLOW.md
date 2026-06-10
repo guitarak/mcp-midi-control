@@ -64,6 +64,13 @@ follow-ups feel out of sync with reality.
 
 ## Capture methods, in order of preference
 
+**Community-ask hierarchy (changed 2026-06-09):** when asking a device owner
+for evidence, the order is now (1) the editor's `effectDefinitions_*.cache`
+file (offline, the file already exists after one editor sync; full dictionary,
+see the cache bullet below), (2) the one-command harvest script
+(`scripts/harvest-device-metadata.ts`; device connected, no capture tooling),
+and only THEN (3) a targeted wire capture for the few shapes neither covers.
+
 ### Hardware-free lanes (exhaust these BEFORE queuing maintainer time)
 
 - **Existing captures.** `samples/captured/` holds ~170 files
@@ -99,14 +106,56 @@ follow-ups feel out of sync with reality.
     front-panel knob order (clockwise from start = index 0) IS the wire order;
     only the editor dropdown re-sorts. (2) JUCE BinaryData DECOMPRESSED
     (recovered 1,299 AM4-Edit labels, but NOT the dropdown option lists, which
-    proved absent); (3) re-parse the editor cache `effectDefinitions_*.cache`
-    for a per-param option-INDEX map (its model-dictionary array order is also
-    NOT wire order). ALWAYS verify index 0 against hardware ground truth. Full
-    writeup: cookbook `_negative/am4-edit-dropdown-order-not-wire-order`.
+    proved absent); (3) the editor cache `effectDefinitions_*.cache`, whose
+    grammar is now fully decoded (see the cache bullet below): roster ordinals
+    matched the wire ordinals at every hardware-checked anchor so far (FM9,
+    II, AM4), but ALWAYS verify index 0 plus a mid-table point against
+    hardware ground truth per device. Full writeup: cookbook
+    `_negative/am4-edit-dropdown-order-not-wire-order`.
 - **JUCE BinaryData extraction.** 5-minute label discovery from
   editor binaries via the embedded ZIP. 1,299 AM4-Edit labels and
   10,250 AxeEdit III labels recovered this way. See
   [`fractal-midi/docs/capture-guides/juce-binarydata-extraction.md`](https://github.com/TheAndrewStaker/fractal-midi/blob/main/docs/capture-guides/juce-binarydata-extraction.md).
+- **Editor `effectDefinitions_*.cache` (the device-native dictionary; the FIRST
+  community ask).** Each Fractal editor caches its per-firmware effect/param
+  definitions at
+  `%APPDATA%\Fractal Audio\<editor>\effectDefinitions_<modelByte>_<fw>.cache`
+  (`_12_` = FM9, `_15_` = AM4, etc.). The format is FULLY DECODED
+  (cookbook [[editor-cache-section-record-grammar]], 2026-06-09): a
+  count-driven section/record stream with a 22-byte record header that walks
+  with ZERO resync and carries, per block family, every param's id, typecode,
+  display min/max/default/step, and (for enums) the device-true label roster.
+  One synced cache file yields the device's complete dictionary with no
+  hardware probing; the FM9 device-true ranges
+  (`packages/fractal-midi/src/fm9/ranges.generated.ts`) are generated from one.
+  - **The typecode bitfield is decoded too**: nibble fields for unit,
+    family/taper, and (newer cache formats) display precision. Families 4/5
+    are log10 taper, hardware-confirmed; taper and display decimals are
+    derivable for every cache float param from the file alone.
+  - **Roster ordinals matched the wire ordinals at every hardware-checked
+    anchor** (FM9 amp/drive/reverb; the II amp roster agrees with the shipped
+    hardware-verified catalog at all 259 overlapping ordinals; AM4 amp
+    anchors). Per the verify-index-0 rule above, still confirm ordinal 0 plus
+    a mid-table point against hardware ground truth before shipping a new
+    device's table. The record `id` equals the catalog `paramId`.
+  - **Sourcing: needs a real-device-synced cache.** An editor that never
+    connected to the device writes a roster-EMPTY placeholder stub (filler
+    ranges, no names); detect a usable cache by ROSTER PRESENCE, never by file
+    size or the firmware suffix. The cheap community ask is the FILE itself
+    (it already exists after the owner has used their device once), far
+    lighter than a capture: ask for it FIRST, before the harvest script,
+    before any wire sweep. Decoder:
+    `scripts/_research/parse-effectdefinitions-cache.ts` (strict zero-resync
+    walker; `--verify` re-asserts the hardware anchors). Range codegen:
+    `scripts/gen-fm9-ranges-from-cache.ts` + gate `scripts/verify-fm9-ranges.ts`.
+- **One-command harvest script (`scripts/harvest-device-metadata.ts`).** The
+  SECOND ask, right after the cache file (it needs the device connected, but
+  no capture tooling). Read-only by construction (a whitelist gate checks
+  every outgoing frame), it sweeps every documented "describe yourself"
+  surface per device (AM4 / II / gen-3 families) and writes one JSON file with
+  raw hex plus decoded labels. One run replaces most of the itemized per-device
+  capture asks. Community guide:
+  `packages/fractal-midi/docs/capture-guides/harvest-script.md`.
 
 ### Hardware lanes (only after the above is exhausted)
 

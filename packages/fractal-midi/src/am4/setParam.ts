@@ -620,11 +620,8 @@ const ACTIVE_BUFFER_SENTINEL = 0x7f;
  * the same byte stream `parsePresetBank` consumes, except the 0x77 header
  * carries `bank=0x7F` (active sentinel) instead of a stored bank/sub pair.
  *
- * STORED-PRESET variant (request a specific stored location's dump
- * without affecting the working buffer) is queued for v0.1.x; see
- * `docs/preset-dump-request-research.md` and  for the follow-up
- * capture needed to disambiguate the bank/sub encoding for stored
- * locations.
+ * STORED-PRESET variant: `buildRequestStoredPresetDump` below
+ * (H1 encoding hardware-confirmed 2026-06-10).
  */
 export function buildRequestActiveBufferDump(): number[] {
   const body: number[] = [
@@ -632,6 +629,38 @@ export function buildRequestActiveBufferDump(): number[] {
     FUNC_REQUEST_DUMP,
     ACTIVE_BUFFER_SENTINEL,
     ACTIVE_BUFFER_SENTINEL,
+    0x00,
+  ];
+  const head = [SYSEX_START, ...FRACTAL_MFR, ...body];
+  return [...head, fractalChecksum(head), SYSEX_END];
+}
+
+/**
+ * Build a fn=0x03 dump request for a STORED preset location. H1
+ * encoding from preset-dump-request-research.md: payload
+ * `[bank, sub, 0x00]` with bank = locationIndex >> 2 (A=0..Z=25) and
+ * sub = locationIndex & 3 (display 01..04 -> wire 0..3).
+ *
+ * Status: hardware-confirmed on the founder's AM4 (2026-06-10 live
+ * probe): A01 `00 00 00`, A02 `00 01 00`, and Z04 `19 03 00` each
+ * returned the canonical 6-frame / 12,352-byte dump stream whose 0x77
+ * header echoes the requested [bank, sub] byte-exactly. NO working-
+ * buffer side effect: a before/after active-buffer compare changed
+ * only the dump's known volatile bytes (same drift as two back-to-back
+ * active dumps with nothing in between), and the post-request buffer
+ * did not match the requested slot's content — i.e. unlike the
+ * Axe-Fx II's slot-addressed fn 0x03, this does NOT reload the buffer.
+ * Captures: samples/captured/hw132/am4-stored-{a01,a02-h1,z04}.syx.
+ */
+export function buildRequestStoredPresetDump(locationIndex: number): number[] {
+  if (!Number.isInteger(locationIndex) || locationIndex < 0 || locationIndex > 103) {
+    throw new Error(`buildRequestStoredPresetDump: location index out of range (0..103 = A01..Z04): ${locationIndex}`);
+  }
+  const body: number[] = [
+    AM4_MODEL_ID,
+    FUNC_REQUEST_DUMP,
+    (locationIndex >> 2) & 0x7f,
+    locationIndex & 0x03,
     0x00,
   ];
   const head = [SYSEX_START, ...FRACTAL_MFR, ...body];

@@ -145,6 +145,15 @@ Default `'warn'`. When the buffer is dirty:
 When the buffer is clean, the guard is a no-op and the tool runs
 normally.
 
+**`export_preset` needs no dirty gate on any device.** Every device
+that implements it dumps the TRUE edit buffer (AM4 + Axe-Fx II via the
+fn 0x03 `7F 7F` sentinel, gen-3 via fn 0x43), so exporting unsaved work
+is safe and correct. The hazard lives one layer down: the II's
+SLOT-ADDRESSED fn 0x03 dump reloads the stored preset over the working
+buffer (hardware-confirmed 2026-06-10), which is why no tool path uses
+it on the II. Full per-device table: TOOL-AUTHORING-GUIDE.md
+"Source-of-data contract".
+
 ### 3. `save_authorized` guard on apply-at-slot
 
 Parameter on every tool that applies AND persists in one call

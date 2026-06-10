@@ -194,9 +194,12 @@ export const AM4_CASES: AgentRegressionCase[] = [
       // The heaviest case in the suite: a full build + recovery from the
       // Hall-reverb silent-no-op trap + save + read-back is ~10 distinct,
       // wire-heavy calls (verified effective — no get/set leveling loop).
-      // At 240 s it false-times-out mid-work; 300 s lets the productive
-      // sequence finish. NOT raised to mask a loop — tool usage is bounded.
-      max_wall_seconds: 300,
+      // At 240 s it false-times-out mid-work; 300 s still false-timed-out
+      // on slow-tail runs (2026-06-10: force-killed at 301 s mid-sequence
+      // after 9 CORRECT calls; history p50 162 s, 55% pass with the cap as
+      // the dominant failure mode). 480 s matches the suite's other long
+      // builds. NOT raised to mask a loop — max_tools bounds tool usage.
+      max_wall_seconds: 480,
     },
   },
 

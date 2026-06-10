@@ -32,13 +32,19 @@ import type {
   ParamQuery,
   PresetSnapshot,
   PresetSnapshotSlot,
+  SceneSpec,
   GetPresetOptions,
   PresetBinaryDump,
+  Gen3WholePresetView,
+  OverwriteTargetInfo,
+  LocationRef,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import type { ModernFractalCodec, Gen3BlockBulkRead } from 'fractal-midi/axe-fx-iii';
 import { buildRequestPresetDump, parseGen3StateBroadcastHead } from 'fractal-midi/axe-fx-iii';
 import { parsePresetDump, extractPresetName } from './presetDump.js';
+import { decodeGen3PresetDump } from './presetBody.js';
+import type { Gen3DecodedPreset } from './presetBody.js';
 import type { ModernCatalog } from './catalog.js';
 
 /**
@@ -261,6 +267,95 @@ function collectStoredPresetDump(
   });
 }
 
+/** Map a fully-decoded gen-3 preset to the rich `whole_preset` view. */
+function wholePresetView(
+  decoded: Gen3DecodedPreset,
+  source: Gen3WholePresetView['source'],
+): Gen3WholePresetView {
+  return {
+    source,
+    model: decoded.model_name,
+    model_id: decoded.model_id,
+    preset_name: decoded.preset_name,
+    crc_valid: decoded.crc_valid,
+    scene_names: decoded.scene_names,
+    grid: decoded.grid,
+    blocks: decoded.blocks,
+    amp: decoded.amp1,
+    modifiers: decoded.modifiers,
+    scene_controllers: decoded.scene_controllers,
+  };
+}
+
+/**
+ * Build a PresetSnapshot from a fully-decoded gen-3 preset dump. The standard
+ * envelope (name / slots / scenes) is filled as a friendly summary; the full
+ * fidelity (routing grid, per-channel block types, scene controllers, modifiers)
+ * lives in `whole_preset`. Slots/scenes are derived from the decoded block chain
+ * and are informational — NOT a positioned grid that round-trips through
+ * apply_preset.
+ */
+function snapshotFromDecoded(
+  decoded: Gen3DecodedPreset,
+  source: Gen3WholePresetView['source'],
+  deviceLabel: string,
+  readStartedMs: number,
+): PresetSnapshot {
+  const placed = decoded.blocks ?? [];
+  // Unique id per block (family, with _N suffix when a family repeats), so
+  // scene channel/bypass maps key cleanly even with two Comps / two Amps.
+  const counts: Record<string, number> = {};
+  const ids: string[] = [];
+  const slots: PresetSnapshotSlot[] = placed.map((b, i) => {
+    counts[b.block] = (counts[b.block] ?? 0) + 1;
+    const id = counts[b.block] === 1 ? b.block : `${b.block}_${counts[b.block]}`;
+    ids.push(id);
+    const params: Record<string, number | string> = {};
+    const type = b.type ?? b.channels?.A?.type;
+    if (typeof type === 'string') params.type = type;
+    return { slot: i + 1, block_type: b.block, id, params };
+  });
+
+  const sceneNames = decoded.scene_names ?? [];
+  const scenes: SceneSpec[] = [];
+  for (let s = 0; s < 8; s++) {
+    const channels: Record<string, string | number> = {};
+    const bypassed: Record<string, boolean> = {};
+    placed.forEach((b, i) => {
+      const ch = b.scene_channels?.[s];
+      if (ch !== undefined) channels[ids[i]] = ch;
+      const byp = b.scene_bypass?.[s];
+      if (byp !== undefined) bypassed[ids[i]] = byp;
+    });
+    scenes.push({ scene: s + 1, channels, bypassed, name: sceneNames[s] });
+  }
+
+  const warnings = [
+    `gen-3 whole-preset decode (${source}): the patch body was Huffman-decompressed and ` +
+      `structurally decoded (CRC ${decoded.crc_valid ? 'valid' : 'INVALID — values may be unreliable'}). ` +
+      `'slots'/'scenes' are a summary; the full routing grid, per-channel (A/B/C/D) block types, ` +
+      `scene controllers, and modifiers are in 'whole_preset'. This snapshot is informational — ` +
+      `it is NOT a positioned grid that round-trips through apply_preset by slot. Named knob VALUES ` +
+      `beyond amp are not yet decoded (the body word->knob map awaits a value-scale ground truth).`,
+  ];
+
+  return {
+    name: decoded.preset_name,
+    slots,
+    scenes,
+    whole_preset: wholePresetView(decoded, source),
+    read_warnings: warnings,
+    _meta: {
+      device: deviceLabel,
+      read_at_ms: readStartedMs,
+      active_scene_only: false,
+      routing_omitted: false,
+      channel_state_omitted: false,
+      read_duration_ms: Date.now() - readStartedMs,
+    },
+  };
+}
+
 export function makeReader(opts: {
   codec: ModernFractalCodec;
   catalog: ModernCatalog;
@@ -402,8 +497,61 @@ export function makeReader(opts: {
     // not row/col, and the snapshot is not round-trippable through
     // apply_preset by position. Community beta, server-driven poll not yet
     // hardware-confirmed end to end.
-    async getPreset(ctx: DispatchCtx, _options?: GetPresetOptions): Promise<PresetSnapshot> {
+    async getPreset(ctx: DispatchCtx, options?: GetPresetOptions): Promise<PresetSnapshot> {
       const readStartedMs = Date.now();
+
+      // STORED-PRESET WHOLE-DECODE: when a location is given, dump that stored
+      // slot (fn=0x03, wire-confirmed on FM9) and decode the entire patch body
+      // — routing grid, per-channel block types, scenes, amp, modifiers, scene
+      // controllers — into `whole_preset`. The decode is byte-validated offline
+      // against 384 III factory presets + an FM9 export; the stored-dump wire
+      // path is FM9-confirmed (III/FM3 share the codec, community beta).
+      if (options?.location !== undefined) {
+        const loc =
+          typeof options.location === 'number'
+            ? options.location
+            : Number.parseInt(String(options.location), 10);
+        if (!Number.isInteger(loc) || loc < 0) {
+          throw new DispatchError(
+            'bad_location',
+            deviceLabel,
+            `get_preset: location must be a non-negative integer preset number, got ${JSON.stringify(options.location)}.`,
+          );
+        }
+        let frames: number[][];
+        try {
+          frames = await collectStoredPresetDump(ctx, codec, loc, deviceLabel, getResponseTimeoutMs);
+        } catch (err) {
+          throw new DispatchError(
+            'no_ack',
+            deviceLabel,
+            `get_preset(location=${loc}): no stored-preset dump from ${deviceLabel}. ` +
+              `${err instanceof Error ? err.message : String(err)}. The gen-3 stored-preset dump ` +
+              `(fn=0x03) is FM9-confirmed; III/FM3 share the codec but are community beta. Check the ` +
+              `preset number is valid and an editor isn't holding the port (try reconnect_midi).`,
+          );
+        }
+        const flat: number[] = [];
+        for (const f of frames) for (const b of f) flat.push(b);
+        let decoded: Gen3DecodedPreset;
+        try {
+          decoded = decodeGen3PresetDump(Uint8Array.from(flat), codec.modelByte);
+        } catch (err) {
+          throw new DispatchError(
+            'no_ack',
+            deviceLabel,
+            `get_preset(location=${loc}): the stored-preset dump from ${deviceLabel} did not parse as a ` +
+              `gen-3 preset (${err instanceof Error ? err.message : String(err)}).`,
+          );
+        }
+        return snapshotFromDecoded(decoded, 'stored-dump', deviceLabel, readStartedMs);
+      }
+
+      // ACTIVE BUFFER: the live edit-buffer dump (fn=0x43 -> 0x51/0x52) is a
+      // DIFFERENT, not-yet-decoded format than the stored 0x77/0x78/0x79 dump
+      // the body codec reads, so the active read stays the fn=0x1F block
+      // inventory below. Whole-preset decode of the live buffer is unlocked once
+      // the 0x51/0x52 layout is captured + decoded.
       // Short per-block cap: a real burst lands in ~1ms and an unplaced block
       // NACKs nearly as fast; this only bounds a block that neither answers.
       const POLL_TIMEOUT_MS = Math.min(250, getResponseTimeoutMs);
@@ -546,6 +694,52 @@ export function makeReader(opts: {
         source: `stored preset location ${location}`,
         name,
       };
+    },
+
+    // Non-destructive overwrite pre-check for save_preset: read the target
+    // location's stored name (fn=0x0F QUERY PATCH NAME by number, spec-
+    // documented) plus the active preset number, so the dispatcher's
+    // confirmable overwrite gate runs on gen-3 like it does on AM4: the
+    // agent sees what a save would clobber BEFORE the destructive store.
+    // Best-effort: any read failure returns undefined and the dispatcher
+    // degrades (proceeds, flags the unverified overwrite) rather than
+    // blocking the save. VP4's letter locations (A01..Z04) skip the check:
+    // its store op saves in place, so a named-location occupancy check would
+    // be checking the wrong thing.
+    async checkOverwriteTarget(
+      ctx: DispatchCtx,
+      location: LocationRef,
+    ): Promise<OverwriteTargetInfo | undefined> {
+      const n = typeof location === 'number' ? location : Number(location);
+      if (!Number.isInteger(n) || n < 0) return undefined;
+      const queryName = async (preset: number | 'current') => {
+        const respPromise = ctx.conn.receiveSysExMatching(
+          (b) => codec.isQueryPatchNameResponse(b),
+          getResponseTimeoutMs,
+        );
+        ctx.conn.send(codec.buildQueryPatchName(preset));
+        return codec.parseQueryPatchNameResponse(await respPromise);
+      };
+      try {
+        const target = await queryName(n);
+        const occupant = target.name.trim();
+        let isActive = false;
+        try {
+          const active = await queryName('current');
+          isActive = active.presetNumber === n;
+        } catch {
+          // Active-number read failed: keep isActive=false. The gate may then
+          // ask one unnecessary confirm when saving the active location —
+          // safer than skipping the gate on a destructive flash write.
+        }
+        return {
+          target_display: `preset ${n}`,
+          occupant_name: occupant.length > 0 ? occupant : undefined,
+          is_active_location: isActive,
+        };
+      } catch {
+        return undefined; // dispatcher degrades: proceed + flag unverified overwrite
+      }
     },
 
     async getParams(

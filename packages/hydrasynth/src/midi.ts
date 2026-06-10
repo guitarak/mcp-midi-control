@@ -22,6 +22,8 @@
  */
 import midi, { Input, Output } from 'midi';
 
+import { createSysExAssembler } from '@mcp-midi-control/core/midi/transport.js';
+
 const HYDRA_PORT_NEEDLES = ['hydrasynth', 'asm hydra'];
 
 export interface HydrasynthConnection {
@@ -127,6 +129,21 @@ export function connectHydrasynth(): HydrasynthConnection {
     );
   }
   out.openPort(outIdx);
+  // openPort() does NOT throw on failure (RtMidi prints to stderr and
+  // leaves the port closed). Assert the native isPortOpen() truth and
+  // fail loudly with the exclusive-hold diagnosis (2026-06-10 incident).
+  if (!out.isPortOpen()) {
+    try { out.closePort(); } catch { /* best-effort */ }
+    throw new Error(
+      'Hydrasynth output port found but could NOT be opened (the OS refused the open). ' +
+      'Windows MIDI ports are exclusive: another process is almost certainly holding it ' +
+      '(a second MCP server instance from another Claude session, or a stale node.exe from ' +
+      'an earlier session). Close the holder, then retry or call reconnect_midi. ' +
+      'If this error repeats right after a reconnect_midi on a quiet bus, the holder may be THIS ' +
+      "server's own previous handle (the driver does not always release a handle that died " +
+      'mid-send): fully quit and relaunch the host app to restart the server.',
+    );
+  }
 
   const input = new midi.Input();
   const inIdx = findHydrasynthInputIndex(input);
@@ -137,12 +154,35 @@ export function connectHydrasynth(): HydrasynthConnection {
     // Don't ignore SysEx (false), do ignore timing clock + active-sensing (true, true).
     // Wire the listener BEFORE openPort so we don't race the device.
     input.ignoreTypes(false, true, true);
-    input.on('message', (_dt: number, bytes: number[]) => {
+    // Reassemble WinMM SysEx fragments before dispatching: node-midi
+    // delivers any SysEx longer than RT_SYSEX_BUFFER_SIZE (2048 bytes,
+    // midi/binding.gyp) as multiple `message` events. Hydrasynth patch
+    // dump chunks sit under that cap today, but the assembler's fast
+    // path passes complete frames through unchanged, so this costs
+    // nothing and removes the truncation class entirely.
+    const assemble = createSysExAssembler((bytes: number[]) => {
       for (const h of handlers) {
         try { h(bytes); } catch { /* swallow handler errors so one bad subscriber can't break others */ }
       }
     });
+    input.on('message', (_dt: number, bytes: number[]) => {
+      assemble(bytes);
+    });
     input.openPort(inIdx);
+    if (!input.isPortOpen()) {
+      // Dead INPUT = writes fire, every read/ack times out. Fail loudly.
+      try { input.closePort(); } catch { /* best-effort */ }
+      try { out.closePort(); } catch { /* best-effort */ }
+      throw new Error(
+        'Hydrasynth input port found but could NOT be opened (the OS refused the open). ' +
+        'Windows MIDI inputs are exclusive: another process is almost certainly holding it ' +
+        '(a second MCP server instance from another Claude session, or a stale node.exe from ' +
+        'an earlier session). Close the holder, then retry or call reconnect_midi. ' +
+      'If this error repeats right after a reconnect_midi on a quiet bus, the holder may be THIS ' +
+      "server's own previous handle (the driver does not always release a handle that died " +
+      'mid-send): fully quit and relaunch the host app to restart the server.',
+      );
+    }
     inputOpen = true;
   } else {
     try { input.closePort(); } catch { /* never opened */ }

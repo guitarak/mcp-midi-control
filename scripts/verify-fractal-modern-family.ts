@@ -20,13 +20,16 @@ import {
   MODERN_FRACTAL_DESCRIPTORS,
 } from '@mcp-midi-control/fractal-modern/device.js';
 import {
+  encode16to3,
+  huffmanCompress,
+  computeRawPatchCrc,
+} from '@mcp-midi-control/fractal-modern/presetHuffman.js';
+import {
   createModernFractalCodec,
   resolveEffectId,
   packValue16,
   PARAMS_BY_FAMILY,
   resolveGen3EnumOrdinal,
-  resolveGen3EnumNameToRawId,
-  GEN3_ENUM_ORDINAL_TO_RAW_ID,
   type Param,
 } from 'fractal-midi/axe-fx-iii';
 import { mockConnect } from '@mcp-midi-control/core/midi/transport.js';
@@ -107,64 +110,55 @@ for (const { desc, modelByte } of [
 
 // ── 2a2. Reverb-type set-by-name (write leg, capture-backed) ────────
 //
-// The gen-3 reverb TYPE selector is read-leg display-only EXCEPT for the
-// labels whose device-true write raw id was captured on FM9 hardware
-// ("Spring, Medium" → 524, byte-exact in capture-2; "Hall, Music" → 529,
-// capture-3). Those two are settable BY NAME and emit the hardware-confirmed
-// raw id; every other reverb type stays gated (capture-pending). Read
+// The gen-3 reverb TYPE set value = the read-roster ORDINAL (a discrete SET
+// sends float32(ordinal) @ pos 12, 2026-06-08). EVERY type sets by name with no
+// capture — encode resolves a name to the same ordinal decode labels with. No
+// raw-id space; the old 524/529 were float32(ordinal) misread at pos 15. Read
 // (decode ordinal→label) is unchanged. Shared across III/FM3/FM9 (one codec).
-console.log('\nReverb-type set-by-name (capture-confirmed FM9 raw ids):');
+console.log('\nReverb-type set-by-name (read-roster ordinal = the float32 set value):');
 for (const desc of [AXEFX3_DESCRIPTOR, FM3_DESCRIPTOR, FM9_DESCRIPTOR]) {
   const schema = desc.blocks['reverb']?.params['type'];
   check(
-    `${desc.id} reverb.type settable-by-name = {Spring Medium, Hall Music}`,
-    schema?.enum_settable_names !== undefined
-      && schema.enum_settable_names.length === 2
-      && schema.enum_settable_names.includes('Spring, Medium')
-      && schema.enum_settable_names.includes('Hall, Music'),
-    `enum_settable_names: ${JSON.stringify(schema?.enum_settable_names)}`,
+    `${desc.id} reverb.type wire_kind = discrete`,
+    schema?.wire_kind === 'discrete',
+    `wire_kind: ${schema?.wire_kind}`,
   );
   check(
-    `${desc.id} set reverb.type "Spring, Medium" → raw 524 (capture-2 byte-exact)`,
-    encodeValue(desc, 'reverb', 'type', 'Spring, Medium') === 524,
+    `${desc.id} set reverb.type "Spring, Medium" → ordinal 16`,
+    encodeValue(desc, 'reverb', 'type', 'Spring, Medium') === 16,
   );
   check(
-    `${desc.id} set reverb.type "Hall, Music" → raw 529`,
-    encodeValue(desc, 'reverb', 'type', 'Hall, Music') === 529,
+    `${desc.id} set reverb.type "Hall, Music" → ordinal 45`,
+    encodeValue(desc, 'reverb', 'type', 'Hall, Music') === 45,
   );
   check(
-    `${desc.id} set reverb.type "spring, medium" (case/space tolerant) → 524`,
-    encodeValue(desc, 'reverb', 'type', 'spring, medium') === 524,
+    `${desc.id} set reverb.type "spring, medium" (case/space tolerant) → 16`,
+    encodeValue(desc, 'reverb', 'type', 'spring, medium') === 16,
   );
-  // Name-form alias: AM4 arrays use "Category, Modifier" order; accept the
-  // natural reversed phrasing too (the deep-mine exposed this as the one
-  // offline UX gap: "Medium Spring" previously returned unknown_name).
+  // AM4 arrays use "Category, Modifier" order; accept the natural reversed phrasing too.
   check(
-    `${desc.id} set reverb.type "Medium Spring" (reversed order) → 524`,
-    encodeValue(desc, 'reverb', 'type', 'Medium Spring') === 524,
+    `${desc.id} set reverb.type "Medium Spring" (reversed order) → 16`,
+    encodeValue(desc, 'reverb', 'type', 'Medium Spring') === 16,
   );
   check(
-    `${desc.id} set reverb.type "Music Hall" (reversed order) → 529`,
-    encodeValue(desc, 'reverb', 'type', 'Music Hall') === 529,
+    `${desc.id} set reverb.type "Music Hall" (reversed order) → 45`,
+    encodeValue(desc, 'reverb', 'type', 'Music Hall') === 45,
   );
-  let refusedCode: string | undefined;
-  try {
-    encodeValue(desc, 'reverb', 'type', 'Room, Small');
-  } catch (e) {
-    refusedCode = e instanceof DispatchError ? e.code : `(non-dispatch: ${String(e)})`;
-  }
+  // Previously "capture-blocked": now sets by name like every other type.
   check(
-    `${desc.id} set reverb.type "Room, Small" (valid type, uncaptured) → refused capability_not_supported`,
-    refusedCode === 'capability_not_supported',
-    `code: ${refusedCode}`,
+    `${desc.id} set reverb.type "Room, Small" → ordinal 0 (was capture-blocked, now resolves)`,
+    encodeValue(desc, 'reverb', 'type', 'Room, Small') === 0,
   );
   check(
-    `${desc.id} set reverb.type 524 (numeric raw passthrough) → 524`,
-    encodeValue(desc, 'reverb', 'type', 524) === 524,
+    `${desc.id} set reverb.type 16 (numeric ordinal passthrough) → 16`,
+    encodeValue(desc, 'reverb', 'type', 16) === 16,
   );
+  // FM9 has a device-true reverb roster (cache-mined): adjective-first labels.
+  // III/FM3 still borrow AM4 REVERB_TYPES noun-first names until their own caches.
+  const expRev16 = desc.id === 'fm9' ? 'Medium Spring' : 'Spring, Medium';
   check(
-    `${desc.id} reverb.type decode(16) → "Spring, Medium" (read leg intact)`,
-    schema?.decode(16) === 'Spring, Medium',
+    `${desc.id} reverb.type decode(16) → "${expRev16}" (read leg intact)`,
+    schema?.decode(16) === expRev16,
   );
 }
 
@@ -174,9 +168,9 @@ for (const desc of [AXEFX3_DESCRIPTOR, FM3_DESCRIPTOR, FM9_DESCRIPTOR]) {
 // overlay leaves it numeric. FM9 binds a PARTIAL device-true table captured
 // from hardware (read-leg ordinals: 264=SV Bass 1, 65=SV Bass 2, 179=Texas
 // Star Clean). Decode labels those ordinals, passes unknown ones through as
-// numbers, and never leaks onto III/FM3 (whose amp rosters differ). Read-leg
-// only: set-by-name stays gated (no captured raw id).
-console.log('\nFM9 amp model names (per-device enum override, partial, read-leg):');
+// numbers, and never leaks onto III/FM3 (whose amp rosters differ). The ordinal
+// IS the discrete-SET value, so these set by name too (float32(ordinal)).
+console.log('\nFM9 amp model names (per-device enum override, partial):');
 {
   const ampSchema = FM9_DESCRIPTOR.blocks['amp']?.params['type'];
   check('FM9 amp.type schema exists', ampSchema !== undefined, `blocks.amp.params.type missing`);
@@ -184,15 +178,16 @@ console.log('\nFM9 amp model names (per-device enum override, partial, read-leg)
   check('FM9 amp.type decode(65) → "SV Bass 2"', ampSchema?.decode(65) === 'SV Bass 2', `got ${ampSchema?.decode(65)}`);
   check('FM9 amp.type decode(179) → "Texas Star Clean"', ampSchema?.decode(179) === 'Texas Star Clean', `got ${ampSchema?.decode(179)}`);
   check('FM9 amp.type decode(9999) → 9999 (unknown ordinal passes through, partial table)', ampSchema?.decode(9999) === 9999, `got ${ampSchema?.decode(9999)}`);
-  // Override is FM9-only: the III amp model selector stays numeric.
+  // P1: the shared gen-3 read roster names amps on ALL of III/FM3/FM9. The
+  // FM9-SPECIFIC hardware-captured points (e.g. 65="SV Bass 2", which is absent
+  // from the shared table) still must NOT leak to the III.
   const iiiAmp = AXEFX3_DESCRIPTOR.blocks['amp']?.params['type'];
-  check('III amp.type decode(264) → 264 (FM9 override does NOT leak to III)', iiiAmp?.decode(264) === 264, `got ${iiiAmp?.decode(264)}`);
-  // Read-leg only: numeric passthrough works, set-by-name refuses.
+  check('III amp.type decode(264) → "SV Bass 1" (shared gen-3 read roster)', iiiAmp?.decode(264) === 'SV Bass 1', `got ${iiiAmp?.decode(264)}`);
+  check('III amp.type decode(65) → 65 (FM9-specific override does NOT leak to III)', iiiAmp?.decode(65) === 65, `got ${iiiAmp?.decode(65)}`);
+  // Set-by-name now works for amps too: the read ordinal IS the set value.
   check('FM9 amp.type 264 numeric passthrough → 264', encodeValue(FM9_DESCRIPTOR, 'amp', 'type', 264) === 264);
-  let ampByNameCode: string | undefined;
-  try { encodeValue(FM9_DESCRIPTOR, 'amp', 'type', 'SV Bass 1'); }
-  catch (e) { ampByNameCode = e instanceof DispatchError ? e.code : `(non-dispatch: ${String(e)})`; }
-  check('FM9 set amp.type "SV Bass 1" by name → gated capability_not_supported (read-leg only)', ampByNameCode === 'capability_not_supported', `code: ${ampByNameCode}`);
+  check('FM9 set amp.type "SV Bass 1" by name → ordinal 264 (set-by-name unblocked)',
+    encodeValue(FM9_DESCRIPTOR, 'amp', 'type', 'SV Bass 1') === 264);
 }
 
 // ── 2b. Device-true paramIds (NOT reused from the III) ──────────────
@@ -214,7 +209,8 @@ console.log('\nDevice-true paramIds (FM catalogs are NOT the III\'s):');
   ]) {
     const codec = createModernFractalCodec(modelByte);
     const got = desc.writer.buildSetParam!('delay', 'time', 100);
-    const want = codec.buildSetParameter(delayEffectId, pid, 100);
+    // delay.time is a CONTINUOUS knob → sub 52 00 + float32(wire/65534).
+    const want = codec.buildSetParameterContinuous(delayEffectId, pid, 100 / 65534);
     check(
       `${desc.id} set_param(delay.time) encodes device-true paramId ${pid}`,
       JSON.stringify(got) === JSON.stringify(want),
@@ -230,7 +226,7 @@ console.log('\nDevice-true paramIds (FM catalogs are NOT the III\'s):');
   ]) {
     const codec = createModernFractalCodec(modelByte);
     const got = desc.writer.buildSetParam!('delay', 'time', 100);
-    const iiiReuse = codec.buildSetParameter(delayEffectId, 2, 100); // III pid under FM model byte
+    const iiiReuse = codec.buildSetParameterContinuous(delayEffectId, 2, 100 / 65534); // III pid under FM model byte
     check(
       `${desc.id} set_param(delay.time) is NOT the III-reused paramId (2)`,
       JSON.stringify(got) !== JSON.stringify(iiiReuse),
@@ -406,6 +402,24 @@ async function writerChecks(): Promise<void> {
     check('FM9 in-grid set_block emitted a model-0x12 frame', sent.length === 1 && sent[0][4] === 0x12, JSON.stringify(sent[0]?.slice(0, 6)));
   }
 
+  // apply_preset(target_location) honors save_authorization: the store envelope
+  // (fn=0x01 sub=0x26) is DESTRUCTIVE flash, so it fires ONLY when options.save.
+  // A target WITHOUT save is a reversible audition and must emit NO store frame.
+  {
+    const isStore = (f: number[]): boolean => f[5] === 0x01 && f[6] === 0x26;
+    const emptySpec = { slots: [] } as Parameters<NonNullable<DeviceDescriptor['writer']['applyPreset']>>[1];
+
+    const { ctx, sent } = fakeCtx();
+    await FM9_DESCRIPTOR.writer.applyPreset!(ctx, emptySpec, 5, { save: false });
+    check('FM9 apply_preset(target, save_authorized:false) = audition: NO store envelope',
+      sent.filter(isStore).length === 0, `store frames: ${sent.filter(isStore).length}`);
+
+    const { ctx: ctx2, sent: sent2 } = fakeCtx();
+    await FM9_DESCRIPTOR.writer.applyPreset!(ctx2, emptySpec, 5, { save: true });
+    check('FM9 apply_preset(target, save_authorized:true) emits exactly one store envelope (fn=0x01 sub=0x26)',
+      sent2.filter(isStore).length === 1, `store frames: ${sent2.filter(isStore).length}`);
+  }
+
   // The gen-3 grid is 6 rows (wire-confirmed on FM9 + III over loopMIDI, and
   // visually 6x14 in both editors), NOT the 4 the config originally carried.
   // Row 6 is now IN-grid, and the cell-index stride must be 6 (the wire
@@ -498,29 +512,46 @@ async function vp4Checks(): Promise<void> {
   check('vp4 keeps the delay block', VP4_DESCRIPTOR.blocks['delay'] !== undefined);
   check('vp4 block roster is substantial (>=40)', Object.keys(VP4_DESCRIPTOR.blocks).length >= 40, String(Object.keys(VP4_DESCRIPTOR.blocks).length));
 
-  // The mode-switch / codec is real for VP4 — set_param's pure BUILDER (not a
-  // device send) still emits a well-formed model-0x14 frame; it's the SEND
-  // methods that gate. Lock the model byte on the builder.
+  // VP4 write codec: the pure BUILDER for a CONTINUOUS param emits a well-formed
+  // model-0x14 frame (VP4-true: no sub-action, tc sub-opcode, swapped float).
+  // DISCRETE param SET is intentionally unsupported on VP4 (zero captured
+  // evidence) → the builder throws rather than mis-encode.
   {
-    const frame = VP4_DESCRIPTOR.writer.buildSetParam!('reverb', 'type', 100);
+    const frame = VP4_DESCRIPTOR.writer.buildSetParam!('reverb', 'time', 100);
     const r = frameIsWellFormed(frame, 0x14);
-    check('vp4 buildSetParam(reverb.type) → model 0x14 + valid checksum', r.ok, r.why);
+    check('vp4 buildSetParam(reverb.time continuous) → model 0x14 + valid checksum', r.ok, r.why);
+  }
+  {
+    let threw = false;
+    try { VP4_DESCRIPTOR.writer.buildSetParam!('reverb', 'type', 100); } catch { threw = true; }
+    check('vp4 buildSetParam(reverb.type discrete) throws (unsupported, not mis-encoded)', threw);
   }
 
-  // Every device-state write refuses with capability_not_supported and emits
-  // NO wire frame (writes gated until VP4 hardware confirms the path).
+  // ALLOWED (decoded byte-exact, community-beta): emit a wire frame, do not refuse.
+  // Continuous set_param/set_params + set_bypass + save_preset.
+  async function allowed(label: string, run: () => Promise<unknown>, sent: number[][]): Promise<void> {
+    let code: string | undefined;
+    try { await run(); } catch (e) { code = e instanceof DispatchError ? e.code : `(non-dispatch: ${String(e)})`; }
+    check(`vp4 ${label} is NOT gated`, code !== 'capability_not_supported', `code: ${code}`);
+    check(`vp4 ${label} emits a wire frame`, sent.length >= 1, `sent ${sent.length}`);
+  }
+  { const { ctx, sent } = fakeCtx(); await allowed('set_param (continuous)', () => VP4_DESCRIPTOR.writer.setParam!(ctx, 'reverb', 'time', 32767), sent); }
+  { const { ctx, sent } = fakeCtx(); await allowed('set_params (continuous)', () => VP4_DESCRIPTOR.writer.setParams!(ctx, [{ block: 'reverb', name: 'time', value: 32767 }]), sent); }
+  { const { ctx, sent } = fakeCtx(); await allowed('set_bypass', () => VP4_DESCRIPTOR.writer.setBypass!(ctx, 'reverb', true), sent); }
+  { const { ctx, sent } = fakeCtx(); await allowed('save_preset', () => VP4_DESCRIPTOR.writer.savePreset!(ctx, 0), sent); }
+
+  // Every OTHER device-state write refuses with capability_not_supported and
+  // emits NO wire frame (gated until decoded/confirmed).
   async function refuses(label: string, run: () => Promise<unknown>, sent: number[][]): Promise<void> {
     let code: string | undefined;
     try { await run(); } catch (e) { code = e instanceof DispatchError ? e.code : `(non-dispatch: ${String(e)})`; }
     check(`vp4 ${label} refuses (capability_not_supported)`, code === 'capability_not_supported', `code: ${code}`);
     check(`vp4 ${label} emits NO wire frame`, sent.length === 0, `sent ${sent.length}`);
   }
-  { const { ctx, sent } = fakeCtx(); await refuses('set_param', () => VP4_DESCRIPTOR.writer.setParam!(ctx, 'reverb', 'mix', 100), sent); }
-  { const { ctx, sent } = fakeCtx(); await refuses('set_params', () => VP4_DESCRIPTOR.writer.setParams!(ctx, [{ block: 'reverb', name: 'mix', value: 100 }]), sent); }
+  // DISCRETE/enum set_param refuses (no captured evidence; must not mis-encode).
+  { const { ctx, sent } = fakeCtx(); await refuses('set_param(reverb.type discrete)', () => VP4_DESCRIPTOR.writer.setParam!(ctx, 'reverb', 'type', 5), sent); }
   { const { ctx, sent } = fakeCtx(); await refuses('set_block', () => VP4_DESCRIPTOR.writer.setBlock!(ctx, 1, { block_type: 'reverb' }), sent); }
-  { const { ctx, sent } = fakeCtx(); await refuses('set_bypass', () => VP4_DESCRIPTOR.writer.setBypass!(ctx, 'reverb', true), sent); }
   { const { ctx, sent } = fakeCtx(); await refuses('apply_preset', () => VP4_DESCRIPTOR.writer.applyPreset!(ctx, { name: 'X', slots: [] }), sent); }
-  { const { ctx, sent } = fakeCtx(); await refuses('save_preset', () => VP4_DESCRIPTOR.writer.savePreset!(ctx, 'A01'), sent); }
   { const { ctx, sent } = fakeCtx(); await refuses('switch_preset', () => VP4_DESCRIPTOR.writer.switchPreset!(ctx, 'A01'), sent); }
   { const { ctx, sent } = fakeCtx(); await refuses('switch_scene', () => VP4_DESCRIPTOR.writer.switchScene!(ctx, 2), sent); }
   { const { ctx, sent } = fakeCtx(); await refuses('rename', () => VP4_DESCRIPTOR.writer.rename!(ctx, 'preset', 'X'), sent); }
@@ -541,16 +572,18 @@ for (const { desc } of [
   { desc: FM9_DESCRIPTOR },
 ]) {
   const typeSchema = desc.blocks['reverb']?.params['type'];
+  // FM9 = device-true cache roster (adjective-first); III/FM3 = AM4-borrowed.
+  const expRev16 = desc.id === 'fm9' ? 'Medium Spring' : 'Spring, Medium';
   check(`${desc.id} reverb.type carries enum_values`, typeSchema?.enum_values !== undefined);
   check(
-    `${desc.id} reverb.type ordinal 16 → 'Spring, Medium' (byte-anchor)`,
-    typeSchema?.enum_values?.[16] === 'Spring, Medium',
+    `${desc.id} reverb.type ordinal 16 → '${expRev16}' (byte-anchor)`,
+    typeSchema?.enum_values?.[16] === expRev16,
     JSON.stringify(typeSchema?.enum_values?.[16]),
   );
-  check(`${desc.id} reverb.type marked enum_display_only`, typeSchema?.enum_display_only === true);
+  check(`${desc.id} reverb.type wire_kind = discrete`, typeSchema?.wire_kind === 'discrete');
   check(
     `${desc.id} reverb.type decode(16) labels`,
-    typeSchema?.decode(16) === 'Spring, Medium',
+    typeSchema?.decode(16) === expRev16,
     JSON.stringify(typeSchema?.decode(16)),
   );
   check(
@@ -558,21 +591,11 @@ for (const { desc } of [
     typeSchema?.decode(60000) === 60000,
   );
 
-  // A valid-but-UNCAPTURED reverb type name is refused with
-  // capability_not_supported (NOT "unknown enum value"). "Room, Small" is a
-  // real type whose write-leg raw-id has not been captured. (Do not use
-  // "Medium Spring" here: it now resolves via the name-form alias to the
-  // captured "Spring, Medium" = 524.)
-  let nameErr: unknown;
-  try {
-    encodeValue(desc, 'reverb', 'type', 'Room, Small');
-  } catch (e) {
-    nameErr = e;
-  }
+  // Every valid reverb type name now sets by name (the read ordinal IS the set
+  // value): "Room, Small" resolves to ordinal 0 (was capture-blocked).
   check(
-    `${desc.id} set_param(reverb.type, "Room, Small") refused as capability_not_supported`,
-    nameErr instanceof DispatchError && nameErr.code === 'capability_not_supported',
-    nameErr instanceof DispatchError ? nameErr.code : String(nameErr),
+    `${desc.id} set_param(reverb.type, "Room, Small") → ordinal 0 (set-by-name unblocked)`,
+    encodeValue(desc, 'reverb', 'type', 'Room, Small') === 0,
   );
   // Numeric wire value still passes through (raw, caller's responsibility).
   check(`${desc.id} set_param(reverb.type, 16) numeric passthrough`, encodeValue(desc, 'reverb', 'type', 16) === 16);
@@ -604,13 +627,13 @@ for (const { desc } of [
   const looksLikeDriveTable = vals !== undefined
     && Object.values(vals).some((n) => /^(T808|Tube Drive|FAS Boost|Fat Rat|Esoteric)/i.test(String(n)));
   check(`${desc.id} amp.type carries no AM4 DRIVE_TYPES leak`, !looksLikeDriveTable, JSON.stringify(vals));
-  if (desc.id === 'fm9') {
-    // FM9 SHOULD carry its device-true (partial) amp roster.
-    check('fm9 amp.type has device-true amp names (SV Bass 1)', vals !== undefined && vals[264] === 'SV Bass 1', JSON.stringify(vals));
-  } else {
-    // III/FM3 stay numeric (no override captured for them).
-    check(`${desc.id} amp.type has NO enum_values (numeric, no override)`, ampType !== undefined && vals === undefined, JSON.stringify(vals));
-  }
+  // P1: every gen-3 grid device carries the shared read roster for amps
+  // (SV Bass 1 @ ordinal 264). Set-by-name now works (the ordinal IS the set
+  // value), so amp.type is a discrete selector like reverb/drive.
+  check(`${desc.id} amp.type carries the shared gen-3 amp roster (SV Bass 1 @264)`,
+    vals !== undefined && vals[264] === 'SV Bass 1', JSON.stringify(vals?.[264]));
+  check(`${desc.id} amp.type wire_kind = discrete (set-by-name unblocked)`,
+    ampType?.wire_kind === 'discrete', String(ampType?.wire_kind));
 }
 
 // ── 8c. Gen-3 multi-instance addressing (C8) ────────────────────────
@@ -637,7 +660,8 @@ async function multiInstanceChecks(): Promise<void> {
     {
       const { ctx, sent } = fakeCtx();
       await desc.writer.setParam!(ctx, 'amp', 'drive', 100, undefined, 1);
-      const want = codec.buildSetParameter(58, drivePid, 100);
+      // amp.drive is a CONTINUOUS knob → sub 52 00 + float32(wire/65534).
+      const want = codec.buildSetParameterContinuous(58, drivePid, 100 / 65534);
       check(`${desc.id} set_param(amp.drive, instance:1) → Amp 1 (effect id 58)`,
         sent.length === 1 && JSON.stringify(sent[0]) === JSON.stringify(want),
         JSON.stringify(sent[0]?.slice(0, 8)));
@@ -646,8 +670,8 @@ async function multiInstanceChecks(): Promise<void> {
     {
       const { ctx, sent } = fakeCtx();
       await desc.writer.setParam!(ctx, 'amp', 'drive', 100, undefined, 2);
-      const want2 = codec.buildSetParameter(59, drivePid, 100);
-      const want1 = codec.buildSetParameter(58, drivePid, 100);
+      const want2 = codec.buildSetParameterContinuous(59, drivePid, 100 / 65534);
+      const want1 = codec.buildSetParameterContinuous(58, drivePid, 100 / 65534);
       check(`${desc.id} set_param(amp.drive, instance:2) → Amp 2 (effect id 59)`,
         sent.length === 1 && JSON.stringify(sent[0]) === JSON.stringify(want2),
         JSON.stringify(sent[0]?.slice(0, 8)));
@@ -749,7 +773,7 @@ async function readerChecks(): Promise<void> {
     }
     check(`${desc.id} get_param(reverb.type) reads the fn=0x1F dump`, res !== undefined, String(err));
     check(`${desc.id} get_param(reverb.type) wire_value = 16 (device-true paramId ${typeParamId})`, res?.wire_value === 16, JSON.stringify(res?.wire_value));
-    check(`${desc.id} get_param(reverb.type) display_value labels via S1 overlay`, res?.display_value === 'Spring, Medium', JSON.stringify(res?.display_value));
+    check(`${desc.id} get_param(reverb.type) display_value labels via S1 overlay`, res?.display_value === (desc.id === 'fm9' ? 'Medium Spring' : 'Spring, Medium'), JSON.stringify(res?.display_value));
   }
 
   // Channel-DIVERGENT read: the four channel copies of REVERB_TYPE differ. This
@@ -837,7 +861,7 @@ async function readerChecks(): Promise<void> {
         if (polledEffectId !== reverbEffectId) {
           return [broadcastFrame(0x12, 0x64, [0x04])]; // multipurpose NACK: not placed
         }
-        // FM9 reverb: REVERB_TYPE is paramId 10; set ordinal 16 = Spring, Medium.
+        // FM9 reverb: REVERB_TYPE is paramId 10; ordinal 16 = Medium Spring (device-true).
         const vals = Array.from({ length: 11 }, (_, i) => (i === 10 ? 16 : i));
         return [
           broadcastFrame(0x12, 0x74, [...enc14(reverbEffectId), ...enc14(11), 0x07]),
@@ -855,7 +879,7 @@ async function readerChecks(): Promise<void> {
     check('FM9 get_preset returns a snapshot', snap !== undefined, String(snapErr));
     const reverbSlot = snap?.slots.find((s) => s.block_type === 'reverb');
     check('FM9 get_preset finds the placed reverb block', reverbSlot !== undefined);
-    check('FM9 get_preset decodes reverb.type to its label', (reverbSlot?.params as Record<string, unknown> | undefined)?.type === 'Spring, Medium',
+    check('FM9 get_preset decodes reverb.type to its label', (reverbSlot?.params as Record<string, unknown> | undefined)?.type === 'Medium Spring',
       JSON.stringify((reverbSlot?.params as Record<string, unknown> | undefined)?.type));
     check('FM9 get_preset reports only placed blocks (NACKed blocks excluded)', (snap?.slots.length ?? 0) >= 1 && (snap?.slots.length ?? 99) < 5,
       String(snap?.slots.length));
@@ -941,6 +965,65 @@ async function readerChecks(): Promise<void> {
     try { await FM9_DESCRIPTOR.reader!.dumpStoredPresetBinary!(0, ctx); } catch { threw = true; }
     check('FM9 export_preset(location) rejects a head with no body', threw);
   }
+
+  // get_preset(location=N): the STORED-preset WHOLE-DECODE path. Synthesize a
+  // CRC-valid single-chunk stored dump carrying a known preset name + scene
+  // names, replay it on the fn=0x03 request, and assert the reader runs the full
+  // collect -> flatten -> decodeGen3PresetDump -> snapshotFromDecoded pipeline and
+  // surfaces `whole_preset`. (The decode itself is exhaustively cross-validated in
+  // verify-gen3-preset-body.ts; this covers the reader wiring + snapshot mapping.)
+  function buildSyntheticStoredDump(model: number, presetName: string, sceneNames: string[]): number[][] {
+    // Decompressed body: scene names live at body[4 + i*32] (32 bytes each).
+    const body = new Uint8Array(0x300);
+    for (let i = 0; i < 8 && i < sceneNames.length; i++) {
+      const s = sceneNames[i];
+      for (let j = 0; j < s.length && j < 31; j++) body[4 + i * 32 + j] = s.charCodeAt(j);
+    }
+    const comp = huffmanCompress(body);
+    // raw_patch: 1 chunk = 1024 words = 2048 bytes. Header: CRC@0x04, name@0x08,
+    // decompSize@0x48, compSize@0x4A, Huffman body@0x4C.
+    const rawPatch = new Uint8Array(2048);
+    for (let j = 0; j < presetName.length && j < 31; j++) rawPatch[0x08 + j] = presetName.charCodeAt(j);
+    rawPatch[0x48] = body.length & 0xff; rawPatch[0x49] = (body.length >> 8) & 0xff;
+    rawPatch[0x4a] = comp.length & 0xff; rawPatch[0x4b] = (comp.length >> 8) & 0xff;
+    rawPatch.set(comp, 0x4c);
+    const crc = computeRawPatchCrc(rawPatch);
+    rawPatch[0x04] = crc & 0xff; rawPatch[0x05] = (crc >> 8) & 0xff;
+    const packed = encode16to3(rawPatch); // 1024 words -> 3072 packed bytes
+    // chunk payload = 2-byte discriminator + 3072 packed = 3074 (CHUNK_PAYLOAD_LEN).
+    const chunkPayload = [0x00, 0x00, ...Array.from(packed)];
+    return [
+      broadcastFrame(model, 0x77, [0x00, 0x01, 0x00, 0x40, 0x00]),
+      broadcastFrame(model, 0x78, chunkPayload),
+      broadcastFrame(model, 0x79, [0x00, 0x00, 0x00]),
+    ];
+  }
+  {
+    type GetPresetFn = NonNullable<DeviceDescriptor['reader']['getPreset']>;
+    const sceneNames = ['Clean', 'Crunch', 'Lead', 'Solo', 'Ambient', 'Dry', 'Bass', 'Verb'];
+    const frames = buildSyntheticStoredDump(0x12, 'Mock Tone', sceneNames);
+    const conn = mockConnect({ responder: (out) => (out[5] === 0x03 ? frames : []), ackLatencyMs: 1 });
+    const ctx = { conn, descriptor: FM9_DESCRIPTOR } as unknown as Parameters<GetPresetFn>[0];
+    let snap: Awaited<ReturnType<GetPresetFn>> | undefined;
+    let err: unknown;
+    try { snap = await FM9_DESCRIPTOR.reader!.getPreset!(ctx, { location: 5 }); } catch (e) { err = e; }
+    check('FM9 get_preset(location) returns a snapshot', snap !== undefined, String(err));
+    check('FM9 get_preset(location) name == decoded preset name', snap?.name === 'Mock Tone', String(snap?.name));
+    check('FM9 get_preset(location) populates whole_preset', snap?.whole_preset !== undefined);
+    check('FM9 get_preset(location) whole_preset.source = stored-dump', snap?.whole_preset?.source === 'stored-dump', String(snap?.whole_preset?.source));
+    check('FM9 get_preset(location) reports crc_valid', snap?.whole_preset?.crc_valid === true);
+    check('FM9 get_preset(location) decodes scene names', snap?.whole_preset?.scene_names?.[1] === 'Crunch', JSON.stringify(snap?.whole_preset?.scene_names?.slice(0, 2)));
+    check('FM9 get_preset(location) scenes summary carries 8 scenes', snap?.scenes?.length === 8, String(snap?.scenes?.length));
+    check('FM9 get_preset(location) model = FM9', snap?.whole_preset?.model === 'FM9', String(snap?.whole_preset?.model));
+  }
+  {
+    type GetPresetFn = NonNullable<DeviceDescriptor['reader']['getPreset']>;
+    const conn = mockConnect({ responder: () => [], ackLatencyMs: 1 });
+    const ctx = { conn, descriptor: FM9_DESCRIPTOR } as unknown as Parameters<GetPresetFn>[0];
+    let threw = false;
+    try { await FM9_DESCRIPTOR.reader!.getPreset!(ctx, { location: -1 }); } catch { threw = true; }
+    check('FM9 get_preset(location=-1) rejects a negative location', threw);
+  }
 }
 
 await readerChecks();
@@ -1009,7 +1092,14 @@ async function setEchoChecks(): Promise<void> {
       const r = await desc.writer.setParam!(ctx, 'reverb', 'mix', 100, undefined, 1);
       check(`${desc.id} set_param(reverb.mix) no-echo → display_value = decode(100) (display units, not raw)`,
         r.display_value === schema.decode(100) && r.display_value !== 100, JSON.stringify(r.display_value));
-      check(`${desc.id} no-echo accept still acked`, r.acked === true);
+      // Honest 2-state: a silent timeout (sent, not rejected, no device echo) is
+      // NOT a confirmed write. Reporting it acked would be a wire-ack-not-audible
+      // false success. It must report acked:false with an "unverified" warning
+      // that is NOT a 0x64 rejection.
+      check(`${desc.id} no-echo accept → acked:false (sent, unconfirmed; not a false success)`, r.acked === false);
+      check(`${desc.id} no-echo accept → warning flags it unverified, not a 0x64 rejection`,
+        /unverified|did not confirm/i.test(r.warning ?? '') && !/MULTIPURPOSE_RESPONSE/i.test(r.warning ?? ''),
+        JSON.stringify(r.warning));
     }
   }
 }
@@ -1023,52 +1113,39 @@ await setEchoChecks();
 // resolve `resolved`; a valid
 // name WITHOUT a captured raw-id stays `capture_pending` (gated, no untested
 // byte). More entries land as the getBlockString sweep extends the table.
-console.log('\nC10: enum set-by-name resolver (BK-093 write leg):');
+console.log('\nC10: enum set-by-name resolver (name → read-roster ordinal):');
 {
-  // The shipped table carries the captured REVERB_TYPE + FUZZ_TYPE points.
-  check('GEN3_ENUM_ORDINAL_TO_RAW_ID carries captured REVERB_TYPE + FUZZ_TYPE points',
-    GEN3_ENUM_ORDINAL_TO_RAW_ID.REVERB_TYPE?.[16] === 524
-      && GEN3_ENUM_ORDINAL_TO_RAW_ID.REVERB_TYPE?.[45] === 529
-      && GEN3_ENUM_ORDINAL_TO_RAW_ID.FUZZ_TYPE?.[15] === 523,
-    JSON.stringify(GEN3_ENUM_ORDINAL_TO_RAW_ID));
-
-  // name → ordinal is fully decoded offline (case/whitespace tolerant).
+  // name → ordinal is fully decoded offline (case/whitespace tolerant). The
+  // ordinal IS the float32 set value — no raw-id hop.
   const ord = resolveGen3EnumOrdinal('REVERB_TYPE', 'spring,  medium');
   check('resolveGen3EnumOrdinal(REVERB_TYPE, "spring,  medium") → ordinal 16 (tolerant)',
     'ordinal' in ord && ord.ordinal === 16, JSON.stringify(ord));
 
-  // A captured REVERB name resolves to its hardware-confirmed raw-id.
-  const resolvedShipped = resolveGen3EnumNameToRawId('REVERB_TYPE', 'Spring, Medium');
-  check('resolveGen3EnumNameToRawId(REVERB_TYPE, "Spring, Medium") → resolved raw-id 524 (shipped table)',
-    resolvedShipped.status === 'resolved' && resolvedShipped.rawId === 524, JSON.stringify(resolvedShipped));
+  // Reversed word order resolves too ("Music Hall" → the canonical "Hall, Music").
+  const music = resolveGen3EnumOrdinal('REVERB_TYPE', 'Music Hall');
+  check('resolveGen3EnumOrdinal(REVERB_TYPE, "Music Hall") → ordinal 45',
+    'ordinal' in music && music.ordinal === 45, JSON.stringify(music));
 
-  // FUZZ_TYPE: Blues OD resolves to its capture-confirmed raw-id 523.
-  const resolvedBluesOd = resolveGen3EnumNameToRawId('FUZZ_TYPE', 'Blues OD');
-  check('resolveGen3EnumNameToRawId(FUZZ_TYPE, "Blues OD") → resolved raw-id 523 (FM9 capture 3)',
-    resolvedBluesOd.status === 'resolved' && resolvedBluesOd.rawId === 523, JSON.stringify(resolvedBluesOd));
+  // FUZZ_TYPE: Blues OD resolves to ordinal 15 (the set value).
+  const bluesOd = resolveGen3EnumOrdinal('FUZZ_TYPE', 'Blues OD');
+  check('resolveGen3EnumOrdinal(FUZZ_TYPE, "Blues OD") → ordinal 15',
+    'ordinal' in bluesOd && bluesOd.ordinal === 15, JSON.stringify(bluesOd));
 
-  // A valid name WITHOUT a captured raw-id stays gated.
-  const pending = resolveGen3EnumNameToRawId('REVERB_TYPE', 'Room, Small');
-  check('resolveGen3EnumNameToRawId(REVERB_TYPE, "Room, Small") → capture_pending (uncaptured, gated)',
-    pending.status === 'capture_pending' && pending.ordinal === 0, JSON.stringify(pending));
+  // Every valid name now resolves (no capture gate): "Room, Small" → ordinal 0.
+  const roomSmall = resolveGen3EnumOrdinal('REVERB_TYPE', 'Room, Small');
+  check('resolveGen3EnumOrdinal(REVERB_TYPE, "Room, Small") → ordinal 0 (no longer gated)',
+    'ordinal' in roomSmall && roomSmall.ordinal === 0, JSON.stringify(roomSmall));
 
-  // Unknown name → unknown_name with suggestions (no false ordinal).
-  const unknown = resolveGen3EnumNameToRawId('REVERB_TYPE', 'Not A Real Reverb');
-  check('resolveGen3EnumNameToRawId(REVERB_TYPE, bogus) → unknown_name with suggestions',
-    unknown.status === 'unknown_name' && unknown.suggestions.length > 0, JSON.stringify(unknown.status));
+  // Unknown name → undefined ordinal with suggestions (no false ordinal).
+  const unknown = resolveGen3EnumOrdinal('REVERB_TYPE', 'Not A Real Reverb');
+  check('resolveGen3EnumOrdinal(REVERB_TYPE, bogus) → undefined ordinal + suggestions',
+    'ordinal' in unknown && unknown.ordinal === undefined && unknown.suggestions.length > 0,
+    JSON.stringify('ordinal' in unknown ? unknown.ordinal : unknown));
 
-  // Non-enum param → no_enum.
-  const noEnum = resolveGen3EnumNameToRawId('REVERB_MIX', '50');
-  check('resolveGen3EnumNameToRawId(REVERB_MIX, ...) → no_enum (continuous param)',
-    noEnum.status === 'no_enum', JSON.stringify(noEnum.status));
-
-  // Drop-in proof: a populated table flips the same lookup to `resolved`
-  // with the captured raw-id (this is exactly what the sweep will provide).
-  const populated = { REVERB_TYPE: { 16: 524 } };
-  const resolved = resolveGen3EnumNameToRawId('REVERB_TYPE', 'Spring, Medium', populated);
-  check('resolveGen3EnumNameToRawId(..., populatedTable) → resolved with raw-id 524 (drop-in proof)',
-    resolved.status === 'resolved' && resolved.rawId === 524 && resolved.ordinal === 16,
-    JSON.stringify(resolved));
+  // Non-enum param → noEnum.
+  const noEnum = resolveGen3EnumOrdinal('REVERB_MIX', '50');
+  check('resolveGen3EnumOrdinal(REVERB_MIX, ...) → noEnum (continuous param)',
+    'noEnum' in noEnum, JSON.stringify(noEnum));
 }
 
 console.log('');

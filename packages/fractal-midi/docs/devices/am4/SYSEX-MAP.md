@@ -1315,15 +1315,26 @@ All in `src/protocol/params.ts`  block under the `amp.cab*` /
 
 - Cab 1 / Cab 2 Position knobs use a bipolar -10..10 wire format
   (no existing unit fits).
-- Cab 1 / Cab 2 Low Cut store Hz as `wire/1000` (44.4 Hz → wire
-  0.0444), unlike the Master Low Cut (raw Hz). Likely log-Hz or
-  kHz storage convention.
-- ~20 enum dropdowns (Cab Mode, Cab IR/Mic IDs, Slope dB/Oct,
-  Bypass Modes, Room Shape, etc.) need enum tables built.
-- LF/HF Damping ambiguity (three pidHighs share value 8.0) needs
-  a single-knob wiggle to disambiguate.
+- ~~Cab 1 / Cab 2 Low Cut store Hz as `wire/1000`~~ RESOLVED
+  2026-06-09: the `wire/1000` observation was a label misjoin. The
+  corrected cache walk shows pidHigh `0x1c` (where wire 0.0444 was
+  captured) is a percent register (raw 0..1, scale 100), not a low
+  cut; the true Cab 1/2 Low Cut registers (`0x35`/`0x36`) are raw Hz
+  20..200, log10 taper.
+- ~~enum dropdowns need enum tables built~~ RESOLVED 2026-06-09: the
+  zero-resync cache walk supplies device-true rosters; Cab Mode,
+  IR Length, Slope dB/Oct, Room Shape, Mic Preamp Type, DynaCab
+  cab/mic and the Spkr Imp Curve roster are now registered.
+- LF/HF Damping ambiguity (three pidHighs share value 8.0): the
+  cache walk gives both `0x30`/`0x31` knob-shaped records (0..10,
+  scale 10), registered accordingly; a single-knob wiggle would
+  still confirm which is LF vs HF.
 
-Full audit report: `docs/audit-output/amp-cabinet.md`.
+Full audit report: `docs/audit-output/amp-cabinet.md`. 2026-06-09:
+the cabinet bank's units/ranges/rosters were corrected wholesale
+from the solved effectDefinitions cache walk; the audit-era ranges
+in this section are historical capture notes, the catalog in
+`src/am4/params.ts` is authoritative.
 
 ### Block prefix decision
 

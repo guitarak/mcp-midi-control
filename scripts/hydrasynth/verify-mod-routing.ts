@@ -113,6 +113,15 @@ expect('macro target registered', macros?.params['macro1target1'] !== undefined,
 expect('macro target decode', macros?.params['macro1target1']?.decode(0x02 * 128 + 0x28), 'Filt 1 Cutoff');
 expect('macro target encode', macros?.params['macro1target1']?.encode('Filt 1 Cutoff'), 0x02 * 128 + 0x28);
 expect('macro depth registered', macros?.params['macro1depth1'] !== undefined, true);
+// Button Value: the per-destination field the macro's Control BUTTON
+// applies when pressed (NOT a sweep start — the destination page has
+// exactly Destination / Button Value / Depth, ASM manual p. 69-71).
+// set_macro_route initializes it to 0 on create so an uninitialized
+// -128 can't slam the destination on a button press.
+expect('macro buttonvalue registered', macros?.params['macro1buttonvalue1'] !== undefined, true);
+expect('macro buttonvalue slot2 registered', macros?.params['macro1buttonvalue2'] !== undefined, true);
+expect('enc macro buttonvalue 0 -> center', encWire('macro1buttonvalue1', 0), 4096);
+expect('enc macro buttonvalue -128 -> 0', encWire('macro1buttonvalue2', -128), 0);
 // descriptor advertises the routing capabilities
 expect('cap has_mod_matrix', HYDRASYNTH_DESCRIPTOR.capabilities.has_mod_matrix, true);
 expect('cap mod_matrix_slots', HYDRASYNTH_DESCRIPTOR.capabilities.mod_matrix_slots, 32);

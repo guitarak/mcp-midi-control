@@ -167,10 +167,6 @@ export const AM4_DESCRIPTOR: DeviceDescriptor = {
     channel_blocks: ['amp', 'drive', 'reverb', 'delay'],
     preset_location_format: /^[A-Z]0?[1-4]$/,
     supports_save: true,
-    // supports_factory_restore intentionally omitted (2026-05-28).
-    // restore_defaults was removed from the core tool surface (factory-
-    // bank .syx not bundled in the release ZIP); the capability stays
-    // unadvertised until the tool ships again. Property is optional.
     supports_lineage: true,
     // atomic_read=true: the fn 0x1F wire primitive
     // (`readAllParams` in shared/readOps.ts) returns a per-block u16

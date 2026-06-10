@@ -7,7 +7,7 @@ verified_on:
   - fm9-fw-11.00
 firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-gen3-enum-label-septet-stream
-relates_to: [iii-byte-stream-septet-pack-8to7, gen3-fn1f-poll-block-bulk-read, gen3-enum-setecho-rawid-name]
+relates_to: [iii-byte-stream-septet-pack-8to7, gen3-fn1f-poll-block-bulk-read, gen3-fn01-set-float32-ordinal]
 consumed_in: []
 ---
 
@@ -37,7 +37,7 @@ labels(frame):                                   # frame = full F0..F7
 |---|---|
 | `0x01:0x2e` | a param's full value LIST (positional 32-char fields) — dumped when its Type dropdown opens; in the panel-open capture this was the cab IR-picker list |
 | `0x01:0x1a` | one param's CURRENT-value label (getParameterInfo septet tail) — e.g. amp "FAS Bass"/"BASSGUY" |
-| `0x01:0x09` | a typed-SET response: the SET value's name (see [[gen3-enum-setecho-rawid-name]] for the {raw-id → name} pairing) |
+| `0x01:0x09` | a typed-SET response: the SET value's name (see [[gen3-fn01-set-float32-ordinal]] — the SET value is float32(ordinal)) |
 | `0x01:0x2a` | cab/IR browser list (capture3: "AMPEG BASS", "SVT 4X10+subkick", …) |
 | `0x01:0x1f` | controller / modifier source names ("PEDAL 1", "FC 1 PEDAL 1", …) |
 | `0x01:0x01` | block instance / category names ("Reverb 1", "REV") — structural, not enum values |
@@ -62,7 +62,7 @@ session notes.
   format).
 - Amp model names appear via `sub=0x1a` (current value) but the amp SET
   echo (`sub=0x09`) is numeric, not a name — see
-  [[gen3-enum-setecho-rawid-name]].
+  [[gen3-fn01-set-float32-ordinal]].
 - N=1 axis (FM9 only).
 
 ## Refinement history

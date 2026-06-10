@@ -25,15 +25,14 @@ export type { Unit, Param } from './params.js';
 export { resolveEnumValues, resolveEffectTypeEnum, enumOverlayStats } from './enumOverlay.js';
 export type { EnumOverlayEntry, EnumProvenance } from './enumOverlay.js';
 
-// Gen-3 enum set-by-name resolver (BK-093 write leg), capture-pending
-// scaffold. name → ordinal (offline) → raw-id (empty table until the FM9
-// getBlockString sweep lands). See `enumRawId.ts`.
+// Gen-3 enum set-by-name resolver: name → read-roster ORDINAL (the float32(ordinal)
+// set value). The ordinal IS the set value; there is no raw-id space. See `enumRawId.ts`.
 export {
   resolveGen3EnumOrdinal,
-  resolveGen3EnumNameToRawId,
-  GEN3_ENUM_ORDINAL_TO_RAW_ID,
+  normalizeLabel,
+  enumLabelForms,
 } from './enumRawId.js';
-export type { Gen3EnumRawIdTable, Gen3EnumRawIdResolution } from './enumRawId.js';
+export { GEN3_READ_ROSTERS, mergeGen3EnumOverrides } from './gen3ReadRosters.js';
 
 // Codec — wire-byte builders + parsers. Function-code constants
 // re-exported for callers building custom envelopes.
@@ -57,8 +56,11 @@ export {
   pack5Septet32,
   unpack5Septet32,
   decode5SeptetFloat32,
+  encode5SeptetFloat32,
+  SUB_ACTION_SET_CONTINUOUS,
   parseGen3SetValueEcho,
   buildSetParameter,
+  buildSetParameterContinuous,
   buildGetParameter,
   buildSetParameterBypass,
   isSetGetParameterResponse,
@@ -69,9 +71,25 @@ export {
   buildSetGridRouting,
   ROUTING_OP_CONNECT,
   ROUTING_OP_DISCONNECT,
+  SUB_ACTION_CLEAR_BLOCK,
+  SUB_ACTION_CLEAR_BLOCK_COMPANION,
+  buildClearBlock,
+  buildClearBlockCompanion,
+  SUB_ACTION_SET_PRESET_NAME,
+  SUB_ACTION_SET_SCENE_NAME,
+  buildRenamePreset,
+  buildSetSceneName,
+  buildClearAllSceneNames,
+  FN_SCENE_BLOB_HEADER,
+  FN_SCENE_BLOB_CHECKSUM,
+  buildSceneBlobHeader,
+  buildSceneBlobChecksum,
+  xorChecksum32Words,
   buildSetPresetName,
   buildStorePreset,
   buildSwitchPresetPC,
+  buildSwitchPresetSysEx,
+  SUB_ACTION_SWITCH_PRESET,
   buildSetBypass,
   buildGetBypass,
   buildSetChannel,

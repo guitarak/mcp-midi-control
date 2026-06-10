@@ -47,18 +47,20 @@ hash on receive; mismatch causes fn 0x79 NACK 0x05.
 - **DO NOT** confuse with [[xor-7f-envelope-checksum]] (universal
   Fractal envelope checksum across AM4 / II / III, per-envelope,
   7-bit mask).
-- **DO NOT** assume this generalizes to III without verification — III
-  hash function transfer is a candidate but not yet confirmed (see
-  synthesis pass 2026-05-22 §1b).
-
 ## Where it does NOT apply
 
 - AM4 — uses [[xor-7f-envelope-checksum]].
-- Axe-Fx III — transfer candidate. III store-preset emitter
-  `FUN_140337060` walks a descriptor table at `0x1407ab2f0` with
-  byte-count accumulation similar to II's `FUN_00513184`; the III hash
-  is reachable via `DumpAxeEditIIIFooterHash.java` (clone of II script,
-  not yet run).
+- ~~Axe-Fx III, transfer candidate.~~ TRANSFERRED (2026-06-09): the
+  gen-3 fn 0x79 footer carries the same 16-bit XOR-fold of the body
+  words (validated by Axe-Edit III's own receive path, which XOR-folds
+  the de-framed body and rejects on mismatch; and by
+  `packages/fractal-modern/src/presetHuffman.ts` `computeRawPatchXor`
+  across III + FM9 factory presets). The III store flow computes NO
+  additional editor-side hash; it forwards the `.syx` body verbatim and
+  patches only the 0x77 header. Note the earlier pointer at emitter
+  `FUN_140337060` / table `0x1407ab2f0` was a LOAD_PRESET request, not
+  the store path. The gen-3 envelope XOR-fold is a separate layer from
+  the inner raw-patch CRC that `presetHuffman.ts` also validates.
 
 ## Verification path
 
@@ -81,3 +83,9 @@ verified against Q9.04 captures (firmware-revision axis).
   stale class-1 drift, identical to the model-byte error already
   corrected upstream. Fixed: the envelope checksum is universal across
   AM4 / II / III, not AM4-only.
+- 2026-06-09: III transfer CONFIRMED. The III preset-binary descriptor
+  tables are byte-identical to the II's record for record, the receiver
+  validates the 0x79 footer as a 16-bit XOR-fold of the body words, and
+  the store flow holds no second editor-computed hash. The "DO NOT
+  assume this generalizes to III" caveat is retired; the gen-3 footer
+  XOR was already shipping in `presetHuffman.ts`.

@@ -678,4 +678,33 @@ export const AXE_FX_II_CASES: AgentRegressionCase[] = [
   // array (where "verified" lives) is never surfaced in the JSON
   // response. The X/Y channel spec shape is already validated by
   // axefx2-bk058-xy-channel-apply (ampChannelKeys + ok:true).
+
+  // export_preset of an UNSAVED working buffer (0.3.0 edit-buffer dump) ──
+  {
+    id: 'axefx2-export-unsaved-buffer',
+    device: 'axe-fx-ii',
+
+    description: "0.3.0 regression guard: export_preset on the II dumps the TRUE edit buffer (fn 0x03 with the 0x7F 0x7F sentinel, hardware-confirmed 2026-06-10), so backing up an UNSAVED tone works in one call with NO save. The agent must apply (unsaved), export, and must NOT save anywhere (the user said don't save) — the old failure mode was a unilateral save_preset to 'enable' the backup.",
+    prompt: "On the Axe-Fx II, build me a quick crunch tone in the working buffer — one amp, gain 6 — but don't save it anywhere. Then back up that tone to a .syx file on disk.",
+    expectations: {
+      must_call: ['apply_preset', 'export_preset'],
+      // The user said don't save: the edit-buffer export needs no save,
+      // and a unilateral save_preset was the old failure mode.
+      must_not_call: ['save_preset'],
+      max_tools: 10,
+      max_repeats: { export_preset: 2 },
+      tool_call_validators: [
+        {
+          tool: 'apply_preset',
+          check: (args) => {
+            if ((args as { save_authorized?: boolean }).save_authorized === true) {
+              return "apply_preset called with save_authorized:true, but the user said don't save. The edit-buffer export needs no save.";
+            }
+            return true;
+          },
+        },
+      ],
+      max_wall_seconds: 240,
+    },
+  },
 ];

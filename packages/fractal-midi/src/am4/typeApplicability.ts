@@ -57,7 +57,6 @@ export const TYPE_APPLICABILITY: Readonly<Record<string, Applicability>> = {
   'amp.cab_mic_preamp_saturation': { always: false, gates: [{ typeEnum: 'CABINET_MODE', values: [0], source: 'page' }, { typeEnum: 'CABINET_MODE', values: [1], source: 'page' }] },
   'amp.cab_mic_preamp_treble': { always: false, gates: [{ typeEnum: 'CABINET_MODE', values: [0], source: 'page' }, { typeEnum: 'CABINET_MODE', values: [1], source: 'page' }] },
   'amp.cab_resonance': { always: true, gates: [] },
-  'amp.cathode_follower_compression': { always: true, gates: [] },
   'amp.harmonics': { always: true, gates: [] },
   'amp.cathode_resistance': { always: true, gates: [] },
   'amp.cathode_time_const': { always: true, gates: [] },

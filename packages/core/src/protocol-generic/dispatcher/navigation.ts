@@ -73,18 +73,21 @@ export async function executeSavePreset(args: {
   confirm_overwrite?: boolean;
 }): Promise<WriteResult & { device: string }> {
   const descriptor = requireDevice(args.port);
-  if (!descriptor.capabilities.supports_save) {
-    throw new DispatchError(
-      'capability_not_supported',
-      descriptor.display_name,
-      `save_preset is not a concept on ${descriptor.display_name}.`,
-    );
-  }
+  // Gate on IMPLEMENTATION presence, not the `supports_save` (= persistence is
+  // hardware-VERIFIED) flag. A device that implements writer.savePreset can
+  // save; whether persistence is hardware-confirmed is conveyed by the result's
+  // beta warning (writer.savePreset surfaces it), per the "ship evidence-backed,
+  // mark untested" policy. The store envelope being captured byte-exact (gen-3)
+  // is evidence; refusing the explicit, user-invoked save would withhold a
+  // working-untested capability. (Auto-save during navigation stays gated on
+  // supports_save in the safe-edit guard — silent unverified flash writes are a
+  // separate, stricter concern.)
   if (descriptor.writer.savePreset === undefined) {
     throw new DispatchError(
       'capability_not_supported',
       descriptor.display_name,
-      `save_preset is not implemented for ${descriptor.display_name} (descriptor missing writer.savePreset).`,
+      `save_preset is not a concept on ${descriptor.display_name} (no writer.savePreset; ` +
+        `its persistence envelope is not wired).`,
     );
   }
   const ctx = openCtx(descriptor);

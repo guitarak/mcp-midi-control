@@ -10,8 +10,8 @@
  *   - apply.ts (legacy `am4_apply_preset` / `_at` / `_setlist` tool bodies)
  *     imports them and registers the device-namespaced surface.
  *   - descriptor.ts (`AM4_DESCRIPTOR.writer.applyPreset` etc.) imports them
- *     so the unified `apply_preset` / `apply_setlist` / `restore_defaults`
- *     tools dispatch through the same executor.
+ *     so the unified `apply_preset` / `apply_setlist` tools dispatch
+ *     through the same executor.
  *
  * The legacy device-namespaced am4_apply_* tools and the unified surface
  * therefore share one executor, same validation rules, same wire output,

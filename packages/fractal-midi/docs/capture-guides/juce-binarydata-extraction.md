@@ -318,5 +318,4 @@ detect the ZIP. If found, run `scripts/extract-all-zips.ts <exe>`
 to slice every valid ZIP out (multi-EOCD aware). Inspect the
 resulting XML files for `<EditorControl>` entries. Result should
 be a near-complete display-label catalogue for the device, ready
-to wire into a per-device protocol package per the multi-repo
-architecture (`memory/project_multi_repo_architecture.md`).
+to wire into a per-device protocol package.

@@ -31,9 +31,9 @@ export const AXEFXGEN1_DESCRIPTOR: DeviceDescriptor = {
   // More specific than the II pattern — must register BEFORE axe-fx-ii.
   port_match: [{ pattern: /axe-?fx.*(?:ultra|standard)/i }],
   capabilities: {
-    // gen-1 has a fixed serial block layout (no grid), and is SET-only — there
-    // is no slot placement at all. 'linear' matches canonical_terms.slot
-    // ("effect block"); 'grid' was a stale default that implied row/col cells.
+    // gen-1 has a fixed serial block layout (no grid) with no slot placement
+    // at all. 'linear' matches canonical_terms.slot ("effect block"); 'grid'
+    // was a stale default that implied row/col cells.
     slot_model: 'linear',
     support_tier: 'community-beta',
     verification:

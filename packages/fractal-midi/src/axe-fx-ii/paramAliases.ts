@@ -45,6 +45,11 @@ import type { AxeFxIIBlock } from './blockTypes.js';
 export const PARAM_ALIASES_AXEFX2: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   AMP: {
     gain: 'input_drive',
+    // The amp preamp-gain knob is `input_drive` on the II, `gain` on AM4/III.
+    // Accept both foreign words so an agent that learned either vocabulary
+    // lands on the II's canonical `input_drive`. (`drive` is NOT a real II amp
+    // param — every `drive` param lives on other blocks: cab/chorus/delay/etc.)
+    drive: 'input_drive',
     master: 'master_volume',
     mid: 'middle',
   },

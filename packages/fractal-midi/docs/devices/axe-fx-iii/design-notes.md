@@ -105,7 +105,6 @@ capabilities: {
   scene_count: 8,              // III has 8 scenes per preset
   channel_names: ['A', 'B', 'C', 'D'],  // III restored 4 channels (II's X/Y outlier)
   supports_save: true,
-  supports_factory_restore: false,  // III spec is silent on factory restore
   supports_lineage: true,       // amp/cab/drive corpus may extend to III models
   has_scenes: true,
   has_per_scene_authoring: false,  // confirmed by III spec — switch-write-switch-back only

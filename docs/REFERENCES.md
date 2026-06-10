@@ -206,6 +206,18 @@ Working SysEx protocol reference, one file per device (in the codec
 package). Updated after every sniff/probe session. First stop when
 encoding a message to send.
 
+### `packages/fractal-midi/docs/research/cookbook/editor-cache-section-record-grammar.md`
+The fully decoded grammar of the Fractal editors' `effectDefinitions_*.cache`
+files. One device-synced cache file yields the device's complete parameter
+dictionary (ranges, defaults, steps, enum/model rosters) offline; this is the
+first evidence source to reach for before any wire capture. Decoder:
+`scripts/_research/parse-effectdefinitions-cache.ts`.
+
+### `packages/fractal-midi/docs/capture-guides/harvest-script.md`
+Community guide for `scripts/harvest-device-metadata.ts`, the one-command
+read-only device self-describe sweep (one JSON output file). The second
+community ask after the editor cache file, ahead of any targeted wire capture.
+
 ### `packages/core/src/fractal-shared/lineage/*-lineage.json`
 Model lineage dictionaries generated from the wiki scrape + Blocks Guide PDF
 by `scripts/extract-lineage.ts` and `scripts/extract-axe-fx-ii-lineage.ts`.

@@ -13,7 +13,7 @@
  *   - `layout.ts`    — set_block, set_bypass
  *   - `navigation.ts` — switch_preset, save_preset, switch_scene, rename,
  *                       scan_locations
- *   - `preset.ts`    — apply_preset, translate_preset (restore_defaults commented out)
+ *   - `preset.ts`    — apply_preset, translate_preset
  *   - `shared.ts`    — PORT_DESC + asText/asError + presetShape zod schemas
  *
  * The long AM4-specific behavioral guidance (RELATIVE-CHANGE DISCIPLINE,

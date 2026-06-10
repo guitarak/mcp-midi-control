@@ -33,7 +33,7 @@ export function registerNavigationTools(server: McpServer): void {
     description: [
       'Load a stored preset into the working buffer. Same effect as turning the device\'s preset knob.',
       'WARNING: discards unsaved working-buffer edits. The on_active_preset_edited gate refuses by default if the buffer is dirty; pass "discard" or "save_active_first" to override.',
-      '- Location format is per-device. See describe_device.capabilities.preset_location_format (AM4: A1..Z4; II: 1..16384; Hydra: A1..H8).',
+      '- Location format is per-device. See describe_device.capabilities.preset_location_format (AM4: A1..Z4; II: 1..16384; III/FM3/FM9: integer preset #; Hydra: A1..H8).',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
@@ -93,12 +93,12 @@ export function registerNavigationTools(server: McpServer): void {
       'Change the active scene within the current preset. Toggles per-scene bypass + channel state; the block layout stays the same.',
       '- Working-buffer scope only; the next preset load starts at its default scene.',
       '- Devices without scenes (Hydrasynth) refuse with a capability error.',
-      '- Scene range is per-device (AM4: 1..4; Axe-Fx II/III: 1..8).',
+      '- Scene range is per-device (AM4: 1..4; Axe-Fx II/III/FM3/FM9: 1..8).',
     ].join(' '),
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       scene: z.number().int().describe(
-        'Scene number (1-indexed). Range depends on the device, AM4: 1..4; Axe-Fx II: 1..8.',
+        'Scene number (1-indexed). Range depends on the device: AM4: 1..4; Axe-Fx II/III/FM3/FM9: 1..8.',
       ),
     },
   }, async ({ port, scene }) => {
@@ -149,7 +149,7 @@ export function registerNavigationTools(server: McpServer): void {
   // set_mod_route ----------------------------------------------------------
   server.registerTool('set_mod_route', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    description: 'Wire one modulation-matrix route by NAME on a synth with a mod matrix (e.g. Hydrasynth): picks a free slot and writes source + target + depth in one call (env-to-filter, velocity-to-brightness, LFO-to-pitch on an agent-built patch). source/target use the device\'s own labels (source e.g. "Env 2", "LFO 1", "Velocity"; target e.g. "Filt 1 Cutoff", "Osc 1 Pitch"); full lists: list_params({port, block:"modmatrix"}). depth is bipolar -128..+128 (0 = no modulation). Slot auto-allocation assumes a fresh/INIT patch; on a factory patch pass an explicit slot. CONFIRM BY EAR: the MOD MATRIX page may not redraw for a route set over MIDI, so verify by playing a note, not by the screen. Returns capability_not_supported on devices without a mod matrix.',
+    description: 'Wire one modulation-matrix route by NAME on a synth with a mod matrix (e.g. Hydrasynth): picks a free slot and writes source + target + depth in one call (env-to-filter, velocity-to-brightness, LFO-to-pitch on an agent-built patch). source/target use the device\'s own labels (source e.g. "Env 2", "LFO 1", "Velocity"; target e.g. "Filt 1 Cutoff", "Osc 1 Pitch"); full lists: list_params({port, block:"modmatrix"}). depth is bipolar -128..+128 (0 = no modulation). Slot auto-allocation assumes a fresh/INIT patch; on a factory patch pass an explicit slot. The MOD MATRIX front-panel page DOES redraw to show NRPN-set routes (live-verified), so confirm by screen or by ear. Returns capability_not_supported on devices without a mod matrix.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       source: z.union([z.string(), z.number()]).describe('Mod source name (e.g. "Env 2", "LFO 1", "Velocity") or its wire value.'),
@@ -168,17 +168,20 @@ export function registerNavigationTools(server: McpServer): void {
   // set_macro_route --------------------------------------------------------
   server.registerTool('set_macro_route', {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    description: 'Assign one of a performance Macro\'s (1-8) destinations by NAME on the Hydrasynth macro page (up to 8 destinations each); allocates a free slot and writes target + depth. After this, set_macro(macro, value) moves that destination; an unwired macro is silent. target uses the device\'s destination labels (e.g. "Filt 1 Cutoff", "Reverb Dry/Wet"), same list as set_mod_route; discover via list_params({port, block:"macros"}). depth is bipolar -128..+128. Auto-allocation assumes a fresh/INIT patch; pass an explicit slot on a factory patch. CONFIRM BY EAR: the front-panel macro page may not redraw for a destination set over MIDI; verify by turning the macro (set_macro) and listening. Returns capability_not_supported on devices without authorable macro destinations.',
+    description: 'Assign one of a performance Macro\'s (1-8) destinations by NAME on the Hydrasynth macro page (up to 8 each); allocates a free slot and writes target + depth + button value. A destination has exactly THREE fields: Destination, Button Value, Depth. There is NO sweep start/min; the knob sweeps the destination from the patch\'s programmed value by depth (bipolar -128..+128). button_value is what the macro\'s physical Control button applies when pressed; new destinations initialize it to 0 (the device otherwise leaves -128, which would slam the destination full-negative on a button press). After this, set_macro(macro, value) moves the destination; an unwired macro is silent. Target labels match set_mod_route; discover via list_params({port, block:"macros"}). Auto-allocation assumes a fresh/INIT patch; pass an explicit slot on a factory patch. CONFIRM BY EAR: the macro edit page may not redraw over MIDI (the MOD MATRIX page does). capability_not_supported on devices without authorable macros.',
     inputSchema: {
       port: z.string().describe(PORT_DESC),
       macro: z.number().int().min(1).max(8).describe('Macro number 1-8.'),
       target: z.union([z.string(), z.number()]).describe('Destination name (e.g. "Filt 1 Cutoff") or wire value.'),
       depth: z.number().min(-128).max(128).optional().describe('Bipolar depth -128..+128. Default 0.'),
       slot: z.number().int().min(1).max(8).optional().describe('Explicit destination slot 1-8 for this macro. Omit to auto-allocate.'),
+      button_value: z.number().min(-128).max(128).optional().describe(
+        "Value the macro's physical Control button applies when pressed (bipolar -128..+128; button behavior Toggle/Trigger/Hold/Reset is a device System Setup setting). NOT a sweep bound. Defaults to 0 on newly-created destinations; existing destinations keep their authored value unless this is passed.",
+      ),
     },
-  }, async ({ port, macro, target, depth, slot }) => {
+  }, async ({ port, macro, target, depth, slot, button_value }) => {
     try {
-      return asText(await dispatchSetMacroRoute({ port, macro, target, depth, slot }));
+      return asText(await dispatchSetMacroRoute({ port, macro, target, depth, slot, button_value }));
     } catch (err) {
       return asError(err);
     }

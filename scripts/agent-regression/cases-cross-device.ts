@@ -229,6 +229,50 @@ export const CROSS_DEVICE_CASES: AgentRegressionCase[] = [
   // ── Tool coverage gap closers ──────────────────────────────────────
 
   {
+    id: 'cross-translate-axefx3-location-to-am4',
+    device: 'axe-fx-iii',
+    description:
+      'translate_preset with source_location: porting a STORED gen-3 preset to AM4 should call ' +
+      'translate_preset with source_location (the one-call read+decode+translate path), NOT ask ' +
+      'the user to hand-build a source spec. The gen-3 mock answers fn=0x03 with a decodable dump.',
+    prompt:
+      "Port stored preset number 5 from my Axe-Fx III over to my AM4 using translate_preset. Just show me the translated result, don't apply it.",
+    expectations: {
+      must_call: ['translate_preset'],
+      max_tools: 8,
+      tool_call_validators: [{
+        tool: 'translate_preset',
+        check: (args, result) => {
+          if (args.source_location === undefined) {
+            return 'translate_preset should pass source_location to read the stored gen-3 preset, not require a hand-built source_spec.';
+          }
+          if (args.target_port !== 'am4' && args.target_port !== 'AM4') {
+            return `translate_preset target_port should be am4, got ${String(args.target_port)}.`;
+          }
+          if (result === undefined) return true;
+          // FIXTURE-GAP RE-SCOPE 2026-06-10: the gen-3 parityMock's
+          // fn=0x03 dump is deliberately SPARSE (scene names only, empty
+          // grid/block chain — parityMock.ts buildStoredPresetDump), so
+          // the decode correctly yields zero blocks and translate
+          // correctly reports ok:false with the explanatory
+          // "no translatable blocks" note. This case's job is the AGENT
+          // behavior (use source_location, target am4), so accept the
+          // sparse-source outcome; tighten back to ok:true when the mock
+          // fixture grows a real grid + amp block.
+          if (/"ok":\s*false/.test(result.slice(0, 80)) && !/no translatable blocks/.test(result)) {
+            return `translate_preset returned ok:false without the sparse-source note. Response head: ${result.slice(0, 300)}.`;
+          }
+          if (!/"port_summary"/.test(result)) {
+            return 'translate_preset response missing port_summary.';
+          }
+          return true;
+        },
+      }],
+      max_wall_seconds: 180,
+    },
+  },
+
+  {
     id: 'cross-am4-get-preset-state-anchor',
     device: 'am4',
 

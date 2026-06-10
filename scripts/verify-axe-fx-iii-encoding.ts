@@ -203,41 +203,37 @@ check('buildGetTempo()', buildGetTempo(),
 // below use checksums that re-derive against `fractalChecksum`.
 console.log('\nset_parameter / get_parameter (function 0x01, 🟢 SET / 🟡 GET):');
 
-// Reverb 1 = effect ID 66 = 0x42. paramId 0 = REVERB_TYPE per Ghidra
-// catalog. fn=0x01 envelope is 23 bytes:
+// Reverb 1 = effect ID 66 = 0x42. paramId 0 = REVERB_TYPE per Ghidra catalog.
+// fn=0x01 DISCRETE SET is 23 bytes; the value is a 5-septet float32 at pos 12
+// (NOT a packValue16 at pos 15), then FOUR trailing zeros:
 //   F0 00 01 74 10 01 [09 00] [eff_lo eff_hi] [pid_lo pid_hi]
-//   00 00 00 [v0 v1 v2] 00 00 00 [cs] F7
+//   [s0 s1 s2 s3 s4 = float32] 00 00 00 00 [cs] F7
+// buildSetParameter's `value` is the read-roster ordinal → float32(ordinal).
 //
-// buildSetParameter(66, 0, 0) — min value:
-//   F0 00 01 74 10 01 09 00 42 00 00 00 00 00 00 00 00 00 00 00 00 [cs] F7
-//   XOR (non-zero bytes): F0^01^74^10^01^09^42 = 0xDF → cs = 0x5F
-check('buildSetParameter(66, 0, 0) — Reverb 1, paramId 0, min',
+// buildSetParameter(66, 0, 0) — float32(0) = all zeros:
+check('buildSetParameter(66, 0, 0) — Reverb 1, paramId 0, ordinal 0',
   buildSetParameter(66, 0, 0),
-  'f000017410' + '01' + '0900' + '4200' + '0000' + '000000' + '000000' + '000000' + '5f' + 'f7');
+  'f000017410010900420000000000000000000000005ff7');
 
-// buildSetParameter(66, 0, 65534) — max value (packValue16 = [7e 7f 03]):
-//   XOR adds 7e^7f^03 = 0x02 → 0x5F ^ 0x02 = 0x5D
-check('buildSetParameter(66, 0, 65534) — Reverb 1, paramId 0, max',
+// buildSetParameter(66, 0, 65534) — float32(65534) = [00 00 00 7c 7f 3b 04 (overflow into 5th septet)]:
+check('buildSetParameter(66, 0, 65534) — Reverb 1, paramId 0, ordinal 65534',
   buildSetParameter(66, 0, 65534),
-  'f000017410' + '01' + '0900' + '4200' + '0000' + '000000' + '7e7f03' + '000000' + '5d' + 'f7');
+  'f00001741001090042000000007c7f3b040000000063f7');
 
-// buildSetParameter(66, 11, 32767) — packValue16 = [7f 7f 01]
-// XOR (non-zero): F0^01^74^10^01^09^42^0b^7f^7f^01 = 0x55
-check('buildSetParameter(66, 11, 32767) — Reverb 1, paramId 11, mid',
+// buildSetParameter(66, 11, 32767) — float32(32767):
+check('buildSetParameter(66, 11, 32767) — Reverb 1, paramId 11, ordinal 32767',
   buildSetParameter(66, 11, 32767),
-  'f000017410' + '01' + '0900' + '4200' + '0b00' + '000000' + '7f7f01' + '000000' + '55' + 'f7');
+  'f00001741001090042000b00007c7f37040000000064f7');
 
-// buildGetParameter(66, 0) — same shape as SET-min (value field zeroed):
+// buildGetParameter(66, 0) — value field zeroed (same as ordinal-0 SET):
 check('buildGetParameter(66, 0) — Reverb 1 query paramId 0',
   buildGetParameter(66, 0),
-  'f000017410' + '01' + '0900' + '4200' + '0000' + '000000' + '000000' + '000000' + '5f' + 'f7');
+  'f000017410010900420000000000000000000000005ff7');
 
-// buildSetParameterBypass(66, true) = buildSetParameter(66, 255, 1)
-// paramId 255 → encode14 [0x7F, 0x01]. value 1 → packValue16 [0x01, 0x00, 0x00].
-// XOR (non-zero): F0^01^74^10^01^09^42^7f^01^01 = 0x20
+// buildSetParameterBypass(66, true) = buildSetParameter(66, 255, 1) → float32(1.0):
 check('buildSetParameterBypass(66, true) — Reverb 1 bypass via fn=0x01 path',
   buildSetParameterBypass(66, true),
-  'f000017410' + '01' + '0900' + '4200' + '7f01' + '000000' + '010000' + '000000' + '20' + 'f7');
+  'f00001741001090042007f010000007c03000000005ef7');
 
 // ── Public-capture goldens (byte-exact, from docs/devices/axe-fx-iii/set-parameter-captures.md) ─────
 // These lock isSetGetParameterResponse + parseSetGetParameterResponse
@@ -253,7 +249,7 @@ checkEqual('isSetGetParameterResponse(FC-12 Drive 1 boost ON)',
 const parsed_d1on = parseSetGetParameterResponse(fc12_d1on);
 checkEqual('parse FC-12 D1on effectId', parsed_d1on.effectId, 58);
 checkEqual('parse FC-12 D1on paramId',  parsed_d1on.paramId, 40);
-checkEqual('parse FC-12 D1on value',    parsed_d1on.value, 508);
+checkEqual('parse FC-12 D1on value (float32 1.0)', parsed_d1on.value, 1);
 
 // Public forum capture, typed-input: Delay 1 TIME = 520
 const gab_typed_520 = [
@@ -265,7 +261,7 @@ checkEqual('isSetGetParameterResponse(forum-capture Delay TIME=520)',
 const parsed_gab520 = parseSetGetParameterResponse(gab_typed_520);
 checkEqual('parse forum-capture typed effectId', parsed_gab520.effectId, 70);
 checkEqual('parse forum-capture typed paramId',  parsed_gab520.paramId, 2);
-checkEqual('parse forum-capture typed value',    parsed_gab520.value, 520);
+checkEqual('parse forum-capture typed value (float32 8.0)', parsed_gab520.value, 8);
 
 // Public forum capture, mouse-drag: Delay 1 TIME = 503 (drag context at pos 12 to 14)
 const gab_drag_503 = [
@@ -277,7 +273,7 @@ checkEqual('isSetGetParameterResponse(forum-capture drag TIME=503)',
 const parsed_drag503 = parseSetGetParameterResponse(gab_drag_503);
 checkEqual('parse forum-capture drag effectId', parsed_drag503.effectId, 70);
 checkEqual('parse forum-capture drag paramId',  parsed_drag503.paramId, 2);
-checkEqual('parse forum-capture drag value',    parsed_drag503.value, 503);
+checkEqual('parse forum-capture drag value (float32 norm)', parsed_drag503.value, 0.4547407925128937);
 
 // STATE_BROADCAST (04 01) frame from passive sniff: paramId field is
 // zero by convention (the broadcast doesn't carry paramId; caller

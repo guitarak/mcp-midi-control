@@ -117,7 +117,7 @@ export async function dispatchSetModRoute(args: SetModRouteArgs): Promise<SetMod
     acked: true,
     info: `${alloc.reused ? 'Updated' : 'Created'} mod route in slot ${n}: ${srcLabel} -> ${tgtLabel} @ depth ${depth}. ` +
       `Slots are tracked per session assuming a fresh/INIT patch; on a factory patch with existing routes pass an explicit slot. ` +
-      `NRPN writes are fire-and-forget; confirm audibly on the device.`,
+      `NRPN writes are fire-and-forget; the MOD MATRIX front-panel page DOES redraw to show the route (live-verified) — confirm by screen or by ear.`,
   };
 }
 
@@ -127,6 +127,16 @@ export interface SetMacroRouteArgs {
   target: string | number;
   depth?: number;
   slot?: number;
+  /**
+   * The destination's Button Value: the value the macro's physical Control
+   * BUTTON applies when pressed (button behavior Toggle/Trigger/Hold/Reset
+   * is a System Setup setting). Bipolar -128..+128. NOT a sweep bound —
+   * the knob always sweeps the destination by `depth` from the patch's
+   * programmed value. Defaults to 0 on newly-created destinations (the
+   * device's own slot-1 default); existing slots keep their value unless
+   * this is passed.
+   */
+  button_value?: number;
 }
 
 export interface SetMacroRouteResult {
@@ -136,6 +146,7 @@ export interface SetMacroRouteResult {
   reused: boolean;
   target: string | number;
   depth: number;
+  button_value?: number;
   device: string;
   port: string;
   acked: boolean;
@@ -182,6 +193,21 @@ export async function dispatchSetMacroRoute(args: SetMacroRouteArgs): Promise<Se
   const s = alloc.slot;
   await executeSetParam({ port: args.port, block, name: `macro${args.macro}target${s}`, value: args.target });
   await executeSetParam({ port: args.port, block, name: `macro${args.macro}depth${s}`, value: depth });
+  // Button Value (the value the macro's Control BUTTON applies when
+  // pressed; ASM Owner's Manual "Mastering the Macros", p. 69-71). A
+  // macro destination has exactly THREE fields — Destination, Button
+  // Value, Depth — and no sweep-start/min: the knob sweeps the
+  // destination by `depth` from the patch's programmed value. The device
+  // leaves uninitialized Button Values at -128 on slots past the first,
+  // which would slam the destination full-negative on a button press, so
+  // newly-CREATED destinations are initialized to 0 (a button no-op,
+  // matching the device's own slot-1 default). Reused slots keep their
+  // authored value unless the caller passes button_value explicitly.
+  let buttonValue = args.button_value;
+  if (buttonValue === undefined && !alloc.reused) buttonValue = 0;
+  if (buttonValue !== undefined) {
+    await executeSetParam({ port: args.port, block, name: `macro${args.macro}buttonvalue${s}`, value: buttonValue });
+  }
 
   const tgtLabel = tgtSchema.decode(tgtWire);
   return {
@@ -191,17 +217,18 @@ export async function dispatchSetMacroRoute(args: SetMacroRouteArgs): Promise<Se
     reused: alloc.reused,
     target: tgtLabel,
     depth,
+    ...(buttonValue !== undefined ? { button_value: buttonValue } : {}),
     device: descriptor.display_name,
     port: args.port,
     acked: true,
-    info: `${alloc.reused ? 'Updated' : 'Created'} Macro ${args.macro} destination ${s}: -> ${tgtLabel} @ depth ${depth}. ` +
-      `set_macro(${args.macro}, value) drives this destination. This writes the destination target + the sweep END ` +
-      `(depth, bipolar -128..+128). NOTE: the macro destination also has a per-destination START (the bottom of the sweep ` +
-      `range), which this tool does NOT set yet — so a newly-created slot reads an uninitialized start, shown on the panel ` +
-      `as -128 for slots past the first. For a unipolar destination whose floor is 0 (cutoff, reverb mix, resonance) that ` +
-      `-128 clamps to the floor and the sweep still sounds correct (0 -> depth); for a bipolar destination, or when a ` +
-      `non-floor start is wanted, the start is wrong until set on the device. Slots tracked per session (fresh-patch ` +
-      `assumption); pass an explicit slot on a factory patch. acked=true means the NRPN bytes were SENT, not that the ` +
-      `device applied them — the front-panel macro page may not redraw until you page away and back. Confirm by ear.`,
+    info: `${alloc.reused ? 'Updated' : 'Created'} Macro ${args.macro} destination ${s}: -> ${tgtLabel} @ depth ${depth}` +
+      `${buttonValue !== undefined ? `, button value ${buttonValue}` : ''}. ` +
+      `set_macro(${args.macro}, value) drives this destination. A macro destination has exactly three fields: ` +
+      `Destination, Button Value, and Depth (bipolar -128..+128). The knob sweeps the destination from the patch's ` +
+      `programmed value by Depth; there is NO per-destination sweep start/min. Button Value is what the macro's ` +
+      `physical Control button applies when pressed${buttonValue !== undefined ? ` (initialized to 0 here = button no-op until deliberately authored; pass button_value to program it)` : ` (left as already authored on this slot; pass button_value to change it)`}. ` +
+      `Slots tracked per session (fresh-patch assumption); pass an explicit slot on a factory patch. acked=true means ` +
+      `the NRPN bytes were SENT, not that the device applied them — the front-panel macro edit page may not redraw ` +
+      `until you page away and back (the MOD MATRIX page does redraw). Confirm by ear.`,
   };
 }

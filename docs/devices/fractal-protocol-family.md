@@ -40,7 +40,7 @@ that turn a reuse into a silent corruption.
 | **Scenes** | 4 per preset | 8 per preset | 8 (III / FM3 / FM9), 4 (VP4) |
 | **Grid** | 4-slot serial | grid | freeform grid (III / FM3 / FM9), 4-slot serial (VP4) |
 | **paramId scope** | own | own | device-specific, NOT reusable across model bytes (FM3 +6.9%, FM9 +18.6%, VP4 +99.5% divergence from III) |
-| **Enum source** | editor layout XML | fn=0x28 dump | device-emitted fn=0x01 sub=0x1a / 0x2e septet stream |
+| **Enum source** | editor layout XML; editor `effectDefinitions` cache (hw-synced) | fn=0x28 dump | device-emitted fn=0x01 sub=0x1a / 0x2e septet stream; editor `effectDefinitions` cache (hw-synced) |
 
 **Confirmation legend:** `hw` = byte-verified against hardware. `capture` =
 byte-verified against a public or loopback capture, not against this
@@ -128,7 +128,15 @@ corpus under `packages/fractal-midi/docs/research/cookbook/`.
   sub=0x1a / 0x2e septet stream. The AM4 XML arrays are stale or missing on
   the III, and even III-editor-mined enum names are not guaranteed
   wire-correct for FM3 or FM9, whose paramId-dependent enum sets differ. See
-  `gen3-enum-label-septet-stream.md`.
+  `gen3-enum-label-septet-stream.md`. A fourth, hardware-anchored enum source
+  is the editor's hw-synced `effectDefinitions_*.cache`: its per-block model
+  rosters (amp/drive/reverb) extract by anchored name-walk and the record `id`
+  equals the catalog `paramId`. Validated device-true on FM9 (amp 331 @
+  ordinals 65/179/264, drive 86 @ 15/36, reverb 79 @ 16/45) and AM4 only; it
+  requires a real-device-synced cache (an un-synced editor writes roster-empty),
+  and it is a roster/enum source, NOT a reliable bulk param-range dictionary
+  (the float-record walk desyncs past ~20% of the section). See the editor-cache
+  lane in [`docs/RE-WORKFLOW.md`](../RE-WORKFLOW.md).
 
 - **G7: Hydrasynth is a different protocol entirely.** It is NRPN
   (`<NRPN_high> <NRPN_low> <data>`), with no Fractal envelope. Applying

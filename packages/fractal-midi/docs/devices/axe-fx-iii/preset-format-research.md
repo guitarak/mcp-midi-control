@@ -59,12 +59,60 @@ to forum posts so the chain of evidence is auditable.
    uploads, etc., function bytes probably 0x4N / 0x5N / 0x6N / 0x7N
    in a structured way.
 
-2. **Preset content is Huffman-compressed.** The data inside the
-   `0x78` frames is NOT a flat parameter table, community RE in
-   thread #159885 (Jul 2025) indicates the body is Huffman-packed.
-   This explains why a preset with a 120-parameter AMP block doesn't
-   take 120 × 4-channel × 4-byte = ~2KB just for the amp, the unused
-   defaults aren't stored at all, and what IS stored is compressed.
+2. **The preset is a SPARSE uncompressed uint16 CONTAINER with a plaintext
+   header. The param region (words 36+) encoding is UNDETERMINED.**
+   ⚠️ **REVISED 2026-06-07** (decode `scripts/_research/gen3-preset-layout-map.ts`,
+   384 III factory presets + FM9 152.syx; independently verified by a 3-lens
+   review workflow). The forum's blanket "body is Huffman-packed" claim is
+   **refuted for the outer container + header/name region**, but is **NOT
+   settled for the param region** — see the scope line below.
+
+   **Proven uncompressed (container + header):**
+   - The `0x78` body is **1024 uint16 words per chunk**, each word packed
+     3 bytes (`b0 | b1<<7 | b2<<14`), exactly as `fractal-modern/presetDump.ts`
+     reads it. Preset **names decode directly** (384/384) and the `0xAA55` magic
+     word is universal (384/384) — you cannot read ASCII names out of a Huffman
+     bitstream.
+   - **Per-chunk data density:** chunks 0–2 carry data (98/99/52%), chunk 3 ~2%,
+     **chunks 4–7 100% empty**, chunks 8–15 ~1.8%. A III preset uses ~2.5 of its
+     16 chunks; thirteen all-zero chunks is incompatible with whole-body
+     compression. The forum conflated **sparse storage** (only non-default
+     params stored — which its own "120-param amp doesn't take 2KB" reasoning
+     actually describes) with **compression**.
+
+   **⚠️ SCOPE — words 36+ are NOT shown to be plaintext.** The dense param/block
+   records (the part that matters for `save_preset`, and exactly what the
+   contributor BoodieTraps calls "compressed") are **undetermined**. Positive
+   evidence they are encoded/permuted, not raw: the FM9 152.syx is known to
+   contain amp "SV Bass 2" (read-leg ordinal 65), yet ordinals 65/179/264 appear
+   **0× as raw uint16 words** anywhere in it. So a Huffman/encoded substream in
+   words 36+ remains live, and the contributor's Huffman+CRC-`0xAA55` decode may
+   describe **this inner layer of the same file** (a layered format), not a
+   different artifact. Do NOT claim "whole-preset read needs no decompressor"
+   until words 36+ are positively shown plaintext.
+
+   **Decoded chunk-0 header skeleton (offline; III N=384, FM9 N=1 — header only;
+   FM3/VP4 unverified; words 36+ NOT mapped):**
+
+   | Word | Role (confidence) | Evidence |
+   |---|---|---|
+   | 0 | format/version discriminator — **NOT constant** (hypothesis) | III bimodal `0x13e`×180 / `0x13f`×204; FM9 `0x144` (N=1) |
+   | 1 | `0xAA55` magic (confirmed) | constant 384/384 |
+   | 2 | per-preset near-unique value — role unknown (checksum/hash/id?) | 383/384 distinct |
+   | 3 | `0x00` separator (confirmed) | constant 0 |
+   | 4–19 | preset name, 2 ASCII chars/word (lo then hi), space-padded `0x2020` (confirmed) | names decode 384/384 |
+   | 20–35 | zero pad (confirmed) | constant 0 |
+   | 36+ | per-preset param/block data — **encoding undetermined** | high variance; known ordinals absent as raw words |
+
+   **NEXT DECODE STEP (offline, III N=384, no hardware/contributor needed):**
+   differentially map words 36+. (a) Diff two factory presets that differ in one
+   known block and find where the `REVERB_TYPE=524` landmark lands. (b) Histogram
+   each word position in chunks 0–2 for fixed-stride record boundaries (the
+   AM4/II lineage uses 16-byte `ParamDescriptor` records). (c) Search all 384 for
+   known enum ordinals as raw / septet-split / 14-bit-packed — whichever makes an
+   ordinal appear at a stable offset IS the param encoding; if **none** do across
+   384, that is positive evidence of a compressed substream (which would confirm
+   the contributor's claim and resolve the scope question above).
 
 3. **The preset SysEx format is separate from the realtime SysEx.**
    Forum thread #159885 (Jul 2025) explicitly:
@@ -159,12 +207,15 @@ factory-bank walk):
 - Each body frame is **3082 bytes** total
 - Standard 5-byte SysEx prefix (`F0 00 01 74 10`) + `0x78` function
   byte + payload + checksum + `F7`
-- 10 bytes of overhead per frame → **3072 data bytes per frame**
-- The 3072-byte payload is split into 24× 128-byte chunks
-- The first 128-byte chunk of body frame 0 contains "global preset
-  info", preset name, presumably tempo, etc.
-- Subsequent chunks contain block data
-- **Content is Huffman-compressed**
+- 8 bytes of overhead per frame → **3074-byte payload**
+- ⚠️ **CORRECTED 2026-06-07 (see point 2):** the payload is NOT "24× 128-byte
+  chunks". It is a **2-byte chunk discriminator + 1024 uint16 words packed
+  3 bytes/word** (`b0 | b1<<7 | b2<<14`), per `fractal-modern/presetDump.ts`.
+- The first chunk holds global preset info + the preset name (words 0–35);
+  subsequent words/chunks hold block data.
+- ⚠️ **The "content is Huffman-compressed" line is SUPERSEDED** — the container
+  + header are uncompressed plain uint16; only the param region (words 36+) is
+  undetermined and *may* carry an encoded/compressed substream. See point 2.
 
 Body frame 0 starts with the preset name field at offset 9 of payload
 (`0x78 00 08` header + name + zeros). The 32-char preset name is
@@ -172,16 +223,11 @@ encoded with **MIDI 7-bit packing**: each character can split across
 2 bytes because MIDI strips the high bit of every byte to keep the
 "control byte" reserved for `F0`/`F7`.
 
-A "Spy Guitar" worked example surfaced in community RE, showing the
-encoding pattern:
-```
-S = 0x53                  (53)
-p = 0x70 ← bytes 60 01    (shift-assemble: 0x60 | (0x01<<7) = 0xE0 wrong)
-y = 0x79                  (79)
-```
-
-The encoding wasn't fully cracked in the thread; further decoding is
-ours to do, paired against the factory-bank ground truth.
+⚠️ **CRACKED 2026-06-07 (supersedes the forum's "not fully cracked").** The
+name is 2 ASCII chars per 16-bit word, **low byte then high byte**, in words
+4–19 of chunk 0; `extractPresetName` in `fractal-modern/presetDump.ts` decodes
+it across all 384 III factory presets and the FM9 export. The forum's
+"Spy Guitar" puzzle was the same lo/hi-per-word scheme, unrecognized.
 
 ---
 
@@ -249,7 +295,9 @@ content-hash field.
 
 1. **`save_preset` for III is NOT a single-function envelope.** Any
    "ship STORE_PRESET" path requires:
-   - Decoding the Huffman packing inside the `0x78` frames (HARD)
+   - Decoding the param-region (words 36+) encoding inside the `0x78` frames
+     (the container + header are already decoded; this inner region is the
+     remaining work — see point 2; it may be an encoded/compressed substream)
    - Or building a "write the entire .syx as the user provides it"
      tool (passthrough); user-friendliness suffers
    - Or sniffing AxeEdit III's save sequence and replicating it

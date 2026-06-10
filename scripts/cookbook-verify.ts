@@ -680,6 +680,76 @@ function caseXorFoldHash(): string | null {
   return null;
 }
 
+function caseEditorCacheSectionRecordGrammar(): string | null {
+  // Synthetic effectDefinitions cache slice exercising the full record
+  // grammar: one section header, one float record, one enum record.
+  // Grammar per the cookbook entry: section = [u32 tag][u32 count];
+  // record = [u16 id][u16 tc][u16 pad=0][f32 min][f32 max][f32 scale]
+  // [f32 step] + enumTail(u32 count + LP strings + u32 x + u16 0) or
+  // floatTail(u32 t1 + u32 t2 + u16 0). Values mirror the FM9 REVERB
+  // hardware anchors (paramId 11 = 0.1..100 step 0.02; type enum at 10).
+  const parts: Buffer[] = [];
+  const u16b = (v: number) => { const b = Buffer.alloc(2); b.writeUInt16LE(v); return b; };
+  const u32b = (v: number) => { const b = Buffer.alloc(4); b.writeUInt32LE(v); return b; };
+  const f32b = (v: number) => { const b = Buffer.alloc(4); b.writeFloatLE(v); return b; };
+  const lp = (s: string) => Buffer.concat([u32b(s.length), Buffer.from(s, 'ascii')]);
+  parts.push(u32b(12), u32b(2)); // section tag 12 (REVERB), 2 records
+  // enum record: id=10 tc=0x010, (min,max,scale,step)=(0,1,0,0), 2 values, x=0x8000
+  parts.push(u16b(10), u16b(0x010), u16b(0), f32b(0), f32b(1), f32b(0), f32b(0),
+    u32b(2), lp('Small Room'), lp('Medium Spring'), u32b(0x8000), u16b(0));
+  // float record: id=11 tc=0x332, (0.1, 100, 1, 0.02), tail (0, 1, 0)
+  parts.push(u16b(11), u16b(0x332), u16b(0), f32b(0.1), f32b(100), f32b(1), f32b(0.02),
+    u32b(0), u32b(1), u16b(0));
+  const buf = Buffer.concat(parts);
+
+  // Strict walk (no resync): mirrors parse-effectdefinitions-cache.ts logic.
+  let off = 0;
+  const tag = buf.readUInt32LE(off); const count = buf.readUInt32LE(off + 4); off += 8;
+  if (tag !== 12 || count !== 2) return `section header parse failed: tag=${tag} count=${count}`;
+  const recs: Array<{ id: number; tc: number; kind: string; values?: string[]; min?: number; max?: number; step?: number }> = [];
+  for (let i = 0; i < count; i++) {
+    const id = buf.readUInt16LE(off); const tc = buf.readUInt16LE(off + 2);
+    if (buf.readUInt16LE(off + 4) !== 0) return `record ${i}: pad != 0`;
+    const min = buf.readFloatLE(off + 6); const max = buf.readFloatLE(off + 10);
+    const step = buf.readFloatLE(off + 18);
+    // enum probe: u32 count + LP strings parsing cleanly
+    let p = off + 22;
+    const c = buf.readUInt32LE(p);
+    let isEnum = c >= 1 && c <= 4096;
+    const values: string[] = [];
+    if (isEnum) {
+      let q = p + 4;
+      for (let k = 0; k < c; k++) {
+        if (q + 4 > buf.length) { isEnum = false; break; }
+        const len = buf.readUInt32LE(q);
+        if (len < 1 || len > 64 || q + 4 + len > buf.length) { isEnum = false; break; }
+        values.push(buf.toString('ascii', q + 4, q + 4 + len));
+        q = q + 4 + len;
+      }
+      if (isEnum) {
+        if (buf.readUInt16LE(q + 4) !== 0) return `record ${i}: enum trailer u16 != 0`;
+        recs.push({ id, tc, kind: 'enum', values });
+        off = q + 6;
+        continue;
+      }
+    }
+    if (buf.readUInt16LE(off + 30) !== 0) return `record ${i}: float tail u16 != 0`;
+    recs.push({ id, tc, kind: 'float', min, max, step });
+    off += 32;
+  }
+  if (off !== buf.length) return `walk did not consume buffer exactly: ${off} vs ${buf.length}`;
+  const en = recs[0];
+  if (en.kind !== 'enum' || en.id !== 10 || en.values?.[1] !== 'Medium Spring') {
+    return `enum record mismatch: ${JSON.stringify(en)}`;
+  }
+  const fl = recs[1];
+  if (fl.kind !== 'float' || fl.id !== 11 || Math.abs((fl.min ?? 0) - 0.1) > 1e-6 ||
+      fl.max !== 100 || Math.abs((fl.step ?? 0) - 0.02) > 1e-6 || fl.tc !== 0x332) {
+    return `float record mismatch: ${JSON.stringify(fl)}`;
+  }
+  return null;
+}
+
 function casePerEffectParamtableDispatcher(): string | null {
   const iiiDump = path.join(
     FRACTAL_MIDI_ROOT,
@@ -1133,7 +1203,9 @@ function caseGen3Fn03RequestPresetDump(): string | null {
 }
 
 // gen-3 enum labels cross the wire septet-packed; the stream is byte-5 aligned.
-// Uses the real FM9 capture3 reverb SET-echo IN frame (value 524 = "Medium Spring").
+// Uses the real FM9 capture3 reverb SET-echo frames. The discrete SET value is a
+// 5-septet LE float32 at pos 12 = ordinal 16 ("Medium Spring"). The old "raw-id
+// 524" was a pos-15 packValue16 MISREAD of that float (retired 2026-06-08).
 const FM9_REVERB524_IN_HEX =
   'f0 00 01 74 12 01 09 00 42 00 0a 00 20 1a 48 72 03 00 00 20 00 26 59 2c 46 4b 55 5a ' +
   '20 29 5c 0e 26 4b 39 4e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 64 f7';
@@ -1160,11 +1232,15 @@ function caseGen3EnumLabelSeptetStream(): string | null {
   if (!at5.includes('Medium Spring')) return `byte-5 unpack missing "Medium Spring": ${at5}`;
   return null;
 }
-function caseGen3EnumSetEchoRawIdName(): string | null {
+function caseGen3SetEchoFloat32Ordinal(): string | null {
   const out = parseHex(FM9_REVERB524_OUT_HEX);
-  // raw-id is the value field at bytes 15,16 (little-endian septet).
-  const rawId = (out[15] & 0x7f) | ((out[16] & 0x7f) << 7);
-  if (rawId !== 524) return `OUT raw-id ${rawId} ≠ 524`;
+  // The SET value is a 5-septet LE float32 at pos 12 (bytes 12..16), NOT a
+  // packValue16 at pos 15. Reassemble u32 from the 5 septets and reinterpret.
+  let u = 0;
+  for (let i = 0; i < 5; i++) u |= (out[12 + i] & 0x7f) << (7 * i);
+  const f = new DataView(new Uint8Array([u & 0xff, (u >>> 8) & 0xff, (u >>> 16) & 0xff, (u >>> 24) & 0xff]).buffer).getFloat32(0, true);
+  if (f !== 16) return `OUT float32@pos12 ${f} ≠ 16 (Medium Spring ordinal)`;
+  // The IN echo carries the label septet-packed from byte 5.
   const name = unpackAsciiAtOffset(parseHex(FM9_REVERB524_IN_HEX), 5);
   if (!name.includes('Medium Spring')) return `IN echo name missing "Medium Spring": ${name}`;
   return null;
@@ -1359,6 +1435,70 @@ function caseGen3EditorSyncReadSurface(): string | null {
   return null;
 }
 
+function caseGen3Sub01BlockDefinitionResponse(): string | null {
+  // The captured FM9 (fw 11.0) sub=0x01 block-definition response for eid 66
+  // (Reverb 1), from samples/captured/fm9-community-2026-06-09/
+  // fm9test2-stream.jsonl (114 parsed bytes; the export strips the F7).
+  // Decode: standard 6-field fn=0x01 envelope, tailCount14 = 80 DECODED
+  // bytes carried as 92 wire septets (8-to-7 MSB-first), 80-byte LE record.
+  const frame = parseHex(
+    'f0 00 01 74 12 01 01 00 42 00 00 00 42 00 00 00 00 00 00 50 00 21 00 00 00 00 30 00 '
+    + '00 00 00 00 00 00 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 20 00 00 00 24 40 00 '
+    + '00 02 49 4a 76 32 5c 4c 22 01 44 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 '
+    + '00 00 00 00 00 00 00 00 00 00 14 48 55 30 00 00 00 00 00 00 00 00 00 00 00 00 00 00 '
+    + '00 1b',
+  );
+  if (frame.length !== 114) return `reference frame is ${frame.length} parsed bytes, expected 114`;
+  // Envelope checksum: XOR of F0..byte112, & 0x7F == byte 113.
+  const cs = frame.slice(0, 113).reduce((a, x) => a ^ x, 0) & 0x7f;
+  if (cs !== frame[113]) return `checksum 0x${cs.toString(16)} != frame byte 113 0x${frame[113].toString(16)}`;
+  // 6-field addressing: sub=0x01, blockId=66, paramId=0, tailCount=80.
+  const u14 = (lo: number, hi: number): number => (lo & 0x7f) | ((hi & 0x7f) << 7);
+  if (u14(frame[6], frame[7]) !== 0x01) return `sub-action ${u14(frame[6], frame[7])} != 0x01`;
+  if (u14(frame[8], frame[9]) !== 66) return `blockId ${u14(frame[8], frame[9])} != 66`;
+  if (u14(frame[10], frame[11]) !== 0) return `paramId ${u14(frame[10], frame[11])} != 0`;
+  const tailCount = u14(frame[19], frame[20]);
+  if (tailCount !== 80) return `tailCount ${tailCount} != 80 (decoded bytes, not wire septets)`;
+  // Tail: 92 wire septets at bytes 21..112, 8-to-7 MSB-first unpack to 80
+  // bytes with 4 residual bits, all zero.
+  const septets = frame.slice(21, 113);
+  if (septets.length !== 92) return `wire tail is ${septets.length} septets, expected ceil(80*8/7) = 92`;
+  let acc = 0;
+  let nbits = 0;
+  const rec: number[] = [];
+  for (const s of septets) {
+    acc = ((acc << 7) | (s & 0x7f)) >>> 0;
+    nbits += 7;
+    while (nbits >= 8) {
+      rec.push((acc >>> (nbits - 8)) & 0xff);
+      nbits -= 8;
+    }
+  }
+  if (rec.length !== tailCount) return `decoded tail ${rec.length} bytes != tailCount ${tailCount}`;
+  if ((acc & ((1 << nbits) - 1)) !== 0) return `residual ${nbits} bits nonzero`;
+  // 80-byte LE record fields.
+  const u32 = (o: number): number => (rec[o] | (rec[o + 1] << 8) | (rec[o + 2] << 16) | (rec[o + 3] << 24)) >>> 0;
+  const ascii = (o: number, n: number): string => String.fromCharCode(...rec.slice(o, o + n)).replace(/\0+$/, '');
+  const got = {
+    eid: u32(0),
+    familyTag: u32(4),
+    instance: u32(8),
+    channelCount: u32(24),
+    paramCount: u32(28),
+    name: ascii(32, 32),
+    abbrev: ascii(64, 12),
+  };
+  const want = { eid: 66, familyTag: 12, instance: 0, channelCount: 4, paramCount: 73, name: 'Reverb 1', abbrev: 'REV' };
+  for (const k of Object.keys(want) as (keyof typeof want)[]) {
+    if (got[k] !== want[k]) return `record field ${k}: got ${JSON.stringify(got[k])}, expected ${JSON.stringify(want[k])}`;
+  }
+  // The record's eid echoes the envelope blockId.
+  if (got.eid !== u14(frame[8], frame[9])) return 'record eid does not echo the envelope blockId';
+  // paramCount is the fn=0x1F per-channel WIRE stride: REVERB itemCount 292 = 73 x 4.
+  if (got.paramCount * got.channelCount !== 292) return `paramCount x channels = ${got.paramCount * got.channelCount} != 292`;
+  return null;
+}
+
 function caseGen1NibbleSplit(): string | null {
   // gen-1 (Axe-Fx Standard/Ultra) nibble-split: every 8-bit field (block id,
   // param id, value) goes on the wire as two MIDI bytes, low nibble first:
@@ -1410,12 +1550,13 @@ function caseGen1NibbleSplit(): string | null {
 
 const FUNCTIONAL_CASES: Record<string, () => string | null> = {
   'gen3-editor-sync-read-surface': caseGen3EditorSyncReadSurface,
+  'gen3-sub01-block-definition-response': caseGen3Sub01BlockDefinitionResponse,
   'gen3-fn01-grid-set-position-insert': caseGen3Fn01GridSetPositionInsert,
   'gen3-fn01-grid-routing': caseGen3Fn01GridRouting,
   'gen3-fn01-store-preset': caseGen3Fn01StorePreset,
   'gen3-fn03-request-preset-dump': caseGen3Fn03RequestPresetDump,
   'gen3-enum-label-septet-stream': caseGen3EnumLabelSeptetStream,
-  'gen3-enum-setecho-rawid-name': caseGen3EnumSetEchoRawIdName,
+  'gen3-fn01-set-float32-ordinal': caseGen3SetEchoFloat32Ordinal,
   'gen3-septet-label-wrong-offset': caseGen3SeptetLabelWrongOffset,
   'gen3-fn1f-poll-block-bulk-read': caseGen3Fn1fPollBlockBulkRead,
   'xor-7f-envelope-checksum': caseXor7fEnvelopeChecksum,
@@ -1427,13 +1568,75 @@ const FUNCTIONAL_CASES: Record<string, () => string | null> = {
   'iii-block-name-string-cascade': caseIiiBlockNameStringCascade,
   'iii-byte-stream-septet-pack-8to7': caseIiiByteStreamSeptetPack8to7,
   'per-effect-paramtable-dispatcher': casePerEffectParamtableDispatcher,
+  'editor-cache-section-record-grammar': caseEditorCacheSectionRecordGrammar,
   'iii-paramid-pseudo-sentinel-ranges': caseIiiParamidPseudoSentinelRanges,
   'ii-state-broadcast-triple-write': caseIiStateBroadcastTripleWrite,
   'ii-compressor-calibration-divergence': caseIiCompressorCalibrationDivergence,
   'ii-fn16-get-param-info': caseIiFn16GetParamInfo,
   'ii-fn0e-query-states': caseIiFn0eQueryStates,
   'ii-fn07-modifier-read': caseIiFn07ModifierRead,
+  'vp4-fn01-swapped-septet-float32': caseVp4Fn01SwappedSeptetFloat32,
 };
+
+/**
+ * VP4 fn=0x01 value field = 5-septet LE float32 with the top two septets swapped
+ * (`[s0,s1,s2,s4,s3]`). Self-contained (de-facto golden); fixtures are captured
+ * frames from `samples/captured/decoded/vp4-403-v2/FINDINGS.md`.
+ */
+function caseVp4Fn01SwappedSeptetFloat32(): string | null {
+  const xor7 = (b: number[]): number => b.reduce((a, x) => a ^ x, 0) & 0x7f;
+  const f2u = (v: number): number => {
+    const buf = new ArrayBuffer(4);
+    new Float32Array(buf)[0] = v;
+    return new Uint32Array(buf)[0];
+  };
+  const u2f = (u: number): number => {
+    const buf = new ArrayBuffer(4);
+    new Uint32Array(buf)[0] = u >>> 0;
+    return new Float32Array(buf)[0];
+  };
+  const enc = (v: number): number[] => {
+    const u = f2u(v);
+    const s = [u & 0x7f, (u >>> 7) & 0x7f, (u >>> 14) & 0x7f, (u >>> 21) & 0x7f, (u >>> 28) & 0x7f];
+    return [s[0], s[1], s[2], s[4], s[3]]; // swap top two
+  };
+  const dec = (w: number[]): number =>
+    u2f((w[0] & 0x7f) | ((w[1] & 0x7f) << 7) | ((w[2] & 0x7f) << 14) | ((w[4] & 0x7f) << 21) | ((w[3] & 0x7f) << 28));
+  const h2 = (b: number): string => b.toString(16).padStart(2, '0');
+
+  // 1. The captured Reverb bypass-on value 00 00 10 03 78 = float32 0.515625.
+  const bypassOn = enc(0.515625);
+  if (bypassOn.map(h2).join(' ') !== '00 00 10 03 78') {
+    return `bypass-on encode: got ${bypassOn.map(h2).join(' ')} != captured 00 00 10 03 78`;
+  }
+  if (Math.abs(dec([0x00, 0x00, 0x10, 0x03, 0x78]) - 0.515625) > 1e-6) {
+    return `bypass-on decode: got ${dec([0x00, 0x00, 0x10, 0x03, 0x78])} != 0.515625`;
+  }
+  // 2. Round-trip across clean values.
+  for (const v of [0, 0.25, 0.5, 0.515625, 0.75, 1]) {
+    if (Math.abs(dec(enc(v)) - v) > 1e-6) return `round-trip drift at ${v}: got ${dec(enc(v))}`;
+  }
+  // 3. Full captured frames (bypass on/off, save).
+  const frame = (payload: number[]): number[] => {
+    const body = [0xf0, 0x00, 0x01, 0x74, 0x14, 0x01, ...payload];
+    return [...body, xor7(body), 0xf7];
+  };
+  const fixtures: [string, number[], string][] = [
+    ['Reverb bypass on', frame([0x42, 0x00, 0x03, 0x00, 0x01, 0, 0, 0, 0x04, 0x00, ...enc(0.515625)]),
+      'f0 00 01 74 14 01 42 00 03 00 01 00 00 00 04 00 00 00 10 03 78 3f f7'],
+    ['Reverb bypass off', frame([0x42, 0x00, 0x03, 0x00, 0x01, 0, 0, 0, 0x04, 0x00, ...enc(0)]),
+      'f0 00 01 74 14 01 42 00 03 00 01 00 00 00 04 00 00 00 00 00 00 54 f7'],
+    ['SAVE in place', frame([0x00, 0x00, 0x00, 0x00, 0x1b, 0, 0, 0, 0x04, 0x00, 0x30, 0x00, 0x00, 0x00, 0x00]),
+      'f0 00 01 74 14 01 00 00 00 00 1b 00 00 00 04 00 30 00 00 00 00 3f f7'],
+  ];
+  for (const [label, got, wantHex] of fixtures) {
+    const want = parseHex(wantHex);
+    if (got.length !== want.length || got.some((b, i) => b !== want[i])) {
+      return `${label}: built ${got.map(h2).join(' ')} != captured ${wantHex}`;
+    }
+  }
+  return null;
+}
 
 // -----------------------------------------------------------------------------
 // Driver

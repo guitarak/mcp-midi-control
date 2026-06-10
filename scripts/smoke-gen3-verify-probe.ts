@@ -5,7 +5,7 @@
  * scenarios cover the cooperative path AND the failure paths the probe must
  * report correctly:
  *   1. Cooperative + echoing: accepts SETs, reflects them on the next poll,
- *      maps enum raw 524 -> ordinal 16, AND emits the 60-byte value-echo, so the
+ *      stores the discrete float32(ordinal) SET, AND emits the 60-byte value-echo, so the
  *      echo-parse path is exercised. Asserts every test PASSES and that the
  *      safety RELOAD Program Change was actually sent.
  *   2. Rejecting: returns a 0x64 MULTIPURPOSE_RESPONSE for set_bypass. Asserts
@@ -41,7 +41,6 @@ function makeDevice(opts: MockOpts): MidiConnection & { sent: number[][] } {
   const reflect = opts.reflect !== false;
   const state = new Map<string, number>([[`${REVERB}:0`, 10000], [`${REVERB}:10`, 16]]);
   const placed = new Set<number>([REVERB]);
-  const RAW_TO_ORDINAL = new Map<number, number>([[524, 16]]);
 
   const burst = (eff: number, items: number): number[][] => {
     const vals = Array.from({ length: items }, (_, i) => state.get(`${eff}:${i}`) ?? 0);
@@ -69,11 +68,12 @@ function makeDevice(opts: MockOpts): MidiConnection & { sent: number[][] } {
       const sub = out[6];
       const eff = dec14(out[8], out[9]);
       const pid = dec14(out[10], out[11]);
-      if (sub === 0x09) { // typed int (enum raw-id or continuous wire)
-        const raw = (out[15] & 0x7f) | ((out[16] & 0x7f) << 7) | ((out[17] & 0x03) << 14);
-        const stored = RAW_TO_ORDINAL.get(raw) ?? raw;
-        if (reflect) state.set(`${eff}:${pid}`, stored);
-        return opts.emitEcho && pid === 0 ? [echo(eff, pid, raw / 65535)] : [];
+      if (sub === 0x09) { // discrete: float32(ordinal) at bytes 12-16
+        const f = decode5SeptetFloat32(out[12], out[13], out[14], out[15], out[16]);
+        const ordinal = Math.round(f);
+        if (reflect) state.set(`${eff}:${pid}`, ordinal);
+        // device echoes the ordinal normalized as ordinal/(count-1)
+        return opts.emitEcho && pid === 0 ? [echo(eff, pid, ordinal / (REVERB_ITEMS - 1))] : [];
       }
       if (sub === 0x52) { // drag float (continuous)
         const norm = decode5SeptetFloat32(out[12], out[13], out[14], out[15], out[16]);
@@ -100,8 +100,7 @@ function check(name: string, pass: boolean, detail = ''): void {
 }
 
 const TIMING = { pollMs: 80, setMs: 80, queryMs: 80, settleMs: 5 };
-const TYPED_TOOL = 'set_param continuous (reverb.mix, typed 09 00 int (shipped set_param form))';
-const DRAG_TOOL = 'set_param continuous (reverb.mix, drag 52 00 float (editor knob form))';
+const CONT_TOOL = 'set_param continuous (reverb.mix, 52 00 float (shipped continuous set_param form))';
 
 async function main(): Promise<void> {
   // Scenario 1: cooperative + echoing.
@@ -111,10 +110,9 @@ async function main(): Promise<void> {
   console.log('\nScenario 1 (cooperative + echo):');
   check('restore point = preset 42', r1.activePreset === 42, String(r1.activePreset));
   check('restore confirmed (reload landed back)', r1.restoreConfirmed === true);
-  check('continuous TYPED form PASS', t(TYPED_TOOL)?.status === 'pass');
-  check('continuous DRAG/float form PASS', t(DRAG_TOOL)?.status === 'pass');
-  check('continuous echo was parsed (data.echoNormalized set)', typeof (t(TYPED_TOOL)?.data as { echoNormalized?: number })?.echoNormalized === 'number');
-  check('enum PASS (524 -> ordinal 16)', t('set_param (enum, reverb.type)')?.status === 'pass');
+  check('continuous 52 00 float form PASS', t(CONT_TOOL)?.status === 'pass');
+  check('continuous echo was parsed (data.echoNormalized set)', typeof (t(CONT_TOOL)?.data as { echoNormalized?: number })?.echoNormalized === 'number');
+  check('enum PASS (discrete float32(ordinal) 45)', t('set_param (enum, reverb.type)')?.status === 'pass');
   check('set_bypass PASS', t('set_bypass (reverb)')?.status === 'pass');
   check('switch_scene PASS', t('switch_scene')?.status === 'pass');
   check('set_block PASS', t('set_block')?.status === 'pass');
@@ -134,8 +132,8 @@ async function main(): Promise<void> {
   const conn3 = makeDevice({ reflect: false, emitEcho: true });
   const r3 = await runVerifyProbe({ conn: conn3, modelByte: MODEL, gridRows: 6, label: 'FM9 (mock)', timing: TIMING });
   console.log('\nScenario 3 (echo-only, no reflect):');
-  const typedNoReflect = r3.results.find((x) => x.tool === TYPED_TOOL);
-  check('continuous PASSes via echo when read-back does not move', typedNoReflect?.status === 'pass', JSON.stringify(typedNoReflect));
+  const contNoReflect = r3.results.find((x) => x.tool === CONT_TOOL);
+  check('continuous PASSes via echo when read-back does not move', contNoReflect?.status === 'pass', JSON.stringify(contNoReflect));
   conn3.close();
 
   console.log('');

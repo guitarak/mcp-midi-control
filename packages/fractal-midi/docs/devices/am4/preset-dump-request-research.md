@@ -2,6 +2,33 @@
 
 ---
 
+## STORED-LOCATION PATH CONFIRMED + SHIPPED 2026-06-10
+
+**Status: 🟢 H1 CONFIRMED ON HARDWARE, both paths shipped.** A live
+probe (no AM4-Edit capture needed) settled the hypothesis space below:
+
+- **H1 is correct**: payload = `[bank, sub, 0x00]`. A01 (`00 00 00`),
+  A02 (`00 01 00`), and Z04 (`19 03 00`) each returned the canonical
+  6-frame / 12,352-byte dump whose 0x77 header echoes the requested
+  `[bank, sub]` byte-exactly. A01 vs A02 dumps differ (real per-slot
+  content). Captures: `samples/captured/hw132/am4-stored-{a01,a02-h1,z04}.syx`.
+- **No working-buffer side effect**: active-buffer dumps taken before
+  and after the stored requests differ only in the dump's volatile
+  bytes — the SAME offsets drift between two back-to-back active dumps
+  with nothing in between (offset cluster ~27-29, 132, 139-157), and
+  the post-request buffer does not match the requested slot. This is
+  the opposite of the Axe-Fx II, whose slot-addressed fn 0x03 RELOADS
+  the stored preset over the buffer.
+- **Volatile-bytes note**: byte-exact comparison of two AM4 dumps of
+  the SAME content must mask that offset cluster; the dump is not
+  byte-stable call-to-call.
+- **Shipped**: `buildRequestStoredPresetDump(locationIndex)` in
+  `src/am4/setParam.ts` (goldens in the consumer repo's
+  `verify-msg.ts`), backing `export_preset(location)` for AM4
+  locations A01..Z04 (index 0..103).
+
+---
+
 ## Active-buffer dump tool shipped 2026-05-08
 
 **Status: 🟢 ACTIVE-BUFFER PATH SHIPPED.** The byte-exact decode below

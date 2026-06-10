@@ -108,6 +108,43 @@ export const AXE_FX_III_CASES: AgentRegressionCase[] = [
     },
   },
 
+  // Whole-preset read of a STORED location: proves the agent reaches for
+  // get_preset with a `location` arg (not get_param block-by-block) when asked
+  // to inspect a stored preset, and that the gen-3 stored-dump decode path
+  // (fn=0x03 → 0x77/0x78/0x79 → whole_preset) returns a structure. The mock
+  // answers fn=0x03 with a CRC-valid synthetic dump.
+  {
+    id: 'axefx3-get-preset-location',
+    device: 'axe-fx-iii',
+    description:
+      'Read a STORED Axe-Fx III preset by number. Should call get_preset with a location arg ' +
+      'and surface the decoded whole_preset (name + scenes). Gates the gen-3 stored-dump decode ' +
+      'wired into get_preset(location).',
+    prompt:
+      "On my Axe-Fx III, read stored preset number 5 and tell me its name and how many scenes it has. Don't change anything.",
+    expectations: {
+      must_call: ['get_preset'],
+      max_tools: 6,
+      tool_call_validators: [{
+        tool: 'get_preset',
+        check: (args, result) => {
+          if (args.location === undefined) {
+            return 'get_preset should pass a location arg to read a STORED preset, not read the active buffer.';
+          }
+          if (result === undefined) return true;
+          if (/capability_not_supported|no_ack|did not parse/i.test(result)) {
+            return `get_preset(location) failed instead of decoding: ${result.slice(0, 160)}`;
+          }
+          if (!/whole_preset/.test(result)) {
+            return 'get_preset(location) response missing whole_preset (the decoded structure).';
+          }
+          return true;
+        },
+      }],
+      max_wall_seconds: 150,
+    },
+  },
+
   // §discovery retired: cross-device duplicate of the meta-discovery pattern;
   // the two cases above exercise describe_device end to end.
   {

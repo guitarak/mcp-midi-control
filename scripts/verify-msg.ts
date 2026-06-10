@@ -37,6 +37,7 @@ import {
   buildNudgeParam,
   buildReadParam,
   buildRequestActiveBufferDump,
+  buildRequestStoredPresetDump,
   buildSaveToLocation,
   buildSetBlockBypass,
   buildSetBlockType,
@@ -56,15 +57,6 @@ import {
 import { KNOWN_PARAMS } from 'fractal-midi/am4';
 import { BLOCK_TYPE_VALUES, BLOCK_NAMES_BY_VALUE } from 'fractal-midi/am4';
 import { parseLocationCode } from 'fractal-midi/am4';
-import {
-  PRESET_DUMP_LEN,
-} from '@mcp-midi-control/am4/presetDump.js';
-import {
-  getFactoryRestoreMessages,
-  getFactoryPresetBytes,
-} from '@mcp-midi-control/am4/factoryBank.js';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolveBankPath } from '@mcp-midi-control/am4/factoryBank.js';
 
 function hex(arr: number[]): string {
   return arr.map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -278,6 +270,26 @@ const cases: { label: string; built: number[]; expected: string }[] = [
     label: 'buildRequestActiveBufferDump() — matches session-51 export-preset capture (active buffer)',
     built: buildRequestActiveBufferDump(),
     expected: 'f000017415037f7f0013f7',
+  },
+  // Stored-location dump requests (H1 [bank, sub, 0x00] encoding):
+  // hardware-confirmed 2026-06-10 live probe — each request answered with
+  // the canonical 6-frame stream whose 0x77 header echoed the requested
+  // bank/sub, with no working-buffer side effect. Captures:
+  // samples/captured/hw132/am4-stored-{a01,a02-h1,z04}.syx.
+  {
+    label: 'buildRequestStoredPresetDump(0) — A01 (bank 0, sub 0)',
+    built: buildRequestStoredPresetDump(0),
+    expected: 'f0000174150300000013f7',
+  },
+  {
+    label: 'buildRequestStoredPresetDump(1) — A02 (bank 0, sub 1)',
+    built: buildRequestStoredPresetDump(1),
+    expected: 'f0000174150300010012f7',
+  },
+  {
+    label: 'buildRequestStoredPresetDump(103) — Z04 (bank 25, sub 3)',
+    built: buildRequestStoredPresetDump(103),
+    expected: 'f0000174150319030009f7',
   },
   // Session 21: scene renames. pidHigh = 0x0037 + sceneIndex (0..3).
   // Captures: session-22-rename-scene-{2,3,4}.
@@ -2464,167 +2476,6 @@ console.log(
   `${validationPass}/${validationCases.length} apply_setlist validation-failure cases pass.`,
 );
 
-// --- am4_restore_factory / am4_restore_factory_range goldens --------------
-//
-// Session 51 (2026-05-08): hardware-verified that replaying the factory
-// bank's stored-form bytes at the same location restores that slot to
-// factory state (G03 → Deluxe Tweed clean, all 4 scenes intact). The
-// production tools (`am4_restore_factory`, `am4_restore_factory_range`)
-// emit no new wire commands — every byte comes from the bank file
-// (samples/factory/AM4-Factory-Presets-1p01.syx) under the documented
-// 0x77/0x78/0x79 envelope.
-//
-// Goldens here:
-//   1. Per-slot wire sequence: assert the 6 messages emitted for
-//      restoring G03 (or any specific slot) concatenate byte-for-byte
-//      to the bank file's bytes for that slot. Source of truth = bytes
-//      sliced directly out of the bank file. This pins the restore
-//      tool's output to the file contents and catches any future
-//      slicing / pacing-prelude regression that would corrupt a slot.
-//   2. Range validation: assert that an inverted range (from > to) is
-//      rejected by `am4_restore_factory_range`'s validation logic
-//      with no wire bytes emitted.
-//
-// The per-slot golden is gated on the bank file being present at the
-// expected path. Other goldens in this file (`verify-preset-dump`)
-// already assume the same; if the file is missing the failure mode is
-// "bank file not found", surfaced clearly.
-
-const restoreSlotCases: {
-  label: string;
-  locationIndex: number;
-}[] = [
-  // G03 = bank G (index 6), preset 3 → wire index 6*4 + 2 = 26.
-  { label: 'am4_restore_factory(G03) — 6-message stream matches bank file slice (Session 51 verified slot)', locationIndex: parseLocationCode('G03') },
-  // A01 = wire index 0 → first slot in the bank, sentinel-free smoke test.
-  { label: 'am4_restore_factory(A01) — first-slot 6-message stream matches bank file slice', locationIndex: parseLocationCode('A01') },
-];
-
-let restoreSlotPass = 0;
-const bankPath = resolveBankPath();
-const bankPresent = existsSync(bankPath);
-if (!bankPresent) {
-  console.log(
-    `(skipping ${restoreSlotCases.length} factory-restore wire-sequence cases: bank file not found at ${bankPath})\n`,
-  );
-} else {
-  // Hold a single buffer read so each case's expected bytes are sliced
-  // out of the same source the tool would read. If the file's bytes
-  // ever drift away from the parser's expectations, `verify-preset-dump`
-  // will catch it before this script runs.
-  const bankBytes = new Uint8Array(readFileSync(bankPath));
-  for (const c of restoreSlotCases) {
-    const messages = getFactoryRestoreMessages(c.locationIndex);
-    // Concatenate the 6 messages and compare to the file's slice.
-    const concatenated = new Uint8Array(messages.reduce((n, m) => n + m.length, 0));
-    let cursor = 0;
-    for (const m of messages) {
-      concatenated.set(m, cursor);
-      cursor += m.length;
-    }
-    const expected = bankBytes.subarray(
-      c.locationIndex * PRESET_DUMP_LEN,
-      (c.locationIndex + 1) * PRESET_DUMP_LEN,
-    );
-    const sliceBytes = getFactoryPresetBytes(c.locationIndex);
-    let bytewiseOk = concatenated.length === expected.length && sliceBytes.length === expected.length;
-    if (bytewiseOk) {
-      for (let i = 0; i < expected.length; i++) {
-        if (concatenated[i] !== expected[i] || sliceBytes[i] !== expected[i]) {
-          bytewiseOk = false;
-          break;
-        }
-      }
-    }
-    const messageCountOk = messages.length === 6;
-    const headerOk = messages[0][0] === 0xf0 && messages[0][5] === 0x77 && messages[0].length === 13;
-    const footerOk = messages[5][5] === 0x79 && messages[5].length === 11;
-    const chunksOk = messages.slice(1, 5).every((m) => m[5] === 0x78 && m.length === 3082);
-    const ok = bytewiseOk && messageCountOk && headerOk && footerOk && chunksOk;
-    if (ok) restoreSlotPass++;
-    console.log(c.label);
-    console.log(`  total bytes : ${concatenated.length} (expected ${PRESET_DUMP_LEN})`);
-    console.log(`  message cnt : ${messages.length} (expected 6: 1 header + 4 chunks + 1 footer)`);
-    console.log(`  bytewise eq : ${bytewiseOk ? 'yes' : 'NO'}`);
-    console.log(`  envelope ok : header=${headerOk} chunks=${chunksOk} footer=${footerOk}`);
-    console.log(`  ${ok ? '✓ MATCH' : '✗ MISMATCH'}\n`);
-  }
-  console.log(
-    `${restoreSlotPass}/${restoreSlotCases.length} factory-restore wire-sequence cases pass.`,
-  );
-}
-
-// Validation-failure shape for `am4_restore_factory_range`. Mirrors what
-// the tool does inline: parses both endpoints, then rejects if from > to.
-// No wire bytes ever emitted for an invalid range.
-function validateRestoreRange(
-  from: string,
-  to: string,
-): { ok: true; fromIdx: number; toIdx: number } | { ok: false; step: string; error: string } {
-  let fromIdx: number;
-  let toIdx: number;
-  try {
-    fromIdx = parseLocationCode(String(from).trim().toUpperCase());
-    toIdx = parseLocationCode(String(to).trim().toUpperCase());
-  } catch (err) {
-    return {
-      ok: false,
-      step: 'validate',
-      error: `Invalid range "${from}".."${to}": ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
-  if (fromIdx > toIdx) {
-    return {
-      ok: false,
-      step: 'validate',
-      error: `Invalid range: "${from}" (index ${fromIdx}) is after "${to}" (index ${toIdx}). Pass from <= to.`,
-    };
-  }
-  return { ok: true, fromIdx, toIdx };
-}
-
-const restoreRangeValidationCases: {
-  label: string;
-  from: string;
-  to: string;
-  expectError: boolean;
-  expectStep?: string;
-}[] = [
-  {
-    label: 'am4_restore_factory_range with inverted range (K04 → G01) — REJECTED before any wire bytes',
-    from: 'K04',
-    to: 'G01',
-    expectError: true,
-    expectStep: 'validate',
-  },
-  {
-    label: 'am4_restore_factory_range with valid range (G01 → K04) — accepted',
-    from: 'G01',
-    to: 'K04',
-    expectError: false,
-  },
-];
-
-let restoreRangePass = 0;
-for (const c of restoreRangeValidationCases) {
-  const result = validateRestoreRange(c.from, c.to);
-  const failed = result.ok === false;
-  const ok =
-    failed === c.expectError
-    && (!failed || result.step === c.expectStep);
-  if (ok) restoreRangePass++;
-  console.log(c.label);
-  if (result.ok) {
-    console.log(`  validation passed (fromIdx=${result.fromIdx}, toIdx=${result.toIdx})`);
-  } else {
-    console.log(`  validation rejected: step="${result.step}", error="${result.error}"`);
-  }
-  console.log(`  ${ok ? '✓ MATCH' : '✗ MISMATCH'}\n`);
-}
-console.log(
-  `${restoreRangePass}/${restoreRangeValidationCases.length} factory-restore range validation cases pass.`,
-);
-
 // -- am4_lookup_lineages golden ----------------------------------------------
 // Exercises the `runLineageLookup` core that backs both the single-ask
 // `am4_lookup_lineage` tool and the batch `am4_lookup_lineages` tool. Drives
@@ -2751,8 +2602,6 @@ process.exit(
     orchestrationPass === orchestrationCases.length &&
     validationPass === validationCases.length &&
     verifyFlagPass === verifyFlagCases.length &&
-    (!bankPresent || restoreSlotPass === restoreSlotCases.length) &&
-    restoreRangePass === restoreRangeValidationCases.length &&
     lineagesPass === lineagesGoldenCases.length
     ? 0
     : 1,

@@ -50,6 +50,7 @@ import {
   FN_SET_GET_CHANNEL,
   FN_PARAMETER_SETGET,
   unpackValue16,
+  decode5SeptetFloat32,
 } from 'fractal-midi/axe-fx-iii';
 
 function hex(arr: number[]): string {
@@ -1051,10 +1052,6 @@ assert(
   axefxDesc.capabilities.supports_save === true,
 );
 assert(
-  'describe_device(axe-fx-ii).supports_factory_restore unadvertised',
-  axefxDesc.capabilities.supports_factory_restore === undefined,
-);
-assert(
   'describe_device(axe-fx-ii).blocks includes amp, reverb, delay, drive',
   ['amp', 'reverb', 'delay', 'drive'].every((b) => axefxDesc.blocks.includes(b)),
 );
@@ -1874,13 +1871,14 @@ function buildMockIIICtx(): {
   };
 }
 
-// A true SET_PARAMETER frame is fn=0x01 with the typed-input sub-action 0x09
-// (sub-action byte at envelope offset 6). The gen-3 block insert (set_block)
-// also rides fn=0x01 but uses sub=0x32, so the function byte alone no longer
-// discriminates param writes from block placement; check the sub-action too.
-const SET_PARAM_SUB_ACTION = 0x09;
+// A true SET_PARAMETER frame is fn=0x01 with a value sub-action: 0x09 (discrete
+// type/model select) or 0x52 (continuous knob drag). The gen-3 block insert
+// (set_block) also rides fn=0x01 but uses sub=0x32, and routing uses 0x35, so
+// the function byte alone no longer discriminates param writes; check the
+// sub-action too.
+const SET_PARAM_SUB_ACTIONS = new Set([0x09, 0x52]);
 function isSetParamFrame(f: CapturedFrame): boolean {
-  return f.fn === FN_PARAMETER_SETGET && f.bytes[6] === SET_PARAM_SUB_ACTION;
+  return f.fn === FN_PARAMETER_SETGET && SET_PARAM_SUB_ACTIONS.has(f.bytes[6]);
 }
 
 async function testIIIChannelNestedApply(): Promise<void> {
@@ -1941,9 +1939,16 @@ async function testIIIChannelNestedApply(): Promise<void> {
   // Each channel produces 1 set_channel + 1 set_param = 2 steps; plus
   // 1 set_block for placement = 5 total. The result.steps count is
   // writes.length (every push to writes[] counts).
+  // Honest 2-state SET + aggregate fix: the mock accepts but does not echo, so
+  // the per-param set_param writes report acked:false + unconfirmed:true (sent,
+  // not verified). Those do NOT fail the apply (the preset likely applied); they
+  // surface as a "verify on device" note. So ok stays true (nothing rejected),
+  // and the warning flags the unconfirmed writes. Structural ops still ack.
   assert(
-    'III channel-nested apply: result.ok = true (all mock writes accepted)',
-    result.ok === true,
+    'III channel-nested apply: ok=true (unconfirmed param writes do not fail the apply; surfaced as verify-note)',
+    result.ok === true
+      && /UNCONFIRMED/i.test(result.warning ?? '')
+      && !/MULTIPURPOSE_RESPONSE/i.test(result.warning ?? ''),
     `result.ok=${result.ok}, warning=${result.warning ?? '(none)'}`,
   );
   assert(
@@ -2048,8 +2053,10 @@ async function testIIIFlatParamsStillWork(): Promise<void> {
     `expected 1 param frame, got ${paramFrames.length}`,
   );
   assert(
-    'III flat-shape apply: result.ok = true',
-    result.ok === true,
+    'III flat-shape apply: ok=true (unconfirmed param write does not fail the apply; surfaced as verify-note)',
+    result.ok === true
+      && /UNCONFIRMED/i.test(result.warning ?? '')
+      && !/MULTIPURPOSE_RESPONSE/i.test(result.warning ?? ''),
     `result.ok=${result.ok}, warning=${result.warning ?? '(none)'}`,
   );
 }
@@ -2081,18 +2088,22 @@ async function testIIIApplyCoercesDisplayToWire(): Promise<void> {
     paramFrames.length === 1,
     `expected 1 param frame, got ${paramFrames.length}`,
   );
-  // Value rides packValue16 at envelope bytes 15..17 (lo7, mid7, hi).
+  // treble is CONTINUOUS → sub 52 00 + float32(normalized = wire/65534) at pos
+  // 12-16. Recover the calibrated wire: float32 × 65534 ≈ 36044 (NOT raw 5.5).
   const f = paramFrames[0];
-  const wire = f !== undefined ? unpackValue16(f.bytes[15], f.bytes[16], f.bytes[17]) : -1;
+  const normalized = f !== undefined ? decode5SeptetFloat32(f.bytes[12], f.bytes[13], f.bytes[14], f.bytes[15], f.bytes[16]) : -1;
+  const wire = Math.round(normalized * 65534);
   const expected = Math.round((5.5 / 10) * 65534); // 36044
   assert(
     'III apply_preset coercion: treble 5.5 → calibrated wire (~36044), not raw 5.5',
-    Math.abs(wire - expected) <= 2,
-    `expected wire ≈ ${expected}, got ${wire}`,
+    f !== undefined && f.bytes[6] === 0x52 && Math.abs(wire - expected) <= 2,
+    `expected wire ≈ ${expected} via sub 0x52 float, got wire ${wire} (sub 0x${f?.bytes[6].toString(16)})`,
   );
   assert(
-    'III apply_preset coercion: result.ok = true (no packValue16 rejection)',
-    result.ok === true,
+    'III apply_preset coercion: ok=true (no packValue16 rejection; unconfirmed write surfaced as verify-note)',
+    result.ok === true
+      && /UNCONFIRMED/i.test(result.warning ?? '')
+      && !/MULTIPURPOSE_RESPONSE/i.test(result.warning ?? ''),
     `result.ok=${result.ok}, warning=${result.warning ?? '(none)'}`,
   );
 }

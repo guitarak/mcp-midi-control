@@ -8,6 +8,126 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
+## [0.3.0]
+
+Makes the modern Fractal family far more accurate and capable. The FM9 becomes a
+first-class conversational target: set and read amps, drives, and reverbs by their
+real model names, and tweak every knob in the unit's own display units. The AM4
+and Axe-Fx II catalogs are corrected against the hardware, and the Axe-Fx III /
+FM3 / FM9 gain new editing moves.
+
+### Added
+
+- **FM9 device-true model rosters: set and read by name.** The FM9's full amp
+  (331 models), drive/fuzz (86), and reverb-type (79) lists are mined from the
+  FM9-Edit definition cache and wired so a request like "set the amp to Texas Star
+  Clean", "use a Blues OD drive", or "switch the reverb to Music Hall" resolves to
+  the right model, and reading a block back reports the FM9's own name. Name
+  matching is case- and word-order-tolerant. The rosters are anchor-validated
+  against hardware-confirmed ordinals (amp 65/179/264, drive 15/36, reverb 16/45);
+  the underlying parameter write stays community beta pending an owner round-trip,
+  so confirm changes on the unit.
+- **FM9 device-true knob ranges across the whole unit.** The FM9's complete
+  parameter dictionary (every block's display range, step, and curve) is decoded
+  from the FM9-Edit cache and wired into calibration. A request like "set the delay
+  to 500 ms" or "reverb predelay to 80 ms" now lands on the FM9's real range and
+  curve instead of an approximation borrowed from another model; over a thousand
+  FM9 knobs went from rough to device-accurate.
+- **AM4 expert amp parameters.** Ten amp-modeling internals that are present on the
+  device but were previously unreachable are now addressable for power-user tone
+  shaping: clipping type, drive/preamp type, tone-stack type, feedback type, bias
+  type, pre-compression type, wave-shaper high-pass, phase-inverter ratio,
+  transformer leakage, and bias offset. Their value ranges are device-confirmed;
+  set by number is reliable, set by name uses the editor cache's labels.
+- **Gen-3 editing moves.** On the Axe-Fx III / FM3 / FM9 you can now clear a block
+  and rename a preset or a scene (community beta, decoded from the editor).
+- **The complete Axe-Fx II amp list loads intact.** A receive-buffer fix lets the
+  server take in large device responses without truncation, so the full 266-name
+  Axe-Fx II amp roster is now available (previously cut off mid-list).
+
+### Changed
+
+- **FM9 reverb names are now the unit's own form.** Reverb types read back in the
+  FM9's adjective-first form ("Medium Spring", "Music Hall") instead of the
+  borrowed AM4 word order ("Spring, Medium", "Hall, Music"). The Axe-Fx III and FM3
+  keep the AM4-borrowed names until their own device caches are mined.
+- **AM4 selector lists are device-true.** Several AM4 dropdowns (dynamic-cab types,
+  mic types, speaker-impedance curves, and others) now show the device's own named
+  options instead of generic placeholders.
+- **`clean_forward` scene-leveling recipe.** Cleans deliberately hot (clean +6 dB,
+  ambient clean +5, rhythm unity, solo +2): a clean tone can be eased off with the
+  volume knob and pick dynamics, while a saturated tone plays in a narrow loudness
+  band with input maxed — so hot cleans are recoverable in a way hot leads are
+  not. Ear-tested on stage-style material.
+- **AM4 stored-location export.** `export_preset` with a `location` now works on
+  the AM4 (locations A01..Z04): back up any stored preset directly from flash
+  without touching what you're playing. The request encoding was confirmed on
+  hardware across the full bank range.
+
+### Fixed
+
+- **Axe-Fx II preset export now backs up the real working buffer, unsaved edits
+  included.** The previous export silently returned the preset as last SAVED
+  (and the device reloads that saved copy over unsaved edits when asked for it,
+  so "backing up" in-progress work could destroy it). The export now uses a
+  newly decoded and hardware-confirmed edit-buffer dump request, so what you
+  hear is what lands in the file, with no save required and no side effects.
+- **Axe-Fx II preset snapshots report the channel that is actually playing.** On a
+  scene that selects channel Y, `get_preset` previously returned channel X's
+  values labeled as active, so follow-up edits could anchor on the wrong tone.
+  The snapshot now returns the active channel's values, matching the AM4.
+- **Cross-device translation carries the amp's gain and mid knobs.** Translating a
+  preset between devices now maps the preamp-gain knob (II `input_drive`, AM4
+  `gain`, modern family `drive`) and the mid knob across naming conventions, and
+  carries scene names to targets that support them. Tempo divisions like
+  "1/2 DOT" bound for the modern Fractal family (where they cannot be set over
+  MIDI yet) are dropped with a clear warning instead of failing silently, blocks
+  without channels on the target get their parameters flattened instead of
+  rejected, and amp/effect model names with no cross-device mapping are called
+  out so an unmapped model never passes through silently.
+- **Hydrasynth macro destinations initialize their Button Value.** A macro
+  destination has three fields (Destination, Button Value, Depth); newly created
+  destinations previously left Button Value at the device's uninitialized -128,
+  so pressing the macro's button would slam that destination fully negative. New
+  destinations now start at 0 (button does nothing until deliberately set), an
+  optional `button_value` argument programs it, and the tool's guidance teaches
+  the correct model (there is no sweep start/min on the hardware).
+- **Routing references accept both documented forms.** Grid routing previously
+  documented block ids as `amp_1` while the engine wanted bare `amp`; both now
+  work and the docs match the engine. Presets that include explicit routing also
+  verify their signal chain automatically after applying.
+- **Axe-Fx II Vol/Pan volume reads back in knob units** (0..10) instead of a raw
+  internal integer.
+- **MIDI port failures are loud and self-diagnosing.** Windows can refuse to open
+  a MIDI port (it is exclusive — another program or a leftover server process can
+  hold it) and the underlying library reported nothing, so writes silently went
+  nowhere while reads timed out and reconnect claimed success. The server now
+  verifies every port actually opened and, on failure, names the likely holder
+  (another running server instance, a leftover process, a manufacturer editor)
+  and the recovery steps, instead of pretending the connection works.
+- **FM9 reverb Time is calibrated to the device.** The Time knob's range and linear
+  taper ([0.1, 100] s) are confirmed from a hardware sweep, replacing the value
+  previously inferred from the AM4.
+- **AM4 frequency and time knobs use the correct curve.** About ninety AM4
+  parameters (cuts, rates, filter frequencies) were corrected to a logarithmic
+  curve, confirmed by a front-panel reading, so a mid-position cut lands where the
+  panel shows it instead of skewing high.
+- **Axe-Fx II compressor level range corrected** to the unit's actual -20 to +20 dB
+  (was a wider convention default), read directly from the device.
+- **AM4 tuner and tuning-offset settings corrected** against the device's own
+  definitions (mute-type and use-offsets are proper on/off-style choices;
+  per-string tuning offsets read in cents).
+- Tool descriptions and capability notes across the gen-1 and gen-3 devices now
+  report read and write paths accurately instead of understating what is wired.
+
+### For contributors
+
+- **One-command device harvest.** A new read-only "harvest" script collects
+  everything a Fractal device says about itself over USB (firmware, names, ranges,
+  block layout) into a single file, so adding device-true support for a new unit
+  takes one sync instead of a capture session. See the capture guides for the
+  priority order of ways to help: editor cache file first, harvest second.
+
 ## [0.2.0]
 
 Adds the rest of the modern Fractal floor-unit family (FM3 and FM9) and a

@@ -100,6 +100,15 @@ export interface DeviceCapabilities {
   channel_names?: readonly string[];            // ['A','B','C','D'] or ['X','Y']
   channel_blocks?: readonly string[];           // which blocks expose channels
   /**
+   * Whether named tempo divisions ("1/4", "1/2 DOT") are addressable over
+   * the wire as display strings on tempo-sync params. Omitted = supported
+   * (AM4 / Axe-Fx II). Set `false` on devices whose codec refuses to
+   * fabricate a division wire value (the gen-3 family today): translate
+   * strips division strings bound for such targets with a warning instead
+   * of emitting a spec that fails or no-ops at apply.
+   */
+  named_tempo_divisions?: boolean;
+  /**
    * Whether this device exposes MULTIPLE instances of the same block type
    * (e.g. Amp 1 + Amp 2, Reverb 1..4) addressable via the `instance` arg on
    * set_param / get_param / set_block / set_bypass (and per-slot `instance`
@@ -113,16 +122,21 @@ export interface DeviceCapabilities {
    */
   has_block_instances?: boolean;
   preset_location_format?: RegExp;
+  /**
+   * Whether flash persistence is hardware-VERIFIED, which gates AUTOMATIC
+   * save during navigation (`save_active_first`). `false` does NOT mean the
+   * explicit `save_preset` tool is unavailable; that is governed by
+   * `writer.savePreset` presence (a device with an evidence-backed store
+   * envelope saves, marked untested). When the two diverge, `save_note`
+   * spells it out.
+   */
   supports_save: boolean;
   /**
-   * Optional. Set ONLY when the device exposes a working factory-restore
-   * tool AND the data file (factory bank .syx) is bundled / loadable.
-   * The capability advertisement and the corresponding tool registration
-   * must move together — surfacing a capability with no callable tool
-   * (or vice versa) breaks the contract agents rely on. Omit when the
-   * tool isn't shipped; do not set false as a placeholder.
+   * Clarifies what `supports_save: false` means for this device when the
+   * explicit save_preset tool IS still wired. Agents should read this
+   * before concluding a device "cannot save".
    */
-  supports_factory_restore?: boolean;
+  save_note?: string;
   supports_lineage: boolean;
   has_macros?: boolean;
   /**
@@ -209,35 +223,6 @@ export interface ParamSchema {
   /** For `unit: 'enum'` only — wire index → display name. */
   enum_values?: Readonly<Record<number, string>>;
   /**
-   * Read-leg-only enum: `enum_values` labels are display/decode truth, but
-   * setting the param BY NAME is not supported because the device's
-   * name→wire mapping for this enum has not been captured/verified yet.
-   *
-   * Concretely (the modern Fractal gen-3 family, BK-093): the broadcast /
-   * GET wire carries an ORDINAL index that joins to `enum_values`, but a
-   * typed SET wants a different RAW enum id that is not yet known. Resolving
-   * a name to the ordinal and sending it would emit an untested wire value.
-   *
-   * When true, the dispatcher refuses a name-string value with a clear
-   * "labels are display-only, capture pending" message. A NUMERIC value is
-   * still passed through to `encode` (raw wire, caller's responsibility).
-   */
-  enum_display_only?: boolean;
-  /**
-   * Subset of `enum_values` labels that CAN be set by name despite
-   * `enum_display_only` — i.e. their device-true write-leg encoding HAS been
-   * captured/verified, so `encode(name)` produces a hardware-confirmed wire
-   * value. The dispatcher lets a name in this set through to `encode` and
-   * refuses any other name (the gate's capture-pending message). Absent ⇒ no
-   * label is settable by name (the full display-only refusal stands).
-   *
-   * Why a subset and not a flag flip: the gen-3 enum read ORDINAL ≠ write
-   * RAW-id (a permutation), and only a handful of types have a captured
-   * raw-id. Listing exactly those keeps the UX honest — set-by-name works for
-   * the confirmed types and refuses the rest by name (vs. implying all work).
-   */
-  enum_settable_names?: readonly string[];
-  /**
    * The `enum_values` table is PARTIAL (not exhaustive): it labels the wire
    * ordinals captured so far, but other valid ordinals exist that simply
    * aren't named yet. When true, a NUMERIC value outside `enum_values` is NOT
@@ -248,6 +233,18 @@ export interface ParamSchema {
    * ordinal is a validation error.
    */
   enum_partial?: boolean;
+  /**
+   * gen-3 (modern Fractal) only: which SET wire form the param uses. The value
+   * always rides as a 5-septet float32 at payload pos 12, but the sub-action
+   * and value semantics differ:
+   *   - `'discrete'` (type/model selectors): sub `09 00`, value = `float32(ordinal)`
+   *     where `encode` returns the read-roster ordinal. Set-by-name resolves
+   *     straight off the read vocabulary (the ordinal IS the set value).
+   *   - `'continuous'` (knobs): sub `52 00`, value = `float32(normalized 0..1)`
+   *     where the writer normalizes `encode`'s 0..65534 wire by /65534.
+   * Absent on AM4 / Axe-Fx II / Hydra (they have their own SET wire).
+   */
+  wire_kind?: 'discrete' | 'continuous';
   /**
    * Display → wire conversion. Throws on out-of-range or unresolvable enum.
    * The dispatcher invokes this in step 4 of the request lifecycle; the
@@ -405,6 +402,18 @@ export interface WriteResult {
   /** Operation acked on the wire. The semantics of "ack" vary per op —
    *  set_param's echo, switch_preset's write-echo, save's command-ack. */
   acked: boolean;
+  /**
+   * Set when `acked` is false ONLY because the write was sent and not
+   * rejected, but the device returned no confirming echo within the ack
+   * window (a "sent, unconfirmed" outcome — distinct from a real 0x64
+   * rejection or an error). Currently produced by the gen-3 (Axe-Fx III /
+   * FM3 / FM9 / VP4) per-param SET path, whose typed-SET echo is hardware-
+   * confirmed only for enum/type params. Aggregators (apply_preset) MUST NOT
+   * count an `unconfirmed` write as a failure: the preset may have applied
+   * fine; we just could not verify it. Surface it as "verify on the device",
+   * not "failed".
+   */
+  unconfirmed?: boolean;
   /** Soft-warning when ack succeeded but the side effect may not have
    *  landed (e.g. block not placed in active preset). Also used for
    *  no-ack timeouts and partial-failure cases. Reserve for genuine
@@ -879,6 +888,15 @@ export interface PresetSnapshot {
    * of WHY). Absent when every slot read cleanly.
    */
   read_warnings?: readonly string[];
+  /**
+   * gen-3 only: the full decoded patch when `get_preset` read a whole dump
+   * (stored-by-location, or the active buffer when its dump validated). Carries
+   * the routing grid, per-channel block types, scene names + per-scene bypass/
+   * channel, amp model + knobs, modifiers, and scene controllers — everything
+   * the II/AM4 `slots` envelope can't represent. Absent on II/AM4/Hydra and on
+   * gen-3 active-buffer reads that fell back to the fn=0x1F poll inventory.
+   */
+  whole_preset?: Gen3WholePresetView;
   _meta: PresetSnapshotMeta;
 }
 
@@ -935,6 +953,15 @@ export interface PresetSnapshotMeta {
    * exists (alpha.17: an agent proposed adding a flag that already shipped).
    */
   channel_state_hint?: string;
+  /**
+   * Present ONLY when one or more placed blocks failed to read (timeout /
+   * parse error) and were OMITTED from `slots[]`. One entry per failed
+   * block ("<block> @ row R col C: <error>"). Without this, a partial
+   * snapshot is indistinguishable from a complete one and an agent will
+   * state-anchor on a preset that has more blocks than it can see
+   * (0.3.0 final-signoff finding).
+   */
+  blocks_failed?: string[];
 }
 
 /**
@@ -952,6 +979,94 @@ export interface GetPresetOptions {
    * round-trip mutate-and-reapply flow.
    */
   include_channel_state?: boolean;
+  /**
+   * gen-3 only (Axe-Fx III / FM3 / FM9): read a STORED preset by integer
+   * preset number instead of the active working buffer. The device dumps
+   * that stored slot (fn=0x03, the same path `export_preset(location)`
+   * uses), and the reader decodes the whole patch body — routing grid,
+   * per-channel (A/B/C/D) block types, scene names + per-scene bypass/
+   * channel state, amp model + knobs, modifier routing, scene controllers
+   * — into `PresetSnapshot.whole_preset`. Omit to read the active buffer.
+   */
+  location?: string | number;
+}
+
+// ── gen-3 whole-preset detail (PresetSnapshot.whole_preset) ───────────
+// Structured decode of a gen-3 preset's decompressed patch body. Carried
+// verbatim on PresetSnapshot.whole_preset for Axe-Fx III / FM3 / FM9 when a
+// full dump was decoded (stored-by-location, or the active buffer when its
+// dump validated). Far richer than the II/AM4 `slots` envelope, so it lives
+// in its own field rather than being squeezed into PresetSlotSpec.
+
+/** One placed cell in the routing grid (column-major). */
+export interface Gen3GridCellView {
+  effect_id: number;
+  row: number;
+  col: number;
+  route_flag: number;
+  name: string;
+  /** Grid rows this cell's input arrives from (route_flag bitmask). */
+  from_rows?: readonly number[];
+  /** True for routing shunt/merge nodes (no effect). */
+  is_shunt?: boolean;
+}
+
+/** Per-channel (A/B/C/D) state of a placed block: effect type + (amp) knobs. */
+export interface Gen3BlockChannelView {
+  type_id?: number;
+  type?: string;
+  [knob: string]: number | string | undefined;
+}
+
+/** One placed block in the signal chain with its per-channel + scene state. */
+export interface Gen3BlockView {
+  block: string;
+  cols: number;
+  rows: number;
+  /** Per-scene (8) active channel letter. */
+  scene_channels?: readonly string[];
+  /** Per-scene (8) bypass state. */
+  scene_bypass?: readonly boolean[];
+  type_id?: number;
+  type?: string;
+  bank1?: string;
+  cab1?: number;
+  bank2?: string;
+  cab2?: number;
+  channels?: Readonly<Record<string, Gen3BlockChannelView>>;
+}
+
+export interface Gen3ModifierView {
+  source: string;
+  target: string;
+  param: number;
+  origin: 'pre-chain' | 'chain';
+}
+
+export interface Gen3SceneControllerView {
+  controller: string;
+  /** Per-scene (8) value, 0..100 %. */
+  values: readonly number[];
+  raw: readonly number[];
+}
+
+/** The full decoded gen-3 preset, carried on PresetSnapshot.whole_preset. */
+export interface Gen3WholePresetView {
+  /** Where the dump came from: a stored slot, or the live edit buffer. */
+  source: 'stored-dump' | 'edit-buffer';
+  model: string;
+  model_id: number;
+  /** Preset name from the raw-patch header. */
+  preset_name: string;
+  /** True when the patch CRC validated (the device's own validity gate). */
+  crc_valid: boolean;
+  scene_names?: readonly string[];
+  grid?: readonly Gen3GridCellView[];
+  blocks?: readonly Gen3BlockView[];
+  /** Convenience: the first Amp block's per-channel map. */
+  amp?: Readonly<Record<string, Gen3BlockChannelView>>;
+  modifiers?: readonly Gen3ModifierView[];
+  scene_controllers?: readonly Gen3SceneControllerView[];
 }
 
 export interface SetlistEntrySpec {
@@ -984,43 +1099,6 @@ export interface ApplySetlistResult {
   results: readonly SetlistEntryResult[];
   totalWallTimeMs: number;
   finalActiveLocation?: string;
-}
-
-export interface RestoreDefaultsOptions {
-  verify?: boolean;
-}
-
-export interface RestoreDefaultsRangeOptions extends SetlistApplyOptions {
-  /** Same on_error / dry_run / verify shape as SetlistApplyOptions. */
-}
-
-export interface RestoreDefaultsResult {
-  ok: boolean;
-  location: string;
-  message?: string;
-  wallTimeMs: number;
-  verified?: boolean;
-  preRestoreName?: string;
-  postRestoreName?: string;
-  totalBytes?: number;
-  messageCount?: number;
-}
-
-export interface RestoreDefaultsRangeResult {
-  ok: boolean;
-  total: number;
-  restored: number;
-  failed: number;
-  remaining: readonly string[];
-  results: readonly {
-    location: string;
-    status: 'ok' | 'error';
-    error?: string;
-    preRestoreName?: string;
-    postRestoreName?: string;
-    wallTimeMs: number;
-  }[];
-  totalWallTimeMs: number;
 }
 
 export interface ParamQuery {
@@ -1121,6 +1199,12 @@ export interface PresetBinaryDump {
   name?: string;
   /** Human-readable note on what was dumped (e.g. 'active working buffer'). */
   source?: string;
+  /**
+   * Surfaced caveat the caller MUST relay to the user (e.g. the Axe-Fx II
+   * has no edit-buffer dump request, so its "active" export is the stored
+   * flash copy of the active slot). Absent when the dump is unambiguous.
+   */
+  warning?: string;
 }
 
 /**
@@ -1330,18 +1414,6 @@ export interface DeviceWriter {
   savePreset?(ctx: DispatchCtx, location: LocationRef, name?: string): Promise<WriteResult>;
   switchScene?(ctx: DispatchCtx, scene: number): Promise<WriteResult>;
   rename?(ctx: DispatchCtx, target: RenameTarget, name: string): Promise<WriteResult>;
-  /** Restore the device's defaults for a single location (or range). */
-  restoreDefaults?(
-    ctx: DispatchCtx,
-    target: LocationRef,
-    options?: RestoreDefaultsOptions,
-  ): Promise<RestoreDefaultsResult>;
-  restoreDefaultsRange?(
-    ctx: DispatchCtx,
-    from: LocationRef,
-    to: LocationRef,
-    options?: RestoreDefaultsRangeOptions,
-  ): Promise<RestoreDefaultsRangeResult>;
 
   /**
    * Cross-device safe-edit gate (see `docs/SAFE-EDIT-WORKFLOW.md`).

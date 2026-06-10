@@ -191,9 +191,11 @@ const cases: KindCase[] = [
     device: 'axe-fx-ii',
     block: 'compressor',
     name: 'level',
-    expectedSource: 'suffix_rule',
+    // fn 0x16 device-reported -20..20 (2026-06-10), overlay overrides the
+    // *level suffix rule's -80..20 (II compressor calibration divergence).
+    expectedSource: 'overlay',
     expectsClosures: true,
-    displayMin: -80,
+    displayMin: -20,
     displayMax: 20,
   },
   {

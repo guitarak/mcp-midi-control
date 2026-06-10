@@ -569,6 +569,29 @@ export function buildApplyPresetAtOps(
   // Place every resolved block at its (row, col). Legacy mode populates
   // row 2 cols 1..N; v0.4 explicit-routing mode places blocks at any
   // (row, col) the caller specified.
+  // Place every block AND bypass it in the same step, interleaved, so no
+  // block is ever engaged while the grid is being cabled or params written.
+  //
+  // Anti-screech (hardware-reproduced 2026-06-07). The screech is a transient
+  // of the incremental build, NOT the final preset. A half-built high-gain
+  // amp sits at default EXTREME gain for the seconds before its EQ/level
+  // params land, feeding a delay/reverb whose feedback loop is being cabled
+  // live; over a multi-second multi-amp/multi-scene build that runaway loop
+  // self-oscillates into a screech. The output mute can't fix it because a
+  // self-sustaining oscillation does not drain: it energizes while muted and
+  // is still ringing when the mute releases. Isolation test confirmed the
+  // delay/reverb feedback path is required (amps alone only pop).
+  //
+  // Placement itself is safe (blocks are placed UNCABLED — the device does
+  // not auto-route fn 0x05 placements, so a placed-but-uncabled block has no
+  // signal path), but bypassing each block the instant it lands removes even
+  // that window: by the time the cabling phase forms the feedback loop, every
+  // block is already bypassed = dry pass-through = silent. Params + channels
+  // still store fine while bypassed (bypass gates the signal path, not
+  // storage). The finalization (flat) and the per-scene walk below re-engage
+  // each block at its FINAL params — a single clean transition into the
+  // stable preset, exactly like a normal preset load (which is silent).
+  // Shunts (canBypass=false) are pass-through cells with nothing to bypass.
   for (const r of resolved) {
     ops.push({
       kind: 'place_block',
@@ -576,6 +599,13 @@ export function buildApplyPresetAtOps(
       summary: `PLACE ${r.target.name} at row ${r.row} col ${r.col}`,
       awaitResponse: 'set_grid_cell',
     });
+    if (r.target.canBypass) {
+      ops.push({
+        kind: 'bypass',
+        bytes: buildSetBlockBypassEnvelope(r.target.id, true),
+        summary: `build-safe BYPASS ${r.target.name} (anti-screech; re-engaged after params)`,
+      });
+    }
   }
 
   // Silent-preset fix, wire row 2 end-to-end with explicit cables.
@@ -646,13 +676,24 @@ export function buildApplyPresetAtOps(
     // block id (the auto-derived `<slug>` or explicit `id` field),
     // look up their (row, col) from `resolved`, and emit the cable.
     const blocksById = new Map(resolved.map((r) => [r.id, r]));
+    // Tolerant id lookup: a single-instance block auto-derives the bare
+    // slug (`amp`), but the schema long documented `<block_type>_<instance>`
+    // (`amp_1`), so agents reach for the `_1` form. Accept it as an alias
+    // for the bare id (and only `_1` — higher instances are real distinct
+    // ids). 0.3.0 dev-test finding.
+    const lookupBlockId = (id: string) => {
+      const direct = blocksById.get(id);
+      if (direct !== undefined) return direct;
+      if (id.endsWith('_1')) return blocksById.get(id.slice(0, -2));
+      return undefined;
+    };
     const outputTailStartCols: number[] = [];
     for (let i = 0; i < routing!.length; i++) {
       const edge = routing![i];
 
       // OUTPUT sentinel: defer to the auto-extension pass below.
       if (edge.to === 'OUTPUT') {
-        const src = blocksById.get(edge.from);
+        const src = lookupBlockId(edge.from);
         if (src === undefined) {
           throw new Error(
             `routing[${i}].from="${edge.from}": no block with that id (and "to: OUTPUT" requires a real source). ` +
@@ -663,8 +704,8 @@ export function buildApplyPresetAtOps(
         continue;
       }
 
-      const src = blocksById.get(edge.from);
-      const dst = blocksById.get(edge.to);
+      const src = lookupBlockId(edge.from);
+      const dst = lookupBlockId(edge.to);
       if (src === undefined) {
         throw new Error(
           `routing[${i}].from="${edge.from}": no block with that id. ` +
@@ -792,13 +833,12 @@ export function buildApplyPresetAtOps(
 
   for (let i = 0; i < resolved.length; i++) {
     const r = resolved[i];
-    if (r.bypass !== undefined) {
-      ops.push({
-        kind: 'bypass',
-        bytes: buildSetBlockBypassEnvelope(r.target.id, r.bypass),
-        summary: `${r.target.name}: bypass=${r.bypass ? 'BYPASSED' : 'ENGAGED'}`,
-      });
-    }
+    // NOTE: the flat per-block `bypass` is intentionally NOT emitted here.
+    // Every block was build-safe-bypassed at placement (anti-screech); the
+    // final bypass state is set AFTER all params land — by the flat
+    // finalization below (no-scenes case) or the per-scene walk (scenes
+    // case). Engaging a block mid-param-write would re-open the screech
+    // window this fix closes.
     if (r.paramsByChannel !== undefined) {
       // BK-058: walk every channel in iteration order. Each channel emits
       // its own channel-switch op followed by every param targeted at
@@ -847,6 +887,26 @@ export function buildApplyPresetAtOps(
     }
   }
 
+  // ── Finalize bypass (flat, no-scenes case) ──────────────────────
+  //
+  // Every placeable block was build-safe-bypassed at placement. When the
+  // spec has no per-scene authoring, re-engage each block now (params are
+  // final) to its intended state: ENGAGED unless the block's flat `bypass`
+  // flag says otherwise. This is a single clean transition into the stable
+  // preset on the active scene. The scenes[] walk below owns this instead
+  // when per-scene authoring is present (it re-engages per scene).
+  if (input.scenes === undefined || input.scenes.length === 0) {
+    for (const r of resolved) {
+      if (!r.target.canBypass) continue;
+      const finalBypass = r.bypass ?? false;
+      ops.push({
+        kind: 'bypass',
+        bytes: buildSetBlockBypassEnvelope(r.target.id, finalBypass),
+        summary: `${r.target.name}: bypass=${finalBypass ? 'BYPASSED' : 'ENGAGED'} (final)`,
+      });
+    }
+  }
+
   // ── Per-scene state authoring ────────────────────────────────────
   //
   // Closes HW-106 (Session 68): the Axe-Fx II carries per-scene state
@@ -892,13 +952,32 @@ export function buildApplyPresetAtOps(
         bytes: buildSetSceneNumber(wireScene),
         summary: `SET_SCENE → ${wireScene} (display: scene ${s.index}), per-scene state walk`,
       });
-      // Walk this scene's bypass map.
+      // Author this scene's COMPLETE bypass state. Every block was build-
+      // safe-bypassed at placement (anti-screech), so we set each placed
+      // block directly to its final value for this scene: bypassed if the
+      // scene's (sparse) map says so, else engaged. Completeness is required
+      // — a sparse override would leave unnamed blocks stuck in the build-safe
+      // bypass and silence them. Setting final values directly (rather than
+      // engage-all-then-override) also avoids any transient where a block is
+      // momentarily engaged when this scene wants it off. Params are already
+      // final and bypass is stored per active scene, so each write is a clean
+      // transition into a stable state (no screech).
+      const sceneBypassById = new Map<number, boolean>();
       for (const [blockKey, bypassed] of Object.entries(s.bypass ?? {})) {
         const target = sceneBlockResolutions.get(blockKey)!;
+        sceneBypassById.set(target.id, bypassed);
+      }
+      for (const r of resolved) {
+        if (!r.target.canBypass) continue;
+        // Default for a block this scene doesn't name: its flat per-block
+        // `bypass` intent (a slot-level `bypassed:true` carried via r.bypass),
+        // falling back to ENGAGED. Plain `?? false` would silently override a
+        // slot-level bypass for every scene that omits the block.
+        const bypassed = sceneBypassById.get(r.target.id) ?? (r.bypass ?? false);
         ops.push({
           kind: 'bypass',
-          bytes: buildSetBlockBypassEnvelope(target.id, bypassed),
-          summary: `[scene ${s.index}] ${target.name}: bypass=${bypassed ? 'BYPASSED' : 'ENGAGED'}`,
+          bytes: buildSetBlockBypassEnvelope(r.target.id, bypassed),
+          summary: `[scene ${s.index}] ${r.target.name}: bypass=${bypassed ? 'BYPASSED' : 'ENGAGED'}`,
         });
       }
       // Walk this scene's channel map.
@@ -1180,10 +1259,24 @@ export async function runApplyPresetAtOps(
   }
 
   const needsSafetyMute = ops.some((o) => o.kind === 'param');
+  // A save-to-location sequence (apply_preset_at) leads with a switch_preset
+  // that RELOADS the target preset — which resets Output level to the target's
+  // stored value. Muting BEFORE that switch is undone by it, and reading
+  // priorOutputDb before it captures the PREVIOUS preset's level (then wrongly
+  // restores it onto the target). So for those sequences the mute is deferred
+  // until right AFTER the switch (in the loop below). Working-buffer sequences
+  // have no leading switch and mute up front.
+  const hasLeadingSwitch = ops.length > 0 && ops[0].kind === 'switch_preset';
   let priorOutputDb: number | undefined;
-  if (needsSafetyMute) {
+  let muteApplied = false;
+  async function applySafetyMute(): Promise<void> {
+    if (!needsSafetyMute || muteApplied) return;
+    muteApplied = true;
     priorOutputDb = await readOutputLevelDb();
     await setOutputLevelVerified(-80, 'muting output during preset apply');
+  }
+  if (!hasLeadingSwitch) {
+    await applySafetyMute();
   }
 
   try {
@@ -1200,6 +1293,10 @@ export async function runApplyPresetAtOps(
         totalBytes += op.bytes.length;
         summaries.push(`  ${op.summary}  (${op.bytes.length}B)`);
         await readGridIntoSkipSet(/* afterSwitch */ true);
+        // Mute NOW (post-switch): the target preset is loaded, so priorOutputDb
+        // captures the target's real Output level and the mute survives (the
+        // switch that would have reset it has already run).
+        await applySafetyMute();
         continue;
       }
       // For working-buffer-only sequences (no switch_preset op), still do
@@ -1263,6 +1360,18 @@ export async function runApplyPresetAtOps(
           summaries.push(`  ${op.summary}  ⚠ no ACK (${msg})`);
         }
       } else if (op.awaitResponse === 'store_preset') {
+        // Restore the Output level BEFORE storing. The safety mute holds
+        // through the whole (dry) build, but STORE_PRESET snapshots the live
+        // edit buffer — and Output level is per-preset stored, so storing
+        // while muted would bake -80 dB into the SAVED preset (silent on
+        // reload, even though the immediate audition sounds fine). Re-assert
+        // the captured pre-apply level here; the build is already complete and
+        // in its final stable state, so this is the same unmute the working-
+        // buffer path does in `finally` (which then becomes a no-op).
+        if (muteApplied) {
+          await setOutputLevelVerified(priorOutputDb ?? 0, 'restoring output before save');
+          muteApplied = false;
+        }
         const ackPromise = conn.receiveSysExMatching(
           isStorePresetResponse,
           GET_RESPONSE_TIMEOUT_MS,
@@ -1385,8 +1494,11 @@ export async function runApplyPresetAtOps(
     // Safety unmute: restore the Output level after all ops, even on error.
     // Restore the EXACT pre-apply level when we captured it (no surprise mix
     // change); fall back to 0 dB unity if the pre-read failed. Verified +
-    // retried so a dropped restore SET can't leave the rig muted.
-    if (needsSafetyMute) {
+    // retried so a dropped restore SET can't leave the rig muted. Gated on
+    // muteApplied (not needsSafetyMute): if the deferred mute never ran — e.g.
+    // a leading-switch sequence that errored before the switch — there is
+    // nothing to restore and priorOutputDb was never captured.
+    if (muteApplied) {
       const restoreDb = priorOutputDb ?? 0;
       await setOutputLevelVerified(
         restoreDb,

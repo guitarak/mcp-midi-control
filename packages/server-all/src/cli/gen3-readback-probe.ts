@@ -19,15 +19,14 @@
  *     value array. First broad hardware confirmation of get_param /
  *     get_preset across many blocks (today only reverb is spot-checked).
  *
- *   JOB 2 — the GET-response experiment that could close the enum
- *     name->raw-id gap. We fire the canonical fn=0x01 sub=0x09 GET at
- *     Reverb 1's TYPE param (effectId 66, paramId 10) and log what comes
- *     back. Ground truth (FM9): that param's "Medium Spring" is RAW enum id
- *     524 but ORDINAL 16 on the broadcast. If the GET response carries 524,
- *     the raw-id space is reachable by passive reads and we can solve
- *     name->raw-id for the whole family with no editor capture. If it
- *     carries 16 (or nothing), the editor + Wireshark capture stays the
- *     route.
+ *   JOB 2 — a GET-response read-back spot-check. We fire the canonical
+ *     fn=0x01 sub=0x09 GET at Reverb 1's TYPE param (effectId 66, paramId 10)
+ *     and log what comes back. RESOLVED (2026-06-08): there is NO separate
+ *     "raw-id" space — the SET value is float32(read-ordinal) @ pos 12, and
+ *     the read roster ordinal IS the set-by-name value. "Medium Spring" =
+ *     ordinal 16 (the old "raw 524" was a pos-15 packValue16 misread). So this
+ *     job now just confirms the GET response carries the ordinal; the primary
+ *     read path is the fn=0x1f broadcast.
  *
  * Usage:
  *   node dist/cli/gen3-readback-probe.js <fm9|fm3|axe-fx-iii> [output.json]
@@ -76,10 +75,12 @@ const DEVICES: Record<string, DeviceSpec> = {
   'axe-fx-iii': { label: 'Axe-Fx III', modelByte: 0x10, connect: connectAxeFxIII },
 };
 
-// Reverb 1 TYPE — our one ground-truth enum: "Medium Spring" = raw 524 / ordinal 16.
+// Reverb 1 TYPE — our one ground-truth enum: "Medium Spring" = ordinal 16.
+// (The "raw 524" was a retired pos-15 packValue16 misread of float32(16); there
+// is no separate raw-id space — the SET value is float32(read-ordinal) @ pos 12.)
 const REVERB_EFFECT_ID = 66;
 const REVERB_TYPE_PARAM_ID = 10;
-const GROUND_TRUTH = { name: 'Medium Spring', rawId: 524, ordinal: 16, enumCount: 79 };
+const GROUND_TRUTH = { name: 'Medium Spring', ordinal: 16, enumCount: 79 };
 
 // Per-poll listen window. Bursts arrive ~1 ms after the poll; 400 ms is a
 // generous ceiling that also bounds the worst case for un-placed blocks
@@ -270,13 +271,11 @@ async function runJob2(): Promise<GetExperiment> {
 
   let verdict: string;
   if (frames.length === 0) {
-    verdict = 'NO RESPONSE — sub=0x09 GET not honored on this firmware. Read path is broadcast-only; raw-id route needs the FM9-Edit capture.';
-  } else if (carriedValues.includes(GROUND_TRUTH.rawId)) {
-    verdict = `JACKPOT — a response carried RAW id ${GROUND_TRUTH.rawId}. GET reaches the raw-id space; name->raw-id is solvable by probe across all enums.`;
+    verdict = 'NO RESPONSE — sub=0x09 GET not honored on this firmware. Read path is broadcast-only (fn=0x1f).';
   } else if (carriedValues.includes(GROUND_TRUTH.ordinal)) {
-    verdict = `ORDINAL only — a response carried ${GROUND_TRUTH.ordinal} (the broadcast ordinal), not raw ${GROUND_TRUTH.rawId}. Raw-id still needs the FM9-Edit capture.`;
+    verdict = `ORDINAL ${GROUND_TRUTH.ordinal} carried — the GET response reports the read ordinal (which IS the set-by-name value; no raw-id space). Read-back confirmed.`;
   } else {
-    verdict = `RESPONDED but carried neither ${GROUND_TRUTH.rawId} (raw) nor ${GROUND_TRUTH.ordinal} (ordinal) — current reverb type differs, or a new field layout. Inspect frames.`;
+    verdict = `RESPONDED but did not carry ordinal ${GROUND_TRUTH.ordinal} — current reverb type differs, or a new field layout. Inspect frames.`;
   }
   console.error(`  ${frames.length} frame(s). ${verdict}`);
   return { effectId: REVERB_EFFECT_ID, paramId: REVERB_TYPE_PARAM_ID, request: toHex(req), framesReceived: frames.length, frames: decoded, verdict };
@@ -325,31 +324,87 @@ async function runJob0(): Promise<QueryResult[]> {
   return results;
 }
 
+// ── JOB 3: enum value-list dump (EXPERIMENTAL, READ-ONLY) ──────────
+//
+// To SET a model BY NAME we need its typed-SET RAW id (a permutation of the
+// read ordinal; reverb read-16 -> write-524). Those ids are NOT in the editor
+// binary (the model roster is device-fetched) and amps echo numerically, so the
+// one route is the device's enum value-LIST dump: the editor triggers it when a
+// Type dropdown opens, and that reply embeds {raw-id, name} per entry. This job
+// sends a CANDIDATE list request (fn=0x01 sub=0x2e, mirroring the GET builder;
+// also tries sub=0x1f, the device-fetched-roster path amps may use) at each
+// known block Type selector and logs the raw replies for offline decode.
+// READ-ONLY: a list request is a query; an unrecognized envelope is ignored and
+// reported as "no response". The exact request bytes are a hypothesis pending
+// one editor capture — this job gathers data either way, and once the envelope
+// is confirmed it becomes the one-click "set by name" closer (no Wireshark).
+const FRACTAL_MFR = [0x00, 0x01, 0x74];
+const enc14 = (v: number): [number, number] => [v & 0x7f, (v >> 7) & 0x7f];
+const xor7 = (bytes: number[]): number => bytes.reduce((a, b) => a ^ b, 0) & 0x7f;
+function buildEnumListRequest(sub0: number, effectId: number, paramId: number): number[] {
+  const head = [0xf0, ...FRACTAL_MFR, MODEL, 0x01, sub0, 0x00, ...enc14(effectId), ...enc14(paramId), 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  return [...head, xor7(head), 0xf7];
+}
+// Byte-confirmed (effectId, type-selector paramId) for the blocks we have
+// ground truth for. Expand to the full block set once a capture confirms the
+// request shape.
+const ENUM_LIST_TARGETS = [
+  { block: 'amp (DISTORT)', effectId: 58, typeParamId: 10 },
+  { block: 'reverb', effectId: 66, typeParamId: 10 },
+  { block: 'drive (FUZZ)', effectId: 118, typeParamId: 0 },
+];
+const ENUM_LIST_SUBS = [0x2e, 0x1f];
+
+async function runJob3(): Promise<unknown[]> {
+  console.error('\nJOB 3 — enum value-list dump experiment (candidate sub=0x2e / 0x1f)…');
+  const out: unknown[] = [];
+  for (const t of ENUM_LIST_TARGETS) {
+    for (const sub of ENUM_LIST_SUBS) {
+      const req = buildEnumListRequest(sub, t.effectId, t.typeParamId);
+      const frames = await sendAndCollect(req, GET_WINDOW_MS);
+      const fns = frames.map((f) => (f[5] !== undefined ? `0x${f[5].toString(16)}` : '?'));
+      out.push({
+        block: t.block, effectId: t.effectId, typeParamId: t.typeParamId,
+        subAction: `0x${sub.toString(16)}`, request: toHex(req),
+        responseCount: frames.length, responseFns: fns,
+        responses: frames.map((f) => toHex(f)),
+      });
+      console.error(`  ${t.block.padEnd(16)} sub=0x${sub.toString(16)} → ${frames.length ? `${frames.length} frame(s) [fn ${fns.join(',')}]` : 'no response'}`);
+    }
+  }
+  return out;
+}
+
 async function main(): Promise<void> {
   const job0 = await runJob0();
   const job1 = await runJob1();
   const job2 = await runJob2();
+  const job3 = await runJob3();
   const placed = job1.filter((r) => r.assembled);
   const answeredQueries = job0.filter((q) => q.responded).map((q) => q.query);
 
+  const job3Answered = job3.filter((r) => (r as { responseCount: number }).responseCount > 0).length;
+
   const report = {
     probe: 'gen3-readback-probe',
-    version: 2,
+    version: 3,
     device: device.label,
     capturedAt: new Date().toISOString(),
     modelByte: MODEL,
     groundTruth: GROUND_TRUTH,
-    note: 'READ-ONLY diagnostic. Job0 = documented-query sweep (raw replies). Job1 = fn=0x1F poll → 0x74/0x75/0x76 burst decode. Job2 = sub=0x09 GET-response experiment on reverb type.',
+    note: 'READ-ONLY diagnostic. Job0 = documented-query sweep (raw replies). Job1 = fn=0x1F poll → 0x74/0x75/0x76 burst decode. Job2 = sub=0x09 GET-response experiment on reverb type. Job3 = EXPERIMENTAL enum value-list dump (candidate sub=0x2e/0x1f) — raw replies for offline {raw-id→name} decode toward set-by-name.',
     summary: {
       documentedQueriesAnswered: answeredQueries,
       blocksPolled: job1.length,
       blocksWithData: placed.length,
       reverbTypeOrdinalObserved: job1.find((r) => r.effectId === REVERB_EFFECT_ID)?.reverbTypeOrdinal,
       getExperimentVerdict: job2.verdict,
+      enumListRequestsAnswered: job3Answered,
     },
     job0_documentedQueries: job0,
     job1_blockReads: job1,
     job2_getExperiment: job2,
+    job3_enumListDump: job3,
   };
 
   fs.writeFileSync(outPath, JSON.stringify(report, undefined, 2));
@@ -359,6 +414,7 @@ async function main(): Promise<void> {
   console.error(`  Documented queries answered: ${answeredQueries.length ? answeredQueries.join(', ') : '(none)'}`);
   console.error(`  ${placed.length}/${job1.length} block types returned data.`);
   console.error(`  GET experiment: ${job2.verdict}`);
+  console.error(`  Enum-list experiment: ${job3Answered}/${job3.length} candidate requests got a reply.`);
   console.error('\nPlease email me this JSON file. Thank you!');
   process.exit(0);
 }

@@ -46,7 +46,11 @@ import {
 const REVERB_EFFECT_ID = 66;
 const REVERB_MIX_PARAM_ID = 0;
 const REVERB_TYPE_PARAM_ID = 10;
-const REVERB_TYPE_GROUND_TRUTH = { rawId: 524, ordinal: 16, name: 'Medium Spring' };
+// A discrete type SET carries float32(read-ordinal) at pos 12 (sub 09 00). Use a
+// NON-power-of-2 ordinal so success proves the corrected wire specifically: ord 16
+// encodes identically under the old (retired pos-15 packValue16) and new wire and
+// cannot distinguish the fix. Music Hall = ordinal 45 is decisive.
+const REVERB_TYPE_GROUND_TRUTH = { ordinal: 45, name: 'Music Hall' };
 const DRIVE_EFFECT_ID = 118;
 
 const POLL_WINDOW_MS = 400;
@@ -186,9 +190,8 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
     } else {
       record(tool, 'fail', `wrote ${targetWire}, read back ${readBack ?? 'no response'}, echo ${echo?.normalizedValue.toFixed(4) ?? 'none'} (expected ~${expectedNorm.toFixed(4)}). This form was not applied.`, data);
     }
-    // Restore the original mix using the same form, before the next sub-test.
-    if (form.startsWith('typed')) await sendSetAndCaptureEcho(buildSetParameter(REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID, origMix, MODEL), REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID);
-    else await sendSetAndCaptureEcho(buildDragSetFloat(REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID, origMix / 65535, MODEL), REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID);
+    // Restore the original mix (52 00 float form) before the next sub-test.
+    await sendSetAndCaptureEcho(buildDragSetFloat(REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID, origMix / 65535, MODEL), REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID);
     await sleep(settleMs);
   }
 
@@ -201,26 +204,27 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
       const origMix = reverb.values[REVERB_MIX_PARAM_ID] ?? 0;
       const target = origMix < 32768 ? 49152 : 16384;
 
-      // T1 (HEADLINE): test BOTH continuous wire shapes so the report says which
-      // the device accepts. typed = what shipped set_param emits; drag/float =
-      // what FM9-Edit emits for a knob.
-      await continuousFormTest('typed 09 00 int (shipped set_param form)', buildSetParameter(REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID, target, MODEL), target, origMix);
-      await continuousFormTest('drag 52 00 float (editor knob form)', buildDragSetFloat(REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID, target / 65535, MODEL), target, origMix);
+      // T1 (HEADLINE): a continuous param SET is sub 52 00 + float32(normalized
+      // = wire/65534) at pos 12 — the same form shipped set_param emits for a
+      // continuous param and the same FM9-Edit emits for a knob drag. (The
+      // retired 09 00 packValue16-int form is gone; it was never the wire.)
+      await continuousFormTest('52 00 float (shipped continuous set_param form)', buildDragSetFloat(REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID, target / 65535, MODEL), target, origMix);
 
-      // T2: set_param ENUM round-trip on Reverb Type (raw 524 -> ordinal 16).
-      // Not individually restored (we lack the original type's raw-id); the
+      // T2: set_param ENUM (discrete) round-trip on Reverb Type. Sends
+      // float32(ordinal 45) at pos 12 (sub 09 00) and reads the ordinal back.
+      // Not individually restored (we lack the original type ordinal); the
       // end-of-probe reload is the restore for this and the bypass/scene tests.
-      const enumRes = await sendSetAndCaptureEcho(buildSetParameter(REVERB_EFFECT_ID, REVERB_TYPE_PARAM_ID, REVERB_TYPE_GROUND_TRUTH.rawId, MODEL), REVERB_EFFECT_ID, REVERB_TYPE_PARAM_ID);
+      const enumRes = await sendSetAndCaptureEcho(buildSetParameter(REVERB_EFFECT_ID, REVERB_TYPE_PARAM_ID, REVERB_TYPE_GROUND_TRUTH.ordinal, MODEL), REVERB_EFFECT_ID, REVERB_TYPE_PARAM_ID);
       await sleep(settleMs);
       const afterType = await pollBlock(REVERB_EFFECT_ID);
       const typeOrdinal = afterType?.values[REVERB_TYPE_PARAM_ID];
-      const enumData = { sentRawId: REVERB_TYPE_GROUND_TRUTH.rawId, expectedOrdinal: REVERB_TYPE_GROUND_TRUTH.ordinal, readBackOrdinal: typeOrdinal };
+      const enumData = { sentOrdinal: REVERB_TYPE_GROUND_TRUTH.ordinal, expectedOrdinal: REVERB_TYPE_GROUND_TRUTH.ordinal, readBackOrdinal: typeOrdinal };
       if (enumRes.rejected) {
-        record('set_param (enum, reverb.type)', 'fail', 'device REJECTED the enum SET (0x64).', enumData);
+        record('set_param (enum, reverb.type)', 'fail', 'device REJECTED the discrete SET (0x64).', enumData);
       } else if (typeOrdinal === REVERB_TYPE_GROUND_TRUTH.ordinal) {
-        record('set_param (enum, reverb.type)', 'pass', `set raw ${REVERB_TYPE_GROUND_TRUTH.rawId}, read back ordinal ${typeOrdinal} = "${REVERB_TYPE_GROUND_TRUTH.name}". Enum SET-by-raw-id lands.`, enumData);
+        record('set_param (enum, reverb.type)', 'pass', `set ordinal ${REVERB_TYPE_GROUND_TRUTH.ordinal} ("${REVERB_TYPE_GROUND_TRUTH.name}"), read back ${typeOrdinal}. Discrete float32(ordinal) SET lands (non-power-of-2 → proves the corrected wire).`, enumData);
       } else {
-        record('set_param (enum, reverb.type)', 'fail', `set raw ${REVERB_TYPE_GROUND_TRUTH.rawId}, expected ordinal ${REVERB_TYPE_GROUND_TRUTH.ordinal}, read back ${typeOrdinal ?? 'no response'}.`, enumData);
+        record('set_param (enum, reverb.type)', 'fail', `set ordinal ${REVERB_TYPE_GROUND_TRUTH.ordinal}, read back ${typeOrdinal ?? 'no response'}.`, enumData);
       }
 
       // T3: set_bypass round-trip (toggle bypassed then re-engage). Bypass state

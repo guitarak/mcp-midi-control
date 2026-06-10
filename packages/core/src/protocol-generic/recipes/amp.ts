@@ -4,10 +4,11 @@
  * The first amp-knob recipes for the modern Fractal family. Each recipe is
  * a numeric voicing of the amp block's tone stack + master — the knobs a
  * player reaches for to dial a genre tone on TOP of whatever amp model is
- * loaded. They do NOT set the amp MODEL: gen-3 enum set-by-name is gated
- * (`enum_display_only`) until the raw-id capture lands, so a recipe that
- * named a model would emit an untested wire value. Picking the amp model
- * stays a separate, user-driven step; these recipes voice it.
+ * loaded. They do NOT set the amp MODEL by design — these are model-agnostic
+ * voicings layered on whatever amp is loaded. (Amp model set-by-name DOES work
+ * on gen-3: a discrete SET carries float32(read-ordinal), so a model name
+ * resolves straight off the shipped roster. Picking the model stays a separate
+ * step so a recipe can voice any amp.)
  *
  * Why gen-3 only. These recipes ride the display-first calibration the amp
  * (DISTORT) knobs gained when the AM4 symbol-name overlay was generalized to

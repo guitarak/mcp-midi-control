@@ -1,22 +1,84 @@
 # Community help wanted
 
-This server controls Fractal Audio gear by conversation. Gen-3 (Axe-Fx III / FM3 / FM9 / VP4) support is included and hardware-unverified: the codec is correct per the published spec and 10+ public captures, but needs device owners to confirm it actually works. Gen-1 (Axe-Fx Standard / Ultra) supports parameter set + read, also decoded from the spec and hardware-unconfirmed.
+This server controls Fractal Audio gear by conversation. The modern Fractal
+family (Axe-Fx III / FM3 / FM9, and VP4 with reads plus first writes) already works today: you can
+set amps, drives, and reverbs by their real model names, build presets, switch
+scenes, and read the device back. It is **community beta** because the parameter
+WRITE path, while byte-verified against the published spec and real captures, has
+not yet been confirmed moving a knob on real hardware. Gen-1 (Axe-Fx Standard /
+Ultra) supports full parameter WRITES (set_param / set_params) plus reads, also
+decoded from the spec and hardware-unconfirmed; preset authoring there awaits
+one structural capture (see the gen-1 row below).
 
-**Pick your device below.** Each device has a focused testing page (no tools needed) and a captures page (records raw protocol traffic). One-time capture tool setup: [SETUP.md](SETUP.md).
+Four ways to move a device forward, **in priority order** -- try them top to
+bottom and stop as soon as one works; the higher ones are easier and cover more:
 
-Because these devices share a protocol family, one good capture or test result often helps several at once.
+1. **Send the editor cache file** -- offline, no tools, biggest win.
+2. **Run the harvest script** -- read-only, one command over USB.
+3. **Run the write-verify probe** -- confirms the write path on your unit.
+4. **Record a calibration capture** -- only for the rare gap the first three miss.
+
+## 1. Send your editor's definition cache file *(easiest, biggest win, no tools)*
+
+Each Fractal editor stores its device's **complete parameter dictionary** in a
+definition cache that appears once you've connected your real device to the
+editor: every block's model rosters (amp, drive, reverb, cab by name) AND every
+parameter's device-true display range, step, and taper. The cache format is fully
+decoded, so one file makes the server **device-true** for your unit, the same way
+the FM9 got its full 331-amp / 86-drive / 79-reverb rosters and its 1,891 device
+parameter ranges.
+
+- **macOS:** `~/Library/Application Support/Fractal Audio/<editor>/effectDefinitions_<model>_<fw>.cache`
+- **Windows:** `%APPDATA%\Fractal Audio\<editor>\effectDefinitions_<model>_<fw>.cache`
+- Model byte in the filename: `10` = Axe-Fx III, `11` = FM3, `12` = FM9, `14` = VP4, `15` = AM4.
+- **The editor must have connected to your device at least once** (that sync is
+  what fills the file). A never-synced install writes a placeholder with no model
+  names; if yours has no amp names in it, connect the editor to the device once,
+  let it finish syncing, then grab the file. Send the whole set if unsure; we use
+  the one that carries real rosters.
+
+This needs no capture tools and no front-panel work. It is the highest-value ask
+for the Axe-Fx III, FM3, and VP4 right now (the FM9's is already in).
+
+## 2. Run the harvest script *(read-only, one command, no tools, over USB)*
+
+If you cannot find or sync the cache file, the **harvest script**
+([harvest-script.md](harvest-script.md)) collects the same self-description
+straight from the device over USB: firmware, every model name, parameter ranges,
+and block layout, written to one file you send back. It is strictly read-only (it
+never changes a setting) and finishes in a couple of minutes. Use it when the
+cache file is unavailable, or to confirm what the cache already gave us.
+
+## 3. Run the write-verify probe *(one command, confirms the write path)*
+
+A read-only-safe diagnostic that confirms the device accepts the server's own
+parameter writes. This is the single thing that flips a device's write path from
+"untested" to "confirmed."
+
+- **FM9:** `npm run fm9:verify` (or double-click `fm9-verify.cmd` in the release ZIP).
+- **Read-back diagnostics:** `npm run fm9:probe` / `fm3:probe` / `axefx3:probe`.
+- III / FM3 also have a quick conversational write test on their testing pages.
+
+## 4. Record a calibration capture *(needs a capture tool, for display accuracy)*
+
+The genuine wire-capture ask: a non-linear knob (reverb / delay **Time**) swept
+with the front-panel readings noted, so display values land exactly. Full steps:
+[captures-gen3.md](captures-gen3.md). One-time capture-tool setup: [SETUP.md](SETUP.md).
 
 ---
 
 ## Device status
 
-| Device | Testing | Captures | Notes |
+| Device | Test / probe page | Captures | Top ask |
 |---|---|---|---|
-| Axe-Fx III | [testing-axe-fx-iii.md](testing-axe-fx-iii.md) | [captures-gen3.md](captures-gen3.md) | Read path confirmed via FM9; write path (params + blocks + routing) hardware-unconfirmed |
-| FM3 | [testing-fm3.md](testing-fm3.md) | [captures-gen3.md](captures-gen3.md) | Read path confirmed via FM9; **routing formula confirmed via FM3-Edit loopMIDI**; other write path hardware-unconfirmed |
-| FM9 | [testing-fm9.md](testing-fm9.md) | [captures-gen3.md](captures-gen3.md) | Reads + preset receive confirmed. **[C1 amp model sweep](captures-gen3.md#c1----fm9-amp-model-sweep-highest-value-capture) is the highest-value open capture** -- unlocks amp selection by name for the full amp model list (roughly 280-320+ depending on firmware) |
-| VP4 | [testing-vp4.md](testing-vp4.md) | [captures-vp4.md](captures-vp4.md) | Reads implemented; writes gated -- needs param SET + block placement captures |
-| Standard / Ultra | [testing-axe-fx-gen1.md](testing-axe-fx-gen1.md) | [captures-axe-fx-gen1.md](captures-axe-fx-gen1.md) | Parameter set + read wired (both hardware-unconfirmed); port name + write + read confirmation needed; legacy captures welcome (confirm reads + decode the patch-dump body) |
+| Axe-Fx III | [testing-axe-fx-iii.md](testing-axe-fx-iii.md) | [captures-gen3.md](captures-gen3.md) | **Cache file** (#1) for device-true rosters; then the write test. Set-by-name + apply_preset work today via the shared gen-3 roster. |
+| FM3 | [testing-fm3.md](testing-fm3.md) | [captures-gen3.md](captures-gen3.md) | **Cache file** (#1); routing already confirmed via FM3-Edit. Set-by-name + apply_preset work today. |
+| FM9 | [testing-fm9.md](testing-fm9.md) | [captures-gen3.md](captures-gen3.md) | **`fm9:verify` write-verify probe** (#3) flips writes to confirmed. Rosters and knob ranges are device-true (cache in); reads + preset receive confirmed. |
+| VP4 | [testing-vp4.md](testing-vp4.md) | [captures-vp4.md](captures-vp4.md) | **Cache file** (#1) for rosters; then confirm the decoded writes (continuous-knob set_param, set_bypass, save_preset) on hardware. Block placement + scene switching stay gated pending a capture. Reads work. |
+| Standard / Ultra | [testing-axe-fx-gen1.md](testing-axe-fx-gen1.md) | [captures-axe-fx-gen1.md](captures-axe-fx-gen1.md) | **Top ask: ONE structural editing-session capture (place block / route / save in gen-1 AxeEdit) -- the single unlock for apply_preset + save** (C2 in the guide). Also: port name + a write/read confirmation; legacy captures confirm reads + decode the patch-dump body. |
+
+Because these devices share a protocol family, one good cache file, probe, or
+capture often helps several at once.
 
 ---
 
@@ -46,7 +108,7 @@ Both testing and capture contributors need [Claude Desktop](https://claude.ai/do
 
 ---
 
-## Capture tool setup
+## Capture tool setup (only for ask #4)
 
 One-time setup to record raw MIDI or USB traffic: [SETUP.md](SETUP.md).
 
@@ -57,4 +119,4 @@ One-time setup to record raw MIDI or USB traffic: [SETUP.md](SETUP.md).
 
 ## How to submit
 
-[GitHub issue](https://github.com/TheAndrewStaker/mcp-midi-control/issues) (label: `community-beta`) -- paste results or attach `.pcapng` / `.syx` files directly. No GitHub account? Reply to the Reddit thread -- all replies are read.
+[GitHub issue](https://github.com/TheAndrewStaker/mcp-midi-control/issues) (label: `community-beta`) -- attach the `.cache` file, `.pcapng` / `.syx` capture, or probe JSON directly, or paste test results. No GitHub account? Reply to the Reddit thread -- all replies are read.

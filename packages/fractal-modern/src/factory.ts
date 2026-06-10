@@ -39,8 +39,20 @@ import {
   createModernFractalCodec,
   AXE_FX_III_BLOCKS,
   resolveEffectId,
+  GEN3_READ_ROSTERS,
 } from 'fractal-midi/axe-fx-iii';
+import {
+  VP4_MODEL_ID,
+  buildVp4SetBypass,
+  buildVp4Save,
+  buildVp4SetParam,
+} from 'fractal-midi/vp4';
+import { FM9_RANGES } from 'fractal-midi/fm9';
 import { createModernCatalog, type AxeFxIIIParam } from './catalog.js';
+
+/** FM9 SysEx model byte: its device-true editor-cache ranges (FM9_RANGES) take
+ *  precedence over the AM4-overlay-inferred catalog bounds. */
+const FM9_MODEL_ID = 0x12;
 import { makeReader } from './reader.js';
 import { makeWriter } from './writer.js';
 
@@ -116,6 +128,13 @@ export interface FractalModernConfig {
    */
   writes_gated?: boolean;
   /**
+   * When `writes_gated` is true, ops listed here are EXEMPT — they have a
+   * hardware-confirmed wire shape and ship as community-beta. e.g. VP4 allows
+   * `set_bypass` + `save_preset` (decoded byte-exact from a community capture)
+   * while every other write stays gated. Omit ⇒ all writes gated.
+   */
+  write_allowlist?: readonly string[];
+  /**
    * MIDI Bank-Select encoding for switch_preset's PC+bank message. Default
    * 'standard' (Axe-Fx III / FM3 per the v1.4 spec: bank = CC0<<7 | CC32).
    * Set 'msb' for the FM9, which reads the bank from CC0/MSB and ignores CC32
@@ -127,8 +146,10 @@ export interface FractalModernConfig {
    * Per-device enum override tables (param firmware symbol -> ordinal -> name),
    * captured + verified from THIS model's hardware. Used where the amp/effect
    * roster is device-specific so the family-shared overlay leaves it numeric
-   * (e.g. FM9 amp models). Partial tables are fine. Read-leg only (broadcast
-   * ordinals, not typed-SET raw ids). Omit for devices with none.
+   * (e.g. FM9 amp models). Partial tables are fine. Broadcast/read ordinals,
+   * which double as the discrete-SET value (set-by-name: a discrete SET carries
+   * float32(ordinal) at pos 12, sub 09 00 — no separate raw-id space). Omit for
+   * devices with none.
    */
   enum_overrides?: Readonly<Record<string, Readonly<Record<number, string>>>>;
   canonical_terms: CanonicalTermMap;
@@ -138,19 +159,54 @@ export interface FractalModernConfig {
 }
 
 export function createModernFractalDescriptor(config: FractalModernConfig): DeviceDescriptor {
-  const codec = createModernFractalCodec(config.model_byte, { bankSelect: config.bank_select });
+  let codec = createModernFractalCodec(config.model_byte, { bankSelect: config.bank_select });
+  // VP4 (model 0x14) diverges from the III fn=0x01 frame: no sub-action, a `tc`
+  // sub-opcode, and a swapped-septet float. Override the write builders with the
+  // VP4-true ones (decoded byte-exact from community captures, fractal-midi/vp4).
+  // Reads still use the shared scaffolding. set_param stays GATED (the value
+  // calibration + discrete/continuous distinction are undecoded), so the param
+  // builders below are wired-ready but not yet reachable.
+  if (config.model_byte === VP4_MODEL_ID) {
+    codec = {
+      ...codec,
+      buildSetBypass: (e, b) => buildVp4SetBypass(e, b),
+      buildStorePreset: () => buildVp4Save(),
+      buildSetParameterContinuous: (e, p, normalized) => buildVp4SetParam(e, p, normalized, { continuous: true }),
+      buildSetParameter: (e, p) => {
+        throw new Error(
+          `vp4: discrete parameter SET (effectId ${e}, paramId ${p}) is not yet decoded — ` +
+            'only continuous knob writes have a captured wire shape.',
+        );
+      },
+    };
+  }
   const deviceLabel = config.display_name;
   const connectionLabel = config.connection_label ?? config.id;
 
   // Per-device catalog. Block roster + effect IDs are the III's (shared
   // across the gen-3 family); the param table is THIS device's own.
+  // Enum read rosters: the gen-3 grid family (III/FM3/FM9) shares the
+  // read-ordinal->name tables. They are layered BELOW the family overlay and
+  // this device's hardware-captured overrides (which win), so they fill params
+  // the overlay leaves numeric (notably the amp roster) without disturbing the
+  // overlay spellings. The merged ordinal table also drives set-by-name: a
+  // discrete SET carries float32(ordinal), so the read ordinal IS the set value
+  // (no separate raw-id space). Serial AM4-shape gen-3 (VP4) is held out pending
+  // its own validation.
   const catalog = createModernCatalog({
     blocks: AXE_FX_III_BLOCKS,
     paramsByFamily: config.params_by_family,
     resolveEffectId,
     dropEmptyMappedBlocks: config.device_true_roster ?? false,
     deviceEnumOverrides: config.enum_overrides,
+    sharedEnumRosters: config.grid !== undefined ? GEN3_READ_ROSTERS : undefined,
     excludeBlocks: config.exclude_blocks,
+    // FM9: device-true display ranges from the FM9-Edit effectDefinitions cache
+    // (community capture, fw 11.0) override the AM4-overlay-inferred bounds for
+    // calibration, correcting the float params whose inherited range contradicts
+    // the real front panel (DELAY_TIME, REVERB_PREDELAY, etc.). The III/FM3/VP4
+    // have no device-true range table yet, so they keep the catalog inference.
+    deviceRanges: config.model_byte === FM9_MODEL_ID ? FM9_RANGES : undefined,
   });
 
   // Grid devices (III/FM3/FM9) advertise a 2-D grid + multi-instance blocks;
@@ -190,12 +246,28 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
       scene_count: config.scene_count,
       has_channels: true,
       channel_names: config.channel_names,
+      // Named tempo divisions ("1/4 DOT") have no decoded gen-3 wire value;
+      // the codec refuses to fabricate one. translate_preset strips
+      // division strings bound for gen-3 targets with a warning.
+      named_tempo_divisions: false,
       // gen-3 grid exposes up to 4 of each block type (Amp 1..4, Reverb 1..4,
       // Delay 1..2); the `instance` arg addresses them via resolveEffectId.
       // Serial AM4-shape devices (VP4) are single-instance, like the AM4.
       has_block_instances: isGrid,
       preset_location_format: config.preset_location_format,
-      supports_save: false, // STORE envelope not in the published spec
+      // false = flash PERSISTENCE is not hardware-VERIFIED (so auto-save during
+      // navigation stays gated). The explicit save_preset tool still sends the
+      // store envelope (fn=0x01 sub=0x26, captured byte-exact from III/FM9-Edit),
+      // marked untested — gated on writer.savePreset presence, not this flag.
+      // save_note carries that distinction to the agent so supports_save=false
+      // is never read as "saving is unavailable".
+      supports_save: false,
+      save_note:
+        'save_preset and apply_preset(target_location, save_authorized: true) ARE available: ' +
+        'they send the gen-3 store envelope captured byte-exact from the editor (community-beta; ' +
+        'flash persistence not hardware-verified, so ask the user to confirm by switching away ' +
+        'and back). supports_save=false only gates AUTOMATIC save during navigation ' +
+        '(on_active_preset_edited="save_active_first"); it does NOT mean saving is unavailable.',
       supports_lineage: false,
       atomic_read: false,
       support_tier: config.support_tier,
@@ -220,6 +292,7 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
         preset_count: config.preset_count,
         supportsSave: false, // STORE not in the published spec for III/FM3/FM9
         writesGated: config.writes_gated ?? false,
+        writeAllowlist: config.write_allowlist,
       },
       deviceLabel,
       connectionLabel,

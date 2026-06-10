@@ -1,10 +1,12 @@
 /**
  * Axe-Fx Standard/Ultra (gen-1) DeviceWriter.
  *
- * Scope: SET only. gen-1's published doc documents the parameter-set message
- * and nothing else (no GET, no save, no preset-change, no scenes/channels). So
- * the writer implements `buildSetParam` + `setParam` + `setParams`; every other
- * op is omitted and the dispatcher returns `capability_not_supported`.
+ * Scope: this WRITER owns the SET path (`buildSetParam` + `setParam` +
+ * `setParams`). Parameter READ-back is wired separately in `reader.ts` (fn 0x02
+ * query -> MIDI_PARAM_VALUE), so gen-1 supports both set AND get_param. Save,
+ * preset-change, and scenes/channels are genuinely out of scope (not in the
+ * published gen-1 doc); the dispatcher returns `capability_not_supported` for
+ * those. Do not read "SET path" here as "set-only device".
  *
  * Community-beta: the wire is decoded byte-exactly from the vendor doc but not
  * confirmed on gen-1 hardware. Every response carries a beta note pointing the
@@ -72,7 +74,7 @@ export const writer: DeviceWriter = {
       wire_value: wireValue,
       ...(display !== undefined ? { display_value: display } : {}),
       acked: true,
-      info: `Fire-and-forget set on ${DEVICE_LABEL} (gen-1 has no read-back). ${BETA_NOTE}`,
+      info: `Set sent to ${DEVICE_LABEL}; the device does not echo writes, so read the value back with get_param (parameter read is wired, community-beta). ${BETA_NOTE}`,
     };
   },
 

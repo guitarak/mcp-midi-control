@@ -2,7 +2,7 @@
  * AM4 DeviceDescriptor — `DeviceWriter` implementation.
  *
  * Wraps the existing AM4 protocol layer (params.ts, blockTypes.ts,
- * setParam.ts, applyExecutor.ts, factoryBank.ts) into the
+ * setParam.ts, applyExecutor.ts) into the
  * `DeviceWriter` contract from `src/protocol/generic/types.ts`.
  *
  * Two flavors of method:
@@ -12,9 +12,9 @@
  *     byte-equivalence with the legacy am4_* tools.
  *   - Execute methods (`setParam`, `setParams`, `switchPreset`,
  *     `savePreset`, `switchScene`, `setBlock`, `setBypass`,
- *     `applyPreset`, `applySetlist`, `restoreDefaults`,
- *     `restoreDefaultsRange`, `rename`) — drive the wire round-trip
- *     via `sendAndAwaitAck` + the shared applyExecutor pipeline.
+ *     `applyPreset`, `applySetlist`, `rename`) — drive the wire
+ *     round-trip via `sendAndAwaitAck` + the shared applyExecutor
+ *     pipeline.
  *
  * Legacy `am4_*` tools keep working in parallel through v0.1.0; this
  * writer is what the unified `set_param` / `apply_preset` / etc.
@@ -29,10 +29,6 @@ import type {
   DispatchCtx,
   PresetSpec,
   RenameTarget,
-  RestoreDefaultsOptions,
-  RestoreDefaultsRangeOptions,
-  RestoreDefaultsRangeResult,
-  RestoreDefaultsResult,
   SavedSnapshot,
   SceneSpec,
   SetlistApplyOptions,
@@ -80,7 +76,6 @@ import {
 } from '../tools/applyExecutor.js';
 import { sendReadAndParse } from '../shared/readOps.js';
 import { readSaveSnapshot } from './reader.js';
-import { loadFactoryBank, sendFactoryRestore } from '../factoryBank.js';
 import { guardActiveAM4BufferOrSave, AM4_DIRTY_LABEL } from '../tools/safeEdit.js';
 import { markClean, markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
 import { readPresetName } from '../shared/readOps.js';
@@ -409,7 +404,13 @@ export const writer: DeviceWriter = {
       target: `${block}.${name}`,
       block,
       name,
-      wire_value: value,
+      // No `wire_value` on the AM4 set echo. The dispatcher hands the writer
+      // `encodeValue(...)`, and AM4's encode is effectively identity (the
+      // device applies its own scaling), so `value` here is the DISPLAY value,
+      // not a wire byte. Echoing it as `wire_value` was dishonest and meant
+      // the field carried different things across devices (a genuine wire int
+      // on the Axe-Fx II vs the display value on AM4). `display_value` already
+      // carries the truth; get_param stays authoritative for any wire read.
       display_value: display,
       acked: result.acked,
       channel: channelName,
@@ -935,182 +936,6 @@ export const writer: DeviceWriter = {
       results,
       totalWallTimeMs: Date.now() - startMs,
       finalActiveLocation,
-    };
-  },
-
-  async restoreDefaults(
-    ctx,
-    target,
-    options?: RestoreDefaultsOptions,
-  ): Promise<RestoreDefaultsResult> {
-    const startMs = Date.now();
-    const verifyEnabled = options?.verify ?? true;
-    const locationIndex = parseAm4Location(target);
-    try {
-      loadFactoryBank();
-    } catch (err) {
-      return {
-        ok: false,
-        location: formatLocationDisplay(locationIndex),
-        message: err instanceof Error ? err.message : String(err),
-        wallTimeMs: Date.now() - startMs,
-      };
-    }
-    let preRestoreName: string | undefined;
-    if (verifyEnabled) {
-      try {
-        const parsed = await readPresetName(ctx.conn, locationIndex);
-        preRestoreName = parsed.isEmpty ? '<EMPTY>' : parsed.name;
-      } catch {
-        preRestoreName = '<read-failed>';
-      }
-    }
-    const result = await sendFactoryRestore(ctx.conn, locationIndex);
-    let postRestoreName: string | undefined;
-    let verified: boolean | undefined;
-    if (verifyEnabled) {
-      try {
-        const parsed = await readPresetName(ctx.conn, locationIndex);
-        postRestoreName = parsed.isEmpty ? '<EMPTY>' : parsed.name;
-        if (postRestoreName === '<EMPTY>') {
-          return {
-            ok: false,
-            location: formatLocationDisplay(locationIndex),
-            message: `verification failure: post-restore name at ${formatLocationDisplay(locationIndex)} is <EMPTY>. Factory presets are never empty; the restore did not land.`,
-            wallTimeMs: Date.now() - startMs,
-            verified: false,
-            preRestoreName,
-            postRestoreName,
-            totalBytes: result.totalBytes,
-            messageCount: result.messageCount,
-          };
-        }
-        verified = preRestoreName === undefined
-          || preRestoreName.trim().toLowerCase() !== postRestoreName.trim().toLowerCase()
-          || preRestoreName === '<EMPTY>';
-      } catch (err) {
-        return {
-          ok: false,
-          location: formatLocationDisplay(locationIndex),
-          message: `verification timeout: could not read back preset name at ${formatLocationDisplay(locationIndex)} (${err instanceof Error ? err.message : String(err)}). Restore status unknown.`,
-          wallTimeMs: Date.now() - startMs,
-          preRestoreName,
-          postRestoreName: '<read-failed>',
-          totalBytes: result.totalBytes,
-          messageCount: result.messageCount,
-        };
-      }
-    }
-    return {
-      ok: true,
-      location: formatLocationDisplay(locationIndex),
-      message: verified === false
-        ? `verification soft warning: pre="${preRestoreName}" equals post="${postRestoreName}"; either already factory or restore didn't land.`
-        : `verified: pre="${preRestoreName}" → post="${postRestoreName}".`,
-      wallTimeMs: Date.now() - startMs,
-      verified,
-      preRestoreName,
-      postRestoreName,
-      totalBytes: result.totalBytes,
-      messageCount: result.messageCount,
-    };
-  },
-
-  async restoreDefaultsRange(
-    ctx,
-    from,
-    to,
-    options?: RestoreDefaultsRangeOptions,
-  ): Promise<RestoreDefaultsRangeResult> {
-    const startMs = Date.now();
-    const onError: 'stop' | 'continue' = options?.on_error ?? 'stop';
-    const dryRun = options?.dry_run ?? false;
-    const verifyEnabled = options?.verify ?? true;
-    const fromIdx = parseAm4Location(from);
-    const toIdx = parseAm4Location(to);
-    if (fromIdx > toIdx) {
-      throw new DispatchError(
-        'bad_location',
-        'Fractal AM4',
-        `Restore range invalid: ${from} (idx ${fromIdx}) is after ${to} (idx ${toIdx}).`,
-      );
-    }
-    const totalSlots = toIdx - fromIdx + 1;
-    const RANGE_CEILING = 26;
-    if (totalSlots > RANGE_CEILING) {
-      throw new DispatchError(
-        'value_out_of_range',
-        'Fractal AM4',
-        `Range size ${totalSlots} exceeds the per-call ceiling of ${RANGE_CEILING} slots.`,
-      );
-    }
-    try {
-      loadFactoryBank();
-    } catch (err) {
-      throw new DispatchError(
-        'capability_not_supported',
-        'Fractal AM4',
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-    if (dryRun) {
-      return {
-        ok: true,
-        total: totalSlots,
-        restored: 0,
-        failed: 0,
-        remaining: [],
-        results: [],
-        totalWallTimeMs: Date.now() - startMs,
-      };
-    }
-    const results: RestoreDefaultsRangeResult['results'] = [];
-    const resultsMut = results as Array<RestoreDefaultsRangeResult['results'][number]>;
-    let restored = 0;
-    let failed = 0;
-    let stopIndex: number | undefined;
-    for (let i = 0; i < totalSlots; i++) {
-      const locationIndex = fromIdx + i;
-      const display = formatLocationDisplay(locationIndex);
-      const slotStart = Date.now();
-      const single = await writer.restoreDefaults!(ctx, locationIndex, { verify: verifyEnabled });
-      if (!single.ok) {
-        failed++;
-        resultsMut.push({
-          location: display,
-          status: 'error',
-          error: single.message,
-          preRestoreName: single.preRestoreName,
-          postRestoreName: single.postRestoreName,
-          wallTimeMs: Date.now() - slotStart,
-        });
-        if (onError === 'stop') {
-          stopIndex = i;
-          break;
-        }
-        continue;
-      }
-      restored++;
-      resultsMut.push({
-        location: display,
-        status: 'ok',
-        preRestoreName: single.preRestoreName,
-        postRestoreName: single.postRestoreName,
-        wallTimeMs: Date.now() - slotStart,
-      });
-    }
-    const remaining = stopIndex !== undefined
-      ? Array.from({ length: totalSlots - stopIndex - 1 }, (_, k) =>
-          formatLocationDisplay(fromIdx + stopIndex! + 1 + k))
-      : [];
-    return {
-      ok: failed === 0,
-      total: totalSlots,
-      restored,
-      failed,
-      remaining,
-      results,
-      totalWallTimeMs: Date.now() - startMs,
     };
   },
 

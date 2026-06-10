@@ -101,6 +101,14 @@ export const CROSS_DEVICE_ALIASES: Readonly<
       effect_type: 'type',
       mid_freq: 'mid',
       mid_frequency: 'mid',
+      // AM4 amp's preamp-gain knob is `gain`; II canonical is
+      // `input_drive`, gen-3 canonical is `drive`. The missing
+      // preamp-gain triple was the #1 carryover from the 0.2.0 review
+      // (II→AM4 passed input_drive raw; apply validator caught it).
+      input_drive: 'gain',
+      drive: 'gain',
+      // AM4 amp's mid knob is `mid`; II canonical is `middle`.
+      middle: 'mid',
     }),
     // AM4 wah's effect-type enum knob is `type`; II is `effect_type`.
     wah: Object.freeze({
@@ -151,6 +159,11 @@ export const CROSS_DEVICE_ALIASES: Readonly<
     amp: Object.freeze({
       master: 'master_volume',
       type: 'effect_type',
+      // II amp's preamp-gain knob is `input_drive`; AM4 says `gain`,
+      // gen-3 says `drive`. II's mid knob is `middle`; AM4/gen-3 say `mid`.
+      gain: 'input_drive',
+      drive: 'input_drive',
+      mid: 'middle',
     }),
     // II uses `effect_type` block-wide; AM4 uses `type`. Accept the
     // AM4 word on the II port so a cross-device agent does not hit
@@ -202,9 +215,13 @@ export const CROSS_DEVICE_ALIASES: Readonly<
     // amp-model enum knob is `type` (matches AM4).
     amp: Object.freeze({
       gain: 'drive',
+      // II's preamp-gain word; gen-3 canonical is `drive` (DISTORT_DRIVE).
+      input_drive: 'drive',
       master_volume: 'master',
       volume: 'master',
       effect_type: 'type',
+      // II's mid word; gen-3 canonical is `mid` (DISTORT_MID).
+      middle: 'mid',
     }),
     wah: Object.freeze({
       effect_type: 'type',

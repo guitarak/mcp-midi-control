@@ -45,6 +45,7 @@ import type { RecipePort } from './pitch.js';
 export type SceneRole =
   | 'intro'
   | 'clean'
+  | 'ambient_clean'
   | 'rhythm'
   | 'build'
   | 'solo'
@@ -122,6 +123,24 @@ export const SCENE_LEVELING_RECIPES: Readonly<Record<string, SceneLevelingRecipe
       description:
         'Modern mix style: rhythm at unity, solo +2 dB. Solos sit IN the mix rather than on top.',
       offsets_db: {
+        rhythm: 0,
+        solo: 2,
+      },
+      applicable_devices: ['am4', 'axe-fx-ii', 'axe-fx-iii'] as const,
+    },
+    clean_forward: {
+      name: 'clean_forward',
+      description:
+        'Cleans deliberately HOT: clean +6, ambient clean +5, rhythm at unity, solo +2. ' +
+        'Gig logic (ear-tested 2026-06-10): a clean tone is dynamically recoverable — the ' +
+        'player can ease off with the volume knob and pick attack — while a saturated amp ' +
+        'compresses playing into a narrow loudness band with input maxed, so a hot clean ' +
+        'is safe in a way a hot lead is not. Distortion also raises average power, so an ' +
+        'untouched clean meters well below a high-gain scene; the boost compensates AND ' +
+        'leaves headroom to ride down.',
+      offsets_db: {
+        clean: 6,
+        ambient_clean: 5,
         rhythm: 0,
         solo: 2,
       },
