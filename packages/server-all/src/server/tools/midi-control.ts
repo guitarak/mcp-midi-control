@@ -8,6 +8,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 
 import { listMidiPorts } from '@mcp-midi-control/core/midi/transport.js';
+import { listSerialCandidates } from '@mcp-midi-control/core/midi/serialTransport.js';
 import { AM4_PORT_NEEDLES } from '@mcp-midi-control/am4/midi.js';
 
 import {
@@ -61,6 +62,39 @@ export function registerMidiControlTools(server: McpServer): void {
                     : inputs.length === 0 && outputs.length === 0
                         ? 'No MIDI ports of any kind are visible. This usually means no MIDI driver is installed.'
                         : 'AM4 not visible. Check USB cable, power, and that the AM4 driver is installed (https://www.fractalaudio.com/am4-downloads/).';
+        // Serial (USB-CDC) candidates — the FM3 is a serial device over USB,
+        // not a MIDI device, so it never appears in the MIDI lists above.
+        // Surface Fractal-looking serial ports here so "is my FM3 visible?"
+        // is answerable from this one tool. Time-boxed: SerialPort.list()
+        // can stall for seconds on Windows boxes with Bluetooth COM ports,
+        // and this tool promises to be safe/fast any time.
+        let serialSection = '';
+        try {
+            const serial = await Promise.race([
+                listSerialCandidates(),
+                new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 1500)),
+            ]);
+            if (serial !== undefined) {
+                const fractalSerial = serial.filter((c) => c.matchReason !== undefined);
+                if (fractalSerial.length > 0) {
+                    serialSection =
+                        `\n\nSerial (USB-CDC) ports — FM3 control channel (the FM3 is not a USB MIDI device):\n` +
+                        fractalSerial
+                            .map((c) => `  ${c.path}  ← ${c.matchReason}${c.friendlyName ? ` (${c.friendlyName})` : ''}`)
+                            .join('\n');
+                } else if (serial.length > 0) {
+                    // No Fractal metadata matched, but serial ports exist: an FM3
+                    // can enumerate metadata-less. Name the escape hatch here so
+                    // this one tool fully answers "is my FM3 visible?".
+                    serialSection =
+                        `\n\nSerial (USB-CDC) ports visible (none look Fractal): ` +
+                        serial.map((c) => c.path).join(', ') +
+                        `\nIf one of these is an FM3, set MCP_FM3_SERIAL_PATH=<path> in the server's environment.`;
+                }
+            }
+        } catch {
+            // Serial enumeration is best-effort; MIDI listing stays authoritative.
+        }
         return {
             content: [{
                 type: 'text',
@@ -69,7 +103,8 @@ export function registerMidiControlTools(server: McpServer): void {
                     `Inputs (${inputs.length}):\n` +
                     (inputs.length ? inputs.map(format).join('\n') : '  (none)') +
                     `\n\nOutputs (${outputs.length}):\n` +
-                    (outputs.length ? outputs.map(format).join('\n') : '  (none)'),
+                    (outputs.length ? outputs.map(format).join('\n') : '  (none)') +
+                    serialSection,
             }],
         };
     });

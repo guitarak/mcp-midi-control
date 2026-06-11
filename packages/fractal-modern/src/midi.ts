@@ -21,6 +21,7 @@ import {
   type MidiConnection,
   type MockResponder,
 } from '@mcp-midi-control/core/midi/transport.js';
+import { connectSerial } from '@mcp-midi-control/core/midi/serialTransport.js';
 import { markClean, markDirty } from '@mcp-midi-control/core/server-shared/bufferDirty.js';
 import {
   registerConnector,
@@ -159,6 +160,20 @@ export interface Gen3ConnectorSpec {
   notFoundHints: readonly string[];
   /** Mock-transport response synthesizer (agent-regression without hardware). */
   mockResponder?: MockResponder;
+  /**
+   * Fall back to a USB-CDC serial connection when no MIDI port matches.
+   * FM3-only: the FM3 exposes no USB-MIDI interface on any OS — its control
+   * channel is a serial device ("FM3 Communications Port" / /dev/cu.usbmodem*
+   * / /dev/ttyACM*) carrying raw MIDI bytes. The MIDI-needle path stays
+   * primary so DIN-via-interface and loopMIDI test setups keep working.
+   * Community-beta: decoded from a collaborator's FM3 hardware sessions,
+   * not yet hardware-verified through THIS implementation.
+   */
+  serialFallback?: {
+    baudRate: number;
+    /** Env var holding an explicit serial path override (e.g. COM5). */
+    envPathVar?: string;
+  };
 }
 
 export function createFractalGen3Connector(spec: Gen3ConnectorSpec): FractalGen3Connector {
@@ -172,11 +187,41 @@ export function createFractalGen3Connector(spec: Gen3ConnectorSpec): FractalGen3
         spec.label,
       );
     }
-    const conn = connect({
-      needles: spec.portNeedles,
-      notFoundLeadIn: spec.notFoundLeadIn,
-      notFoundHints: [...spec.notFoundHints],
-    });
+    let conn: MidiConnection;
+    try {
+      conn = connect({
+        needles: spec.portNeedles,
+        notFoundLeadIn: spec.notFoundLeadIn,
+        notFoundHints: [...spec.notFoundHints],
+      });
+    } catch (midiErr) {
+      if (!spec.serialFallback) throw midiErr;
+      const explicitPath = spec.serialFallback.envPathVar
+        ? process.env[spec.serialFallback.envPathVar]
+        : undefined;
+      // Carry the MIDI-side diagnostic into the serial failure path so a
+      // fallback can never SWALLOW the original error (e.g. a loopMIDI/DIN
+      // port that matched the needles but was exclusively held).
+      const midiDetail = midiErr instanceof Error
+        ? midiErr.message.split('\n')[0]
+        : String(midiErr);
+      conn = connectSerial({
+        explicitPath,
+        baudRate: spec.serialFallback.baudRate,
+        notFoundLeadIn:
+          `${spec.displayName} not found as a MIDI port OR a USB-CDC serial device. ` +
+          `(Over USB the ${spec.displayName} is a SERIAL device, not a MIDI device.) Common causes:`,
+        notFoundHints: [
+          `  - ${spec.displayName} is powered off or not connected by USB`,
+          '  - On Windows: Fractal\'s "FM3 USB Serial Driver" is not installed (separate from the audio driver)',
+          `  - ${spec.displayName}-Edit or Fractal-Bot is holding the serial port (it is exclusive) — fully quit it`,
+          spec.serialFallback.envPathVar
+            ? `  - Port enumerates without Fractal metadata: set ${spec.serialFallback.envPathVar}=<path> (e.g. COM5 or /dev/cu.usbmodemXXXX)`
+            : '',
+          `  (MIDI-port path was tried first and also failed: ${midiDetail})`,
+        ].filter((l) => l !== ''),
+      });
+    }
     return wrapWithDirtyClassification(conn, spec.modelId, spec.label);
   }
 
@@ -313,6 +358,7 @@ const fm3Connector = createFractalGen3Connector({
     'Once visible, call `list_midi_ports` to confirm the server sees it, then retry. Use `reconnect_midi` to force a fresh handle.',
   ],
   mockResponder: makeGen3BroadcastMockResponder({ modelByte: 0x11 }),
+  serialFallback: { baudRate: 115200, envPathVar: 'MCP_FM3_SERIAL_PATH' },
 });
 
 export const connectFM3 = fm3Connector.connect;

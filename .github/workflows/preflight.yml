@@ -31,6 +31,9 @@ jobs:
       - name: Test suite
         run: npm test
 
+      - name: Catalog drift check (generated JSON matches src)
+        run: npm run catalog:check
+
       - name: Lint (no internal refs)
         run: npm run verify-no-internal-refs
 

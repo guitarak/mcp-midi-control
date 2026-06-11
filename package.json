@@ -1,6 +1,6 @@
 {
   "name": "mcp-midi-control",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "An opinionated open-source MCP server for controlling MIDI gear by conversation: display-first units, safe-by-default writes, and the same guarantees across every device. Generic MIDI for any USB device, with hardware-verified depth on the Fractal AM4, Axe-Fx II, and ASM Hydrasynth (Axe-Fx III, the modern Fractal family, and the original Axe-Fx Standard/Ultra in community beta).",
   "private": true,
   "license": "Apache-2.0",
@@ -63,6 +63,7 @@
     "build-type-knobs": "tsx scripts/build-type-knobs.ts",
     "verify-pack": "tsx scripts/verify-pack.ts",
     "verify-sysex-assembler": "tsx scripts/verify-sysex-assembler.ts",
+    "verify-serial-framer": "tsx scripts/verify-serial-framer.ts",
     "verify-msg": "tsx scripts/verify-msg.ts",
     "verify-describe-inbound": "tsx scripts/verify-describe-inbound.ts",
     "verify-transpile": "tsx scripts/verify-transpile.ts",
@@ -149,7 +150,7 @@
     "hydra:verify-display-first": "tsx scripts/hydrasynth/verify-display-first.ts",
     "hydra:verify-fx-defaults": "tsx scripts/hydrasynth/verify-fx-defaults.ts",
     "hydra:gen-mod-routing": "tsx scripts/hydrasynth/generate-mod-routing.ts",
-    "test:codec": "npm run verify-pack && npm run verify-sysex-assembler && npm run verify-msg && npm run verify-describe-inbound && npm run verify-transpile && npm run verify-enum-lookup && npm run verify-echo && npm run verify-cache-params && npm run verify-preset-dump && npm run verify-safety",
+    "test:codec": "npm run verify-pack && npm run verify-sysex-assembler && npm run verify-serial-framer && npm run verify-msg && npm run verify-describe-inbound && npm run verify-transpile && npm run verify-enum-lookup && npm run verify-echo && npm run verify-cache-params && npm run verify-preset-dump && npm run verify-safety",
     "test:cross-device": "npm run verify-cross-device-aliases && npm run verify-cross-device-enums && npm run verify-enum-coverage && npm run verify-schema-enums && npm run verify-concept-keys && npm run verify-port-preset && npm run verify-translator && npm run verify-recipe-tables && npm run verify-auto-wah-recipes && npm run verify-scene-leveling && npm run verify-loudness-lookup && npm run verify-apply-preflight && npm run verify-param-descriptions && npm run verify-dispatcher && npm run verify-describe-device && npm run verify-param-kind && npm run verify-name-parity && npm run verify-response-shape-parity && npm run verify-loudness-completeness",
     "verify-name-parity": "tsx scripts/verify-name-parity.ts",
     "verify-translator": "tsx scripts/verify-translator.ts",
@@ -188,7 +189,9 @@
     "tools:inventory-check": "tsx scripts/list-tools.ts --check",
     "deadcode": "knip",
     "deadcode:fix": "knip --fix",
-    "preflight": "npm run build && npm run typecheck && npm test && npm run verify-no-internal-refs && npm run cookbook-verify && npm run tools:inventory-check && npm run verify-tool-annotations && npm run verify-preset-portability && npm run verify-fm9-rosters && npm run verify-fm9-ranges && npm run verify-fm9-end-to-end",
+    "catalog:check": "npm run catalog:check --workspace=fractal-midi",
+    "catalog:export": "npm run catalog:export --workspace=fractal-midi",
+    "preflight": "npm run build && npm run typecheck && npm test && npm run catalog:check && npm run verify-no-internal-refs && npm run cookbook-verify && npm run tools:inventory-check && npm run verify-tool-annotations && npm run verify-preset-portability && npm run verify-fm9-rosters && npm run verify-fm9-ranges && npm run verify-fm9-end-to-end",
     "release-gate": "npm run preflight && npm run test:release-extras && npm run launch-verify && npm run agent-sweep && npm run live-regression"
   },
   "devDependencies": {
@@ -203,6 +206,7 @@
     "jest": "^29.0.0",
     "knip": "^6.15.0",
     "midi": "^2.0.0",
+    "serialport": "^13.0.0",
     "ts-jest": "^29.0.0",
     "tsc-alias": "^1.8.17",
     "tsx": "^4.19.0",
@@ -210,6 +214,6 @@
     "zod": "^4.4.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   }
 }

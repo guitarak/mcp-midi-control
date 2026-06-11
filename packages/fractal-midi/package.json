@@ -1,6 +1,6 @@
 {
   "name": "fractal-midi",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Pure-TypeScript codec and parameter dictionaries for Fractal Audio devices (AM4, Axe-Fx II, Axe-Fx III, FM3, FM9, VP4, Axe-Fx Standard/Ultra). No MIDI transport dependency, bring your own.",
   "license": "Apache-2.0",
   "author": "Stephen Staker <stephenstaker@gmail.com>",
@@ -43,10 +43,13 @@
     "./vp4": {
       "types": "./dist/vp4/index.d.ts",
       "default": "./dist/vp4/index.js"
-    }
+    },
+    "./catalog/*.json": "./catalog/*.json"
   },
   "files": [
     "dist",
+    "catalog",
+    "docs/CATALOG-SCHEMA.md",
     "README.md",
     "LICENSE",
     "NOTICE"
@@ -79,7 +82,9 @@
     "build": "tsc -p tsconfig.json && tsx scripts/copy-build-assets.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx test/run-all.ts",
-    "preflight": "npm run typecheck && npm test && npm run build"
+    "catalog:export": "tsx scripts/export-catalog.ts",
+    "catalog:check": "tsx scripts/export-catalog.ts --check",
+    "preflight": "npm run typecheck && npm test && npm run build && npm run catalog:check"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

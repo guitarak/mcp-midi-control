@@ -78,6 +78,17 @@ import { buildSetParam } from 'fractal-midi/axe-fx-ii/codec';
 import { params } from 'fractal-midi/axe-fx-iii';
 ```
 
+### Not using TypeScript? Use the JSON catalog
+
+`catalog/` ships a generated, language-agnostic export of every device's
+parameter dictionary, block tables, enum rosters, and ranges — one JSON file
+per device. Read it straight from the installed package
+(`node_modules/fractal-midi/catalog/<device>.json`) or from a pinned git tag.
+Pin a version rather than copying the files: calibration fixes and enum-roster
+fills land here first. Shape contract:
+[docs/CATALOG-SCHEMA.md](docs/CATALOG-SCHEMA.md). The JSON is regenerated from
+the TypeScript source on every change and CI-gated against drift.
+
 ## Per-device coverage
 
 | Device | Catalog | Codec | Calibration | Hardware-verified |

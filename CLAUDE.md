@@ -77,6 +77,7 @@ or ships loudly-flagged. Use accurate support-status language
 - TypeScript / Node.js (**ES modules**, not CommonJS: `package.json` has `"type": "module"`, `tsconfig.json` uses `"module": "NodeNext"`)
 - `tsx` is the TypeScript runner for scripts (not `ts-node`); invoke via `npm run <script>` or `npx tsx <path>`
 - node-midi for USB MIDI (native module; requires VS Build Tools on Windows dev machines. End users get a release ZIP with bundled Node + prebuilt native binary, no toolchain needed)
+- serialport for the **FM3 only**: the FM3 is not a USB MIDI device on ANY OS — its control channel is USB-CDC serial (Windows "FM3 Communications Port" via Fractal's serial driver, Mac `/dev/cu.usbmodem*`, Linux `/dev/ttyACM*`) carrying raw MIDI bytes. `packages/core/src/midi/serialTransport.ts` implements `MidiConnection` over it (deferred-open facade; exclusive port; `MCP_FM3_SERIAL_PATH` override). Every other Fractal device (III/FM9/VP4/AM4) is MIDI-class on Mac/Linux and driver-gated MIDI on Windows — do not generalize the FM3's serial path to them.
 - @modelcontextprotocol/sdk for MCP
 - No framework. No ORM. Keep it simple.
 

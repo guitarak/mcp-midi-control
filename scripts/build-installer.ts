@@ -178,7 +178,7 @@ async function main() {
   // workspace package now imports the Fractal codec from this published npm
   // package. The bundle must install it at the root so runtime walk-up
   // resolution from `node_modules/@mcp-midi-control/*/dist/*.js` finds it.
-  const leafDeps = ['@modelcontextprotocol/sdk', 'fractal-midi', 'midi', 'zod'] as const;
+  const leafDeps = ['@modelcontextprotocol/sdk', 'fractal-midi', 'midi', 'serialport', 'zod'] as const;
   const leanDeps: Record<string, string> = {};
   for (const d of leafDeps) {
     const v = devPkg.devDependencies?.[d] ?? devPkg.dependencies?.[d];
@@ -330,6 +330,23 @@ async function main() {
       `&& re-run this script.`
     );
   }
+
+  // serialport (the FM3 USB-CDC transport) loads its native binding from
+  // @serialport/bindings-cpp prebuilds — layout varies by version, so a
+  // LOAD test with the bundled node beats a file-path check. Without this,
+  // a broken binding ships green and surfaces only for FM3 users, with a
+  // misleading "could not open port" diagnostic.
+  try {
+    execSync(
+      `"${path.join(STAGING, 'node.exe')}" -e "import('serialport').then(m => { if (!m.SerialPort) throw new Error('no SerialPort export'); }).catch(e => { console.error(e); process.exit(1); })"`,
+      { cwd: STAGING, stdio: 'pipe' },
+    );
+  } catch (err) {
+    throw new Error(
+      `serialport failed to load under the bundled node (FM3 serial transport would be dead in the ZIP): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  console.log('[build] serialport native binding loads under bundled node.');
 
   // Smoke-boot the bundled server with the bundled node.exe to catch
   // import-resolution regressions BEFORE producing the ZIP. The dev-tree

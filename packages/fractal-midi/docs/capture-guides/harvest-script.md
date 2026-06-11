@@ -42,6 +42,7 @@ The first four lines are one-time setup. After that, the harvest is the single l
 
 - **Windows:** run the commands in PowerShell or Git Bash. If `npm install` complains about build tools (the MIDI module compiles a small native piece), install "Visual Studio Build Tools" with the C++ workload and retry.
 - **Mac:** run the commands in Terminal. No driver needed; macOS sees Fractal devices natively.
+- **FM3: the harvest script cannot reach it (yet).** The FM3 is a USB **serial** device, not a MIDI device, on every OS, and this script talks MIDI ports directly. The MCP server itself reaches an FM3 over serial; the harvest script has not been ported to that transport. FM3 owners: the [testing-fm3.md](testing-fm3.md) conversational tests cover the same ground, and the FM3-Edit cache file (no tools at all) is the higher-value contribution anyway.
 
 The script auto-detects your device. It prints progress as it sweeps (expect 1 to 3 minutes, hard-capped at 10; the Axe-Fx II sweep is the longest because it walks every parameter of every placed block), and ends with:
 

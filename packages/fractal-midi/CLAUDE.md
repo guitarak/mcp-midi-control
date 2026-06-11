@@ -51,7 +51,11 @@ packages/fractal-midi/
 ├── test/                     # Golden-based test suites
 │   └── run-all.ts            # Test runner entry point
 ├── scripts/
-│   └── copy-build-assets.ts  # Copies lineage JSON into dist/ after tsc
+│   ├── copy-build-assets.ts  # Copies lineage JSON into dist/ after tsc
+│   └── export-catalog.ts     # Generates catalog/*.json from the TS exports
+├── catalog/                  # GENERATED language-agnostic JSON catalog (committed;
+│                             #   never hand-edit — `npm run catalog:export` regenerates,
+│                             #   `catalog:check` gates drift in preflight)
 ├── docs/                     # Protocol RE docs (SYSEX-MAP, capture guides, cookbook)
 │   └── devices/              # Per-device protocol references
 └── dist/                     # Build output (gitignored)
@@ -70,6 +74,12 @@ import { buildSetParam, nibbleSplit, KNOWN_PARAMS } from 'fractal-midi/axe-fx-ge
 ```
 
 The root export (`fractal-midi`) exposes only a `VERSION` constant.
+
+Non-TypeScript consumers read the generated JSON catalog instead:
+`fractal-midi/catalog/<device>.json` (shape contract in
+[docs/CATALOG-SCHEMA.md](docs/CATALOG-SCHEMA.md)). When a param table, enum
+roster, or range table changes, run `npm run catalog:export` in the same
+change — preflight's `catalog:check` fails on drift.
 
 ## Build and test
 

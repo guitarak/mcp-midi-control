@@ -8,6 +8,45 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
+## [0.3.1]
+
+Two additions aimed at the community: a language-agnostic JSON export of every
+device's parameter dictionary, and first support for connecting the FM3 — the
+one Fractal device that is not a USB MIDI device on any OS.
+
+### Added
+
+- **JSON parameter catalog (`fractal-midi/catalog/`).** Every device's full
+  dictionary — params, wire ids, blocks, enum rosters, ranges — exported as one
+  generated JSON file per device, shipped in the `fractal-midi` npm package and
+  the repo. Built for non-TypeScript consumers (Python tooling, librarians):
+  pin a version instead of vendoring source files, and every calibration fix
+  and roster fill lands on your side automatically. The export is regenerated
+  from the TypeScript source and CI-gated against drift; shape contract in
+  `docs/CATALOG-SCHEMA.md`.
+- **FM3 over USB (community beta).** The FM3's USB control channel is a serial
+  device, not a MIDI device ("FM3 Communications Port" on Windows,
+  `/dev/cu.usbmodem…` on macOS). The server now auto-discovers that serial port
+  (falling back from MIDI-port discovery) and speaks raw MIDI over it, so an
+  FM3 works over plain USB on Windows and macOS. The serial port is exclusive —
+  fully quit FM3-Edit / Fractal-Bot while connected. If auto-detection misses,
+  set `MCP_FM3_SERIAL_PATH`. Hardware reports welcome: the wire paths are
+  collaborator-confirmed, this server's serial leg is the part awaiting a
+  first field test.
+- `list_midi_ports` now also lists Fractal-looking serial (USB-CDC) ports, so
+  "is my FM3 visible?" is answerable from the one diagnostic tool.
+
+### Changed
+
+- Source installs now require Node.js 20+ (the serial transport's native
+  dependency sets that floor). Release-ZIP users are unaffected — the bundled
+  runtime already satisfies it.
+- Mac and FM3 documentation corrected against Fractal's own USB documentation:
+  the Axe-Fx III, FM9, VP4, and AM4 are class-compliant USB MIDI devices on
+  macOS (no driver, no caveats); only the FM3 is serial. MIDI Monitor cannot
+  capture FM3-Edit traffic, and the metadata harvest script cannot reach an
+  FM3 — both guides now say so instead of implying otherwise.
+
 ## [0.3.0]
 
 Makes the modern Fractal family far more accurate and capable. The FM9 becomes a

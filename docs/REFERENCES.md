@@ -179,6 +179,25 @@ Active community. Useful search terms:
 - "preset format": reverse-engineering discussions (mostly Axe-Fx III, some apply).
 - "3rd party MIDI": expected usage and gotchas.
 
+### USB enumeration per device (settled 2026-06-11, cited research)
+Which Fractal devices are USB-MIDI class-compliant vs serial — the answer to
+every "does it work on Mac / why is the FM3 invisible to MIDI apps" question:
+- **Fractal support KB, "Mac OS Audio MIDI Setup Utility"**
+  (`https://support.fractalaudio.com/en-US/mac-os-audio-midi-setup-utility-286553`):
+  states the III and FM9 appear in MIDI Studio and the FM3 does not ("this is
+  normal"). The single most authoritative per-device Mac statement.
+- **Fractal wiki `USB` and `MIDI` pages**: FM3 "is NOT a USB MIDI Device …
+  uses 'COM over USB' channels"; III/FM9 have the dedicated USB processor and
+  true MIDI-over-USB; VP4 "appears as MIDI ports in a DAW" (staff quote).
+- **FM3 downloads page**: Windows needs TWO drivers — audio + the "FM3 USB
+  Serial Driver" (virtual COM port; that's the editor/Fractal-Bot channel).
+- **Linux ground truth**: FM3 enumerates as `/dev/ttyACM0` (CDC-ACM); the
+  Axe-Fx III is `2466:8010` in mainline `sound/usb/quirks.c` (pure
+  audio+MIDI class, no serial).
+Net: every Fractal device here is CoreMIDI-reachable on macOS except the FM3,
+which is serial on every OS — hence the FM3 serial transport in
+`packages/core/src/midi/serialTransport.ts`.
+
 ### Axe-Fx II community libraries
 A detailed scan of the open-source community RE projects, with license,
 staleness, and coverage notes, lives in

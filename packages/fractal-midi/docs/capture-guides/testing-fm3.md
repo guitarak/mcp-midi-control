@@ -1,10 +1,31 @@
 # Testing: FM3
 
-> **Highest value:** the write confirmation (T3 below). Nothing has been confirmed on real FM3 hardware yet. The FM3 shares the gen-3 codec with the III and FM9 -- any result here advances all three.
+> **Highest value:** the end-to-end connection test (T1 below) — the FM3's USB
+> serial transport is this server's newest, least-tested layer. The CODEC paths
+> (discrete set-by-name, the striped read, continuous writes, SysEx preset
+> switch) are already hardware-confirmed on an FM3 by a community collaborator;
+> what needs confirming is THIS server driving them over the FM3's serial port.
 >
-> Beyond the tests below, the two highest-value FM3 artifacts need no capture tools: the editor's cache file (the device's complete parameter dictionary, offline -- see [captures-gen3.md C2](captures-gen3.md)) and a run of the one-command read-only [harvest script](harvest-script.md).
+> Beyond the tests below, the highest-value FM3 artifact needs no capture tools at all: the editor's cache file (the device's complete parameter dictionary — including the display ranges the catalog still lacks for FM3 — offline, see [captures-gen3.md C2](captures-gen3.md)). The [harvest script](harvest-script.md) does NOT work on the FM3 (it talks MIDI ports; the FM3 is serial-only over USB).
 
 See [README.md](README.md) for setup. Want to record captures too? See [captures-gen3.md](captures-gen3.md).
+
+## How the FM3 connects (read first)
+
+The FM3 is **not a USB MIDI device** on any OS (Fractal's docs are explicit).
+Over USB its control channel is a serial port, and the server speaks raw MIDI
+over it (community-beta):
+
+- **Windows:** install Fractal's **FM3 USB Serial Driver** (separate from the
+  audio driver; both come in the FM3 driver download). The FM3 then appears
+  under "Ports (COM & LPT)" as "FM3 Communications Port" — not in any MIDI
+  port list. The server finds it automatically.
+- **macOS:** no driver; the FM3 enumerates as `/dev/cu.usbmodem…` and the
+  server finds it automatically.
+- **The serial port is exclusive.** FM3-Edit / Fractal-Bot must be fully quit
+  while the server is connected (and vice versa).
+- If auto-detection misses, set `MCP_FM3_SERIAL_PATH` (e.g. `COM5` or
+  `/dev/cu.usbmodemXXXXX`) in the server's environment.
 
 Note: the FM3 runs a **4-row, 12-column effect grid** (the FM9/III use a 6-row, 14-column grid). That only matters for `set_block`.
 
@@ -41,7 +62,7 @@ Paste the full JSON and what the front panel shows.
 
 > "Set Amp 1 drive to 5.5, then read it back."
 
-Report whether the front panel moved and paste both responses. The write opcode is shared with the III but unconfirmed on FM hardware. If it reports success but the panel doesn't change, paste both responses -- that's the most valuable finding.
+Report whether the front panel moved and paste both responses. The write frames themselves are hardware-confirmed on FM3 (community collaborator, fw 12.00); what this test confirms is this server delivering them over the FM3's serial channel. If it reports success but the panel doesn't change, paste both responses -- that's the most valuable finding.
 
 ---
 

@@ -184,10 +184,17 @@ primitives](#generic-midi-primitives-13-tools) below.
   the original **Fractal Axe-Fx Standard/Ultra** (🟡 community beta, parameter set + read decoded from the published gen-1 SysEx spec, hardware-unconfirmed),
   **ASM Hydrasynth Explorer** (firmware 1.5.x). Unregistered USB MIDI
   devices still work through the generic-MIDI primitives.
+- **FM3 owners:** the FM3 is not a USB MIDI device on any OS — over USB it is
+  a serial device, and the server reaches it through that serial channel
+  automatically (🟡 community beta). On Windows install Fractal's "FM3 USB
+  Serial Driver" (bundled with the FM3 audio driver download); on macOS no
+  driver is needed. The serial port is exclusive: fully quit FM3-Edit /
+  Fractal-Bot while the server is connected. If auto-detection misses, set
+  `MCP_FM3_SERIAL_PATH` (e.g. `COM5` or `/dev/cu.usbmodemXXXXX`).
 - A Claude client that supports MCP: [Claude Desktop](https://claude.ai/download),
   [Claude Code](https://docs.claude.com/en/docs/claude-code), or any
   other MCP-capable host.
-- For source-installs only: Node.js 18+ and Visual Studio Build Tools
+- For source-installs only: Node.js 20+ and Visual Studio Build Tools
   (to compile the `midi` native module, published on npm as `midi`,
   source at [justinlatimer/node-midi](https://github.com/justinlatimer/node-midi)).
   The release ZIP bundles Node so end users do not need either.

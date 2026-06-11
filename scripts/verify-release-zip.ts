@@ -70,6 +70,22 @@ async function main(): Promise<void> {
   check('setup.cmd present', existsSync(path.join(bundleRoot, 'setup.cmd')));
   const nodeV = execFileSync(nodeExe, ['--version']).toString().trim();
   check(`bundled node runs (${nodeV})`, /^v\d+\./.test(nodeV));
+  // FM3 serial transport: serialport must LOAD under the bundled runtime
+  // (native binding via @serialport/bindings-cpp prebuilds; a path check is
+  // layout-fragile, a load check is the truth). serialTransport.ts imports
+  // it dynamically, so the server smoke-boot below cannot catch a broken
+  // binding — only this check does.
+  let serialportLoads = true;
+  try {
+    execFileSync(
+      nodeExe,
+      ['-e', "import('serialport').then(m => { if (!m.SerialPort) throw new Error('no SerialPort export'); }).catch(e => { console.error(e); process.exit(1); })"],
+      { cwd: bundleRoot, stdio: 'pipe' },
+    );
+  } catch {
+    serialportLoads = false;
+  }
+  check('serialport (FM3 serial transport) loads under bundled node', serialportLoads);
   const bundledPkg = JSON.parse(readFileSync(path.join(bundleRoot, 'package.json'), 'utf8')) as { version?: string };
   check(`bundled package version ${bundledPkg.version} === ${version}`, bundledPkg.version === version);
 

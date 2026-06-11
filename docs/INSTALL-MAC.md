@@ -58,9 +58,40 @@ and no Apple Developer fee** involved. The only cost is a one-time free
 6. **Restart Claude Desktop.** Fully quit it with `Cmd+Q` (closing the window is
    not enough), then reopen it.
 
-7. **Plug in your gear by USB** and ask Claude to connect. Most modern Fractal
-   (Axe-Fx III, FM3, FM9) and ASM units work on macOS with no driver: macOS
-   recognizes them automatically.
+7. **Plug in your gear by USB** and ask Claude to connect. Fractal and ASM
+   units work on macOS with no driver: macOS recognizes them automatically.
+
+## Which devices work over USB on a Mac
+
+Almost all of them, and with no driver. The Axe-Fx III, FM9, VP4, and AM4 are
+class-compliant USB MIDI devices on macOS (they appear in Audio MIDI Setup),
+as is the ASM Hydrasynth — plug in and go.
+
+**The FM3 is the one special case.** Fractal's own documentation is explicit
+that the FM3 is *not* a USB MIDI device on any OS — over USB its control
+channel is a serial device (`/dev/cu.usbmodem…` on a Mac). This server
+handles that automatically: when no FM3 MIDI port is found it looks for the
+FM3's serial port and talks raw MIDI over it (community-beta — please report
+how it goes). Two things to know:
+
+- The FM3 serial port is **exclusive**: FM3-Edit or Fractal-Bot must be fully
+  quit while Claude is talking to the FM3 (and vice versa).
+- If the FM3's port isn't auto-detected (the "ask Claude to list MIDI ports"
+  check will say so), tell the server the exact port. Find the name with
+  `ls /dev/cu.usbmodem*`, then add it to the server's entry in
+  `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+  ```json
+  "mcp-midi-control": {
+    "command": "node",
+    "args": ["…/dist/server/index.js"],
+    "env": { "MCP_FM3_SERIAL_PATH": "/dev/cu.usbmodemXXXXX" }
+  }
+  ```
+
+  (This is the one case where editing the config by hand is needed. Note that
+  re-running `npm run setup-mac` rewrites the entry — re-add the env line
+  after an update.)
 
 ## Updating later
 
