@@ -182,7 +182,7 @@ Before running, here's what we hope to learn from each:
 - **fn 0x16 GET_PARAM_INFO** — same potential as AM4 0x0F.
 - **fn 0x28 GET_PARAM_STRINGS** — device-side enum strings. Would
   let us drop the static `AMP_TYPES` / `DRIVE_TYPES` tables from
-  fractal-midi/axe-fx-ii and ask the device.
+  fractal-midi/gen2/axe-fx-ii and ask the device.
 - **fn 0x48 FSGRID** — informational.
 - **fn 0x47 SYSINFO payload decode** — understand each of the 8
   payload bytes' role.

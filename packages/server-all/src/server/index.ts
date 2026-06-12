@@ -16,8 +16,8 @@
  *                                               `list_midi_ports`,
  *                                               `reconnect_midi`)
  *   packages/am4/src/tools/                   AM4 tool family (split by family)
- *   packages/axe-fx-ii/src/tools/             Axe-Fx II tool family
- *   packages/axe-fx-iii/src/tools/            Axe-Fx III tool family (beta)
+ *   packages/fractal-gen2/src/tools/             Axe-Fx II tool family
+ *   packages/fractal-gen3/src/tools/            Axe-Fx III tool family (beta)
  *   packages/hydrasynth/src/                  Hydrasynth tool family
  *   packages/core/src/protocol-generic/       cross-device unified tools +
  *                                               dispatcher
@@ -61,13 +61,13 @@ import { AM4_PORT_NEEDLES } from '@mcp-midi-control/am4/midi.js';
 import { registerMidiControlTools } from './tools/midi-control.js';
 import { registerMidiPrimitiveTools } from './tools/midi-primitives.js';
 
-import { describeAxeFxIIPortStatus } from '@mcp-midi-control/axe-fx-ii/tools.js';
+import { describeAxeFxIIPortStatus } from '@mcp-midi-control/fractal-gen2/tools.js';
 import {
   describeAxeFxIIIPortStatus,
   describeFM3PortStatus,
   describeFM9PortStatus,
   describeVP4PortStatus,
-} from '@mcp-midi-control/fractal-modern/device.js';
+} from '@mcp-midi-control/fractal-gen3/device.js';
 import { registerHydrasynthTools, describeHydrasynthPortStatus } from '@mcp-midi-control/hydrasynth/server.js';
 
 // Unified tool surface — descriptor registration. The dispatcher
@@ -77,9 +77,9 @@ import { registerDevice as registerMcpDevice } from '@mcp-midi-control/core/prot
 import { registerDeviceResources } from '@mcp-midi-control/core/protocol-generic/resources.js';
 import { registerUnifiedTools } from '@mcp-midi-control/core/protocol-generic/tools.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
-import { AXEFXGEN1_DESCRIPTOR } from '@mcp-midi-control/axe-fx-gen1/descriptor.js';
-import { MODERN_FRACTAL_DESCRIPTORS } from '@mcp-midi-control/fractal-modern/device.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
+import { AXEFXGEN1_DESCRIPTOR } from '@mcp-midi-control/fractal-gen1/descriptor.js';
+import { MODERN_FRACTAL_DESCRIPTORS } from '@mcp-midi-control/fractal-gen3/device.js';
 import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
 
 // -- Server setup -----------------------------------------------------------
@@ -94,13 +94,22 @@ const SERVER_INSTRUCTIONS = [
   'mcp-midi-control is a USB MIDI control server for Fractal and ASM gear',
   'plus any generic MIDI device the OS exposes. First-class devices:',
   'Fractal AM4, Fractal Axe-Fx II XL+, ASM Hydrasynth Explorer.',
-  'Community beta (fully drivable, hardware-unverified: drive the tools',
-  'normally and ask the user to confirm results by ear / front panel, do',
-  'NOT withhold tool calls): the modern Fractal family Axe-Fx III / FM3 /',
-  'FM9 (full build / edit / save / scene / preset surface), Fractal VP4',
-  '(reads + continuous-knob set_param / set_bypass / save_preset writes),',
-  'and the original Axe-Fx Standard/Ultra (parameter WRITES via',
-  'set_param / set_params plus parameter reads; no whole-preset ops).',
+  'Community beta (fully drivable: drive the tools normally and ask the',
+  'user to confirm results by ear / front panel, do NOT withhold tool',
+  'calls): the modern Fractal family Axe-Fx III / FM3 / FM9 (full build /',
+  'edit / save / scene / preset surface). Of these the FM3 is the most',
+  'hardware-verified: a 2026-06-12 field test confirmed its USB-serial',
+  'transport, reads, continuous param writes, bypass, scene, and preset',
+  'switching end-to-end through this server\'s own code, and a 2026-06-10',
+  'community session confirmed set-by-name discrete param writes via',
+  'frames byte-identical to this server\'s encoder; only set_block',
+  'placement and save_preset still need on-device confirmation. The',
+  'III/FM9 share the',
+  'same byte-verified codec but have less hardware confirmation. Also',
+  'community beta: Fractal VP4 (reads + continuous-knob set_param /',
+  'set_bypass / save_preset writes), and the original Axe-Fx',
+  'Standard/Ultra (parameter WRITES via set_param / set_params plus',
+  'parameter reads; no whole-preset ops).',
   'Pick tools by intent, not by name length.',
   '',
   'DEFAULT BEHAVIOR — call the tools, do not write specs.',
@@ -189,17 +198,22 @@ registerHydrasynthTools(server);    // Hydra-specific tools not yet on unified s
 // Order matters: register MORE SPECIFIC port_match regexes FIRST so
 // tiebreaking favors the narrower pattern.
 //
-//   1. Modern Fractal family  /axe-?fx ?iii/i, /fm ?3/i, /fm ?9/i
-//                             (most specific — win on "Axe-Fx III" / "FM3" / "FM9")
+//   1. Modern Fractal family  /axe-?fx ?iii/i, /fm ?3/i, /fm ?9/i, /vp ?4/i
+//                             (most specific — win on "Axe-Fx III" / "FM3" / "FM9" / "VP4")
 //   2. Axe-Fx II   /axe-?fx/i        (would also match III if III didn't win first)
 //   3. AM4         /Fractal/i        (catch-all for the modern Fractal family)
 //   4. Hydrasynth  /hydrasynth/i     (different vendor — order doesn't matter for it)
 //
-// The modern Fractal devices (Axe-Fx III / FM3 / FM9) are community-beta:
-// one gen-3 codec factory, scaffolded from Fractal's published v1.4 PDF +
-// AxeEdit III assets, reused across the family by model byte. NOT yet
-// hardware-verified end-to-end. capabilities.support_tier carries the
-// machine-readable signal; each response carries a brief beta marker.
+// The modern Fractal devices (Axe-Fx III / FM3 / FM9 / VP4) are
+// community-beta: one gen-3 codec factory, scaffolded from Fractal's
+// published v1.4 PDF + AxeEdit III assets, reused across the family by
+// model byte. Hardware confirmation varies per device: the FM3 is
+// field-confirmed end-to-end for transport / reads / continuous param
+// writes / bypass / scene / preset switching (2026-06-12) with set-by-name
+// discrete writes confirmed via byte-identical frames (2026-06-10);
+// III / FM9 / VP4 have less confirmation. capabilities.support_tier and
+// each config carry the machine-readable signal; each response carries a
+// brief beta marker.
 // Registering via MODERN_FRACTAL_DESCRIPTORS (its declared order is the
 // registration order) means a newly-added family member is covered here
 // without editing this loop.

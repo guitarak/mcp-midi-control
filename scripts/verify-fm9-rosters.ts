@@ -4,7 +4,7 @@
  * A bad regeneration (wrong cache, wrong anchor, table-merge) fails here instead
  * of silently shipping wrong model names. Runs in preflight.
  */
-import { FM9_ENUM_OVERRIDES } from 'fractal-midi/fm9';
+import { FM9_ENUM_OVERRIDES } from 'fractal-midi/gen3/fm9';
 
 let failed = 0;
 function check(label: string, cond: boolean, detail: string): void {

@@ -16,9 +16,9 @@
  * timeouts when a real Axe-Fx II is attached). Pure registry walk —
  * runs in <50ms.
  */
-import { KNOWN_PARAMS } from 'fractal-midi/axe-fx-ii';
-import { AXE_FX_II_BLOCKS, BLOCK_BY_ID, resolveBlock } from 'fractal-midi/axe-fx-ii';
-import { findParam } from '@mcp-midi-control/axe-fx-ii/tools.js';
+import { KNOWN_PARAMS } from 'fractal-midi/gen2/axe-fx-ii';
+import { AXE_FX_II_BLOCKS, BLOCK_BY_ID, resolveBlock } from 'fractal-midi/gen2/axe-fx-ii';
+import { findParam } from '@mcp-midi-control/fractal-gen2/tools.js';
 
 let failures = 0;
 function check(label: string, ok: boolean, detail?: string): void {

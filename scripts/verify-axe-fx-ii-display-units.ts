@@ -6,10 +6,10 @@
 // and that the calibration data itself is internally consistent.
 //
 // Source of truth:
-//   - fractal-midi/axe-fx-ii KNOWN_PARAMS (~54 wiki-documented
+//   - fractal-midi/gen2/axe-fx-ii KNOWN_PARAMS (~54 wiki-documented
 //     calibrated knobs; the codec catalog's hardware-anchored
 //     baseline)
-//   - packages/axe-fx-ii/src/calibration.ts (BK-060 overlay —
+//   - packages/fractal-gen2/src/calibration.ts (BK-060 overlay —
 //     AM4-shared + editor-observed + fractal-convention entries
 //     that close the long tail of opaque-unit knobs)
 //
@@ -53,15 +53,15 @@ import {
   displayToWire,
   wireToDisplay,
   type AxeFxIIParam,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 import {
   calibrationEntries,
   calibrationStats,
   getCalibration,
-} from '@mcp-midi-control/axe-fx-ii/calibration.js';
+} from '@mcp-midi-control/fractal-gen2/calibration.js';
 
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 
 let failures = 0;
 

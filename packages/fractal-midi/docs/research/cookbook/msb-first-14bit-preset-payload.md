@@ -11,8 +11,8 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-msb-first-14bit-preset-payload
 relates_to: [septet-14bit]
 consumed_in:
-  - fractal-midi/src/axe-fx-ii/setParam.ts (buildSwitchPreset)
-  - fractal-midi/src/axe-fx-iii/setParam.ts (buildSwitchPreset)
+  - fractal-midi/src/gen2/axe-fx-ii/setParam.ts (buildSwitchPreset)
+  - fractal-midi/src/gen3/axe-fx-iii/setParam.ts (buildSwitchPreset)
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-store-preset.txt (FUN_14014d2a0 stream-patches MSB-first 14-bit preset index into each 0x77 PRESET_DUMP_HEADER; L322-339)
 ---
 

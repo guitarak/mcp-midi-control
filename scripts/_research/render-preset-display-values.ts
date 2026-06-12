@@ -3,7 +3,7 @@
  *
  * Question: can the gen-3 preset BODY's raw u16 param words be rendered as
  * device-true DISPLAY values by joining them to the FM9 cache-derived ranges
- * (packages/fractal-midi/src/fm9/ranges.generated.ts)?
+ * (packages/fractal-midi/src/gen3/fm9/ranges.generated.ts)?
  *
  * Method, on one real FM9 factory-style export
  * (samples/captured/fm9-152-super-duos2-exported-2026-06-03.syx):
@@ -38,12 +38,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parsePresetDump } from '../../packages/fractal-modern/src/presetDump.js';
-import { decodeRawPatch } from '../../packages/fractal-modern/src/presetHuffman.js';
-import { decodeGen3Body, getProfile, type Gen3Block } from '../../packages/fractal-modern/src/presetBody.js';
-import { FM9_RANGES, type Fm9ParamRange } from '../../packages/fractal-midi/src/fm9/ranges.generated.js';
-import { FM9_PARAMS_BY_FAMILY } from '../../packages/fractal-midi/src/fm9/params.js';
-import { FM9_ENUM_OVERRIDES } from '../../packages/fractal-midi/src/fm9/enumOverrides.js';
+import { parsePresetDump } from '../../packages/fractal-gen3/src/presetDump.js';
+import { decodeRawPatch } from '../../packages/fractal-gen3/src/presetHuffman.js';
+import { decodeGen3Body, getProfile, type Gen3Block } from '../../packages/fractal-gen3/src/presetBody.js';
+import { FM9_RANGES, type Fm9ParamRange } from '../../packages/fractal-midi/src/gen3/fm9/ranges.generated.js';
+import { FM9_PARAMS_BY_FAMILY } from '../../packages/fractal-midi/src/gen3/fm9/params.js';
+import { FM9_ENUM_OVERRIDES } from '../../packages/fractal-midi/src/gen3/fm9/enumOverrides.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '../..');

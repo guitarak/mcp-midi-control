@@ -51,8 +51,8 @@ import {
   parseQueryStatesResponse,
   type AxeFxIIBlockState,
   type QueryStateRecord,
-} from '../../packages/fractal-midi/src/axe-fx-ii/setParam.js';
-import { AXE_FX_II_BLOCKS } from '../../packages/fractal-midi/src/axe-fx-ii/blockTypes.js';
+} from '../../packages/fractal-midi/src/gen2/axe-fx-ii/setParam.js';
+import { AXE_FX_II_BLOCKS } from '../../packages/fractal-midi/src/gen2/axe-fx-ii/blockTypes.js';
 
 const READ_TIMEOUT_MS = 800;
 const RATE_LIMIT_MS = 60;

@@ -44,7 +44,7 @@ import {
   parsePresetDump,
   extractPresetName,
   type ParsedPresetDump,
-} from '@mcp-midi-control/axe-fx-ii/presetDump.js';
+} from '@mcp-midi-control/fractal-gen2/presetDump.js';
 
 const [beforePath, afterPath, ...rest] = process.argv.slice(2);
 if (beforePath === undefined || afterPath === undefined) {

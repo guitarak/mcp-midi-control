@@ -7,7 +7,7 @@
  *   docs/manuals/AxeFx-Ultra-SysEx-Messages.htm
  *     -> scripts/_research/parse-gen1-sysex.ts        (params.json, blockTypes.json; 0-mismatch validated)
  *     -> scripts/_research/gen1-canonicalize.ts       (canonical-params.json; snake_case keys + scaling flags)
- *     -> THIS generator                               (src/axe-fx-gen1/{params,blockTypes}.ts)
+ *     -> THIS generator                               (src/gen1/{params,blockTypes}.ts)
  *
  *   cd packages/fractal-midi && npx tsx scripts/generate-gen1-catalog.ts
  */
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..');
 const RESEARCH = join(REPO, 'scripts', '_research', 'gen1-out');
-const OUT = join(HERE, '..', 'src', 'axe-fx-gen1');
+const OUT = join(HERE, '..', 'src', 'gen1');
 
 interface CanonParam {
   key: string;

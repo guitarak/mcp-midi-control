@@ -1,5 +1,5 @@
 /**
- * Apply post-generation calibration overlay to `src/axe-fx-iii/params.ts`.
+ * Apply post-generation calibration overlay to `src/gen3/axe-fx-iii/params.ts`.
  *
  * The base params.ts is generated from three sources (AM4-borrow,
  * AxeEdit XML controlType, universal Fractal convention) but the base
@@ -25,7 +25,7 @@ import { dirname, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..', '..');
-const PARAMS_PATH = resolve(repoRoot, 'src', 'axe-fx-iii', 'params.ts');
+const PARAMS_PATH = resolve(repoRoot, 'src', 'gen3', 'axe-fx-iii', 'params.ts');
 
 // ── Suffix-convention table ───────────────────────────────────────
 //

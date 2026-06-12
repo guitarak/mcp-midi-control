@@ -29,7 +29,7 @@ import {
   PRESET_DUMP_LEN,
   parsePresetDump,
   extractPresetName,
-} from '@mcp-midi-control/axe-fx-ii/presetDump.js';
+} from '@mcp-midi-control/fractal-gen2/presetDump.js';
 
 const FACTORY_BANK_A = 'samples/factory/Axe-Fx-II_XL+_Bank-A_Q8p02.syx';
 

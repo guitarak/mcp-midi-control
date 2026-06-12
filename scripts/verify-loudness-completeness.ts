@@ -35,9 +35,9 @@
  * verify-lineage-resources.ts):
  *   - loudness accessor: @mcp-midi-control/core/fractal-shared/loudness.js
  *     (formatLoudnessAppendix is the exact path the II lineage formatter
- *     calls; see packages/axe-fx-ii/src/lineageLookup.ts).
+ *     calls; see packages/fractal-gen2/src/lineageLookup.ts).
  *   - II amp lineage records: loaded via loadAxeFxIILineage('amp') from
- *     @mcp-midi-control/axe-fx-ii/lineageLookup.js. These ARE the names
+ *     @mcp-midi-control/fractal-gen2/lineageLookup.js. These ARE the names
  *     lookup_lineage can return (forward / reverse / structured all draw
  *     from this same record set).
  *
@@ -49,7 +49,7 @@ import { formatLoudnessAppendix } from '@mcp-midi-control/core/fractal-shared/lo
 import {
   loadAxeFxIILineage,
   type AxeFxIILineageRecord,
-} from '@mcp-midi-control/axe-fx-ii/lineageLookup.js';
+} from '@mcp-midi-control/fractal-gen2/lineageLookup.js';
 
 let failed = 0;
 let passed = 0;
@@ -67,7 +67,7 @@ function check(label: string, ok: boolean, detail?: string): void {
 /**
  * The cross-device key the loudness accessor is fed by the lineage
  * formatter: AM4 display name when present, else the II display name.
- * Mirrors packages/axe-fx-ii/src/lineageLookup.ts formatAxeFxIILineageRecord.
+ * Mirrors packages/fractal-gen2/src/lineageLookup.ts formatAxeFxIILineageRecord.
  */
 function loudnessKeyFor(rec: AxeFxIILineageRecord): string {
   return rec.am4Name && rec.am4Name.length > 0 ? rec.am4Name : rec.axefx2Name;

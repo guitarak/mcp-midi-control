@@ -2,7 +2,7 @@
  * FM9 preset-dump round-trip golden.
  *
  * Proves the model-byte-parametric, frame-counted gen-3 preset-dump parser
- * (`packages/fractal-modern/src/presetDump.ts`) handles an FM9 export, whose
+ * (`packages/fractal-gen3/src/presetDump.ts`) handles an FM9 export, whose
  * envelope is identical to the Axe-Fx III's but with a different model byte
  * (0x12) and chunk count (8 vs 16):
  *   - 24,680 bytes per preset
@@ -30,7 +30,7 @@ import {
   parsePresetDump,
   parsePresetBank,
   serializePresetDump,
-} from '@mcp-midi-control/fractal-modern/presetDump.js';
+} from '@mcp-midi-control/fractal-gen3/presetDump.js';
 
 const FM9_MODEL_ID = 0x12;
 const FM9_CHUNK_COUNT = 8;

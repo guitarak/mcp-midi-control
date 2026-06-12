@@ -102,7 +102,7 @@ Every recipe must satisfy:
    string in the recipe MUST exist in the target device's catalog
    verbatim. Verify at authoring time:
    ```
-   grep -r "'BRIT SILVER'" packages/axe-fx-ii/  # for II
+   grep -r "'BRIT SILVER'" packages/fractal-gen2/  # for II
    grep -r "Brit Silver" packages/am4/          # for AM4
    ```
    If the enum doesn't exist, the recipe ships broken; the recipe-

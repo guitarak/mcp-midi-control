@@ -57,7 +57,7 @@ local_66 = ((ushort)iVar5 & 0x7f) - (short)uVar6 & 0xff;                 // L327
 
 For positive `param_3`, this reduces to `(p >> 7, p & 0x7F)`, the canonical MSB-first 14-bit preset encoding. The patcher then `memcpy`s the pair into the matched envelope's offset 6-7.
 
-**Why this matters.** The MSB-first-14-bit cookbook entry currently lists `consumed_in: fractal-midi/src/axe-fx-iii/setParam.ts (buildSwitchPreset)`. The Ghidra dump reveals a SECOND use case in the editor's bank-store workflow: build a template bank stream once, then patch the per-preset index into each `0x77` header before sending. This is a wire-level confirmation of MSB-first as the encoding for fn=0x77's preset-target field (not just fn=0x03/0x14/0x1d/0x3c).
+**Why this matters.** The MSB-first-14-bit cookbook entry currently lists `consumed_in: fractal-midi/src/gen3/axe-fx-iii/setParam.ts (buildSwitchPreset)`. The Ghidra dump reveals a SECOND use case in the editor's bank-store workflow: build a template bank stream once, then patch the per-preset index into each `0x77` header before sending. This is a wire-level confirmation of MSB-first as the encoding for fn=0x77's preset-target field (not just fn=0x03/0x14/0x1d/0x3c).
 
 The caller `FUN_14014d400` (the AxeEdit III "Save Preset" UI dispatcher; identifiable by its `"permanently overwrite N presets in your ..."` warning string at L573-575) invokes `FUN_14014d2a0` from switch case 4 (L692) with `param_3 = local_2a0[0] << 7`. That left-shift-by-7 is the **starting preset number for a bank** (e.g. bank A = 0, B = 128, C = 256), confirming the MSB-first encoding is used as a base + offset across the patched stream.
 

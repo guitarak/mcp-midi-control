@@ -36,10 +36,10 @@ import {
 import {
   resolveBlock as axeFxIIResolveBlock,
   IDS_BY_GROUP as AXE_FX_II_IDS_BY_GROUP,
-} from '../axe-fx-ii/blockTypes.js';
+} from '../gen2/axe-fx-ii/blockTypes.js';
 import {
   resolveEffectId as gen3ResolveEffectId,
-} from '../axe-fx-iii/blockTypes.js';
+} from '../gen3/axe-fx-iii/blockTypes.js';
 
 /** Model bytes the resolver understands, keyed by short device slug. */
 export const FRACTAL_MODEL_BYTES = {

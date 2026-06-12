@@ -19,9 +19,9 @@ import path from 'node:path';
 import midi from 'midi';
 import { SimDevice, type CaptureFrame } from './SimDevice.js';
 import type { FractalModernConfig } from './types.js';
-import { AXE_FX_III_CONFIG } from '@mcp-midi-control/fractal-modern/configs/axe-fx-iii.js';
-import { FM3_CONFIG } from '@mcp-midi-control/fractal-modern/configs/fm3.js';
-import { FM9_CONFIG } from '@mcp-midi-control/fractal-modern/configs/fm9.js';
+import { AXE_FX_III_CONFIG } from '@mcp-midi-control/fractal-gen3/configs/axe-fx-iii.js';
+import { FM3_CONFIG } from '@mcp-midi-control/fractal-gen3/configs/fm3.js';
+import { FM9_CONFIG } from '@mcp-midi-control/fractal-gen3/configs/fm9.js';
 
 export const CONFIG_BY_MODEL: Record<number, FractalModernConfig> = {
   0x10: AXE_FX_III_CONFIG,
@@ -137,7 +137,7 @@ export function runEmulator(opts: EmulatorOptions): void {
 
   const simConfig = CONFIG_BY_MODEL[modelByte];
   if (!simConfig) {
-    console.error(`No fractal-modern config for model 0x${modelByte.toString(16)} (expected 0x10/0x11/0x12).`);
+    console.error(`No fractal-gen3 config for model 0x${modelByte.toString(16)} (expected 0x10/0x11/0x12).`);
     process.exit(1);
   }
   const sim = new SimDevice(simConfig);

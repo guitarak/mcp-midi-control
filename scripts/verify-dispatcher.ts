@@ -38,20 +38,20 @@ import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js'
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { buildSetParam } from 'fractal-midi/am4';
 import { prepareApplyPresetWrites } from '@mcp-midi-control/am4/tools/applyExecutor.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 import {
   buildSetBlockParameterValue,
   buildStorePreset,
   buildSwitchPreset,
   displayToWire,
-} from 'fractal-midi/axe-fx-ii';
-import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/descriptor.js';
+} from 'fractal-midi/gen2/axe-fx-ii';
+import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-gen3/descriptor.js';
 import {
   FN_SET_GET_CHANNEL,
   FN_PARAMETER_SETGET,
   unpackValue16,
   decode5SeptetFloat32,
-} from 'fractal-midi/axe-fx-iii';
+} from 'fractal-midi/gen3/axe-fx-iii';
 
 function hex(arr: number[]): string {
   return arr.map((b) => b.toString(16).padStart(2, '0')).join('');

@@ -10,7 +10,7 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-alphabetical-name-cascade-block-ordering
 relates_to: [paramBase-plus-paramId, wire-id-pairs-per-placed-block, vendor-envelope-descriptor-table]
 consumed_in:
-  - packages/axe-fx-ii/src/sceneChannelMap.ts (BLOCK_LAYOUT_MAP)
+  - packages/fractal-gen2/src/sceneChannelMap.ts (BLOCK_LAYOUT_MAP)
   - (III: pending — transfer candidate, see iii-preset-receiver.txt)
 ---
 

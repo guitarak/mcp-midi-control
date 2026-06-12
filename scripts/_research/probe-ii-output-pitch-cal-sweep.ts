@@ -17,7 +17,7 @@
  *
  * Run: npx tsx scripts/_research/probe-ii-output-pitch-cal-sweep.ts
  */
-import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
+import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
 import {
   buildGetBlockParameterValue,
   isGetBlockParameterResponse,
@@ -25,7 +25,7 @@ import {
   buildGetGridLayout,
   parseGetGridLayoutResponse,
   buildSetGridCell,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 const II_MODEL = 0x07;
 const TIMEOUT_MS = 800;

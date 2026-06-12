@@ -69,7 +69,7 @@ to forum posts so the chain of evidence is auditable.
 
    **Proven uncompressed (container + header):**
    - The `0x78` body is **1024 uint16 words per chunk**, each word packed
-     3 bytes (`b0 | b1<<7 | b2<<14`), exactly as `fractal-modern/presetDump.ts`
+     3 bytes (`b0 | b1<<7 | b2<<14`), exactly as `fractal-gen3/src/presetDump.ts`
      reads it. Preset **names decode directly** (384/384) and the `0xAA55` magic
      word is universal (384/384) — you cannot read ASCII names out of a Huffman
      bitstream.
@@ -210,7 +210,7 @@ factory-bank walk):
 - 8 bytes of overhead per frame → **3074-byte payload**
 - ⚠️ **CORRECTED 2026-06-07 (see point 2):** the payload is NOT "24× 128-byte
   chunks". It is a **2-byte chunk discriminator + 1024 uint16 words packed
-  3 bytes/word** (`b0 | b1<<7 | b2<<14`), per `fractal-modern/presetDump.ts`.
+  3 bytes/word** (`b0 | b1<<7 | b2<<14`), per `fractal-gen3/src/presetDump.ts`.
 - The first chunk holds global preset info + the preset name (words 0–35);
   subsequent words/chunks hold block data.
 - ⚠️ **The "content is Huffman-compressed" line is SUPERSEDED** — the container
@@ -225,7 +225,7 @@ encoded with **MIDI 7-bit packing**: each character can split across
 
 ⚠️ **CRACKED 2026-06-07 (supersedes the forum's "not fully cracked").** The
 name is 2 ASCII chars per 16-bit word, **low byte then high byte**, in words
-4–19 of chunk 0; `extractPresetName` in `fractal-modern/presetDump.ts` decodes
+4–19 of chunk 0; `extractPresetName` in `fractal-gen3/src/presetDump.ts` decodes
 it across all 384 III factory presets and the FM9 export. The forum's
 "Spy Guitar" puzzle was the same lo/hi-per-word scheme, unrecognized.
 

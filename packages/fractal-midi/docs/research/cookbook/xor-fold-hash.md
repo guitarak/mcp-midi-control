@@ -10,7 +10,7 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-xor-fold-hash
 relates_to: [vendor-envelope-descriptor-table, septet-21bit-byte2-mask-preservation]
 consumed_in:
-  - packages/axe-fx-ii/src/presetDump.ts
+  - packages/fractal-gen2/src/presetDump.ts
   - scripts/_research/verify-footer-xor-hash.ts
 ---
 
@@ -54,7 +54,7 @@ hash on receive; mismatch causes fn 0x79 NACK 0x05.
   gen-3 fn 0x79 footer carries the same 16-bit XOR-fold of the body
   words (validated by Axe-Edit III's own receive path, which XOR-folds
   the de-framed body and rejects on mismatch; and by
-  `packages/fractal-modern/src/presetHuffman.ts` `computeRawPatchXor`
+  `packages/fractal-gen3/src/presetHuffman.ts` `computeRawPatchXor`
   across III + FM9 factory presets). The III store flow computes NO
   additional editor-side hash; it forwards the `.syx` body verbatim and
   patches only the 0x77 header. Note the earlier pointer at emitter

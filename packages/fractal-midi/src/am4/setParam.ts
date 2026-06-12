@@ -12,6 +12,7 @@
  */
 
 import { fractalChecksum } from '../shared/checksum.js';
+import { encode14 } from '../shared/septet16.js';
 import { packFloat32LE, packValue, packValueChunked, unpackValue, unpackValueChunked } from '../shared/packValue.js';
 import { KNOWN_PARAMS, encode, type ParamKey } from './params.js';
 
@@ -49,10 +50,8 @@ const SCENE_RENAME_PID_LOW = 0x00ce;
 const SCENE_RENAME_PID_HIGH_BASE = 0x0037;
 const SCENE_NAME_BYTES = 32;
 
-function encode14(n: number): [number, number] {
-  if (n < 0 || n > 0x3fff) throw new Error(`14-bit value out of range: ${n}`);
-  return [n & 0x7f, (n >> 7) & 0x7f];
-}
+// `encode14` (2-byte LSB-first septet pair) comes from
+// `fractal-midi/shared` (`shared/septet16.ts`), imported above.
 
 /**
  * Re-export of the shared Fractal-protocol `ParamId` so existing AM4

@@ -47,7 +47,7 @@ const ROOT = path.join(__dirname, '..');
 // `require.resolve('fractal-midi/shared')` (that points at built dist).
 const FRACTAL_MIDI_REPO = path.join(ROOT, 'packages', 'fractal-midi');
 const LINEAGE_DIR = path.join(FRACTAL_MIDI_REPO, 'src', 'shared', 'lineage');
-const PARAMS_PATH = path.join(FRACTAL_MIDI_REPO, 'src', 'axe-fx-ii', 'params.ts');
+const PARAMS_PATH = path.join(FRACTAL_MIDI_REPO, 'src', 'gen2', 'axe-fx-ii', 'params.ts');
 
 if (!existsSync(FRACTAL_MIDI_REPO)) {
     console.error(
@@ -397,7 +397,7 @@ function emit(
 ): void {
     const { records, stats } = extractBlock(block, enumName);
     const out: EmittedJSON = {
-        _source: `Re-keyed from fractal-midi/src/shared/lineage/${block}-lineage.json against AMP_EFFECT_TYPE_VALUES from fractal-midi/src/axe-fx-ii/params.ts`,
+        _source: `Re-keyed from fractal-midi/src/shared/lineage/${block}-lineage.json against AMP_EFFECT_TYPE_VALUES from fractal-midi/src/gen2/axe-fx-ii/params.ts`,
         _extractedAt: new Date().toISOString(),
         _enumSize: stats.total,
         _matched: stats.matched,

@@ -80,7 +80,7 @@ opcode, confirming the -1 offset is universal across the table.
 the documented 94-entry table is consistent with the live-captured
 opcode set in `fractal-midi/docs/devices/axe-fx-ii/axeedit-opcode-table.md`
 and that every shipped `FUNC_*` constant in
-`fractal-midi/src/axe-fx-ii/setParam.ts` matches an enum entry minus 1.
+`fractal-midi/src/gen2/axe-fx-ii/setParam.ts` matches an enum entry minus 1.
 
 When the AxeEdit binary refreshes, re-run
 `DumpAxeEditIIOpcodeTable.java` and diff the output against the

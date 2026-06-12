@@ -9,8 +9,8 @@ verified_on:
 golden: scripts/cookbook-verify.ts#case-gen3-fn01-store-preset
 relates_to: [septet-14bit, xor-7f-envelope-checksum, gen3-fn01-grid-set-position-insert]
 consumed_in:
-  - packages/fractal-midi/src/axe-fx-iii/setParam.ts (buildStorePreset)
-  - packages/fractal-midi/test/modern-family/catalog.test.ts (byte-exact store golden, models 0x10 + 0x12)
+  - packages/fractal-midi/src/gen3/axe-fx-iii/setParam.ts (buildStorePreset)
+  - packages/fractal-midi/test/gen3/modern-family/catalog.test.ts (byte-exact store golden, models 0x10 + 0x12)
 ---
 
 # Gen-3 store / save-to-location (fn=0x01 sub=0x26)
@@ -86,4 +86,4 @@ and asserts byte-for-byte equality with the captured frames.
   sub=0x26` (was `fn=0x1D`); the gen-3 `save_preset` warning copy updated to
   name the confirmed op. A byte-exact golden ties the production builder to
   the captured frames for models 0x10 and 0x12 in
-  `test/modern-family/catalog.test.ts`.
+  `test/gen3/modern-family/catalog.test.ts`.

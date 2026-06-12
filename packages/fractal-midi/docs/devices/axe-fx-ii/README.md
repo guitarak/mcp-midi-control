@@ -1,7 +1,7 @@
 ﻿# Axe-Fx II: protocol + research
 
 Fractal Axe-Fx II XL+ (model byte `0x07`). Hardware-verified on Quantum
-8.02. Code lives in [`src/axe-fx-ii/`](../../../src/axe-fx-ii/) (codec) and the consumer MCP descriptors at [`packages/axe-fx-ii/` in the consumer repo](https://github.com/TheAndrewStaker/mcp-midi-control/tree/main/packages/axe-fx-ii).
+8.02. Code lives in [`src/gen2/axe-fx-ii/`](../../../src/gen2/axe-fx-ii/) (codec) and the consumer MCP descriptors at [`packages/fractal-gen2/` in the consumer repo](https://github.com/TheAndrewStaker/mcp-midi-control/tree/main/packages/fractal-gen2).
 
 ## Files in this directory
 

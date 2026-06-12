@@ -10,8 +10,8 @@
  */
 import midi from 'midi';
 import { writeFileSync } from 'node:fs';
-import { KNOWN_PARAMS } from '../../packages/fractal-midi/src/axe-fx-ii/params.js';
-import { IDS_BY_GROUP } from '../../packages/fractal-midi/src/axe-fx-ii/blockTypes.js';
+import { KNOWN_PARAMS } from '../../packages/fractal-midi/src/gen2/axe-fx-ii/params.js';
+import { IDS_BY_GROUP } from '../../packages/fractal-midi/src/gen2/axe-fx-ii/blockTypes.js';
 
 const MODEL = 0x07, MFR = [0x00, 0x01, 0x74], F0 = 0xf0, F7 = 0xf7;
 const cks = (b: number[]) => b.reduce((a, x) => a ^ x, 0) & 0x7f;

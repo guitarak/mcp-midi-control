@@ -349,7 +349,7 @@ F0 00 01 74 10 64 0E 00 7F F7
 
 **Shipped :** the III tools wrap each fire-and-forget SET
 with a 250ms 0x64 listener (`sendAndWatchForError` in
-`src/axe-fx-iii/tools/shared.ts`); on reject the tool
+`src/gen3/axe-fx-iii/tools/shared.ts`); on reject the tool
 response surfaces `(echoed_fn, result_code)` plus a human label.
 
 ### 0x64 result codes (full table,  decode)

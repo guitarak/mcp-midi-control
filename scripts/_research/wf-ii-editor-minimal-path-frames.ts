@@ -19,7 +19,7 @@
  * is the load-bearing output (does NOT need hardware to be correct).
  */
 import { readFileSync } from 'node:fs';
-import { AXE_FX_II_OPCODES } from 'fractal-midi/axe-fx-ii';
+import { AXE_FX_II_OPCODES } from 'fractal-midi/gen2/axe-fx-ii';
 
 const NAME_BY_WIRE = new Map<number, string>();
 for (const [k, v] of Object.entries(AXE_FX_II_OPCODES)) NAME_BY_WIRE.set(v as number, k);

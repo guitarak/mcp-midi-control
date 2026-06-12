@@ -8,6 +8,75 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
+## [0.4.0]
+
+The FM3's first hardware field test, the fixes and protocol findings it
+produced, and a codebase-wide reorganization of the Fractal packages by codec
+generation — including one breaking change to the `fractal-midi` npm package's
+TypeScript subpaths (JSON catalog consumers are unaffected).
+
+### Added
+
+- **FM3 hardware confirmation (community field test, fw 12.00, macOS).** The
+  serial transport, discovery, framing, the entire read path (documented
+  queries + whole-block reads across 35 block types), continuous `set_param`,
+  `set_bypass`, `switch_scene`, and preset switching are now confirmed
+  end-to-end through this server's own probes on real FM3 hardware; set-by-name
+  discrete `set_param` was separately confirmed via a community session using
+  frames byte-identical to this server's encoder. Still awaiting on-device
+  confirmation: `set_block` placement, `save_preset`, and the Windows
+  serial-driver path.
+- **FM3 `switch_preset` now uses the gen-3 SysEx-native preset switch**
+  (hardware-confirmed) instead of MIDI Program Change + Bank Select. The field
+  test proved the FM3 ignores CC32 with the spec's "standard" bank encoding, so
+  a PC switch to any preset above 127 landed on preset-mod-128.
+- **Serial transport polish:** prefers the macOS `/dev/cu.*` callout twin over
+  the `tty.*` node, and logs a one-line "connected via serial <path>
+  (matched: …)" notice so field reports are self-documenting.
+- **Serial-only installs work without the native MIDI binding.** node-midi is
+  now loaded lazily everywhere, so an `npm install --ignore-scripts` clone (no
+  C++ toolchain) can run the FM3 over USB-serial; if the binding is genuinely
+  needed, the error names the fix (`npm rebuild midi`).
+- **Per-block channel-count read projection (gen-3).** The field test showed
+  whole-block dumps are not uniformly 4-channel-blocked (some blocks carry 1 or
+  2 channel copies); the reader now derives each block's channel count from the
+  dump against the device-true catalog, fixing reads on blocks like Looper and
+  Resonator that the uniform model mis-addressed.
+- **Probe diagnostics hardened from field evidence:** the gen-3 probes now
+  resolve every paramId from the device-true catalog (paramIds differ across
+  the family — hardcoded FM9-shaped ids mis-addressed the FM3 run), gate
+  block-placement checks on the status dump instead of poll responses (polls
+  answer even for unplaced blocks), and restore via the SysEx preset switch.
+
+### Changed
+
+- **BREAKING (`fractal-midi` npm package): TypeScript subpaths are now
+  organized by Fractal codec generation.** `fractal-midi/axe-fx-gen1` →
+  `fractal-midi/gen1`; `fractal-midi/axe-fx-ii` → `fractal-midi/gen2/axe-fx-ii`;
+  `fractal-midi/axe-fx-iii`, `/fm3`, `/fm9`, `/vp4` →
+  `fractal-midi/gen3/<device>`. `fractal-midi/am4` and `fractal-midi/shared`
+  are unchanged, and **`catalog/*.json` paths are unchanged** — JSON catalog
+  consumers are unaffected. Migration table in the package README.
+- **Fractal MCP packages renamed by codec generation** (internal to the
+  server): `fractal-gen1` (Axe-Fx Standard/Ultra), `fractal-gen2` (Axe-Fx II;
+  a future AX8 lands as a config), `fractal-gen3` (Axe-Fx III / FM3 / FM9 /
+  VP4). A new device on an existing codec generation is a config file, not a
+  package.
+- Shared wire-encoding primitives consolidated into `fractal-midi/shared`
+  (14-bit and 16-bit septet codecs, display-scale conversion) with the public
+  device subpaths re-exporting them unchanged.
+
+### Fixed
+
+- Working-buffer dirty tracking on the VP4 no longer mis-reads two of its
+  effect-id bytes as a "preset stored/loaded" signal (the VP4's write frame
+  has no sub-action byte; the check now applies only to the grid devices).
+- A fresh `npm install` of a source checkout no longer silently links the
+  npm-registry copy of `fractal-midi` instead of the workspace copy (the
+  device packages pinned an exact stale version).
+- The installer's configuration pre-flight required package names that no
+  longer exist after the rename; a fresh ZIP install now passes it.
+
 ## [0.3.1]
 
 Two additions aimed at the community: a language-agnostic JSON export of every

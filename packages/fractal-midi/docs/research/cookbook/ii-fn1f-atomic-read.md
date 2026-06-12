@@ -120,7 +120,7 @@ is the legacy path; fn=0x1F is the structural improvement.
 
 `scripts/cookbook-verify.ts#case-ii-fn1f-atomic-read` checks that the
 fn byte constant `FN_GET_ALL_PARAMS = 0x1F` exists in
-`fractal-midi/src/axe-fx-ii/setParam.ts` and is referenced in any
+`fractal-midi/src/gen2/axe-fx-ii/setParam.ts` and is referenced in any
 shipped atomic-read code path.
 
 Live wire verification ships in the project via the  workstream's

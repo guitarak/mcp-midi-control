@@ -96,7 +96,7 @@ interface Probe {
   isWrite?: boolean;
 }
 
-// Known block IDs from existing fractal-midi/axe-fx-ii catalog.
+// Known block IDs from existing fractal-midi/gen2/axe-fx-ii catalog.
 const BLOCK_AMP_1   = 106;
 const BLOCK_CAB_1   = 108;
 const BLOCK_REVERB_1 = 116;

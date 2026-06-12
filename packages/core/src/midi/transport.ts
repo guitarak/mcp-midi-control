@@ -14,7 +14,34 @@
  * `connectAxeFxII`) live in their device packages and delegate to
  * `connect()` here with device-specific needles + onboarding hints.
  */
-import midi, { Input, Output } from 'midi';
+import type { Input, Output } from 'midi';
+import { createRequire } from 'node:module';
+
+/**
+ * node-midi is loaded LAZILY (and synchronously via createRequire — the
+ * `connect()` / `listMidiPorts()` contracts are sync) so merely importing this
+ * module never touches the native binding. That keeps serial-only sessions
+ * (FM3 over USB-CDC) working where the binding is absent — e.g. an
+ * `npm install --ignore-scripts` clone with no node-gyp toolchain
+ * (community field report, 2026-06-12).
+ */
+let midiModule: typeof import('midi') | undefined;
+function loadMidi(): typeof import('midi') {
+  if (midiModule === undefined) {
+    try {
+      midiModule = createRequire(import.meta.url)('midi') as typeof import('midi');
+    } catch (err) {
+      const cause = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `The MIDI transport module ("midi" / node-midi) failed to load: ${cause}\n` +
+        'This is an installation problem (missing or broken native binding), not a device ' +
+        'problem. If you installed with --ignore-scripts, run "npm rebuild midi" to build the ' +
+        'binding. Serial-only devices (FM3 over USB-CDC) do not need node-midi.',
+      );
+    }
+  }
+  return midiModule;
+}
 
 export interface MidiConnection {
   send: (bytes: number[]) => void;
@@ -81,6 +108,12 @@ export interface MidiConnection {
  *   - A fragment with F7 mid-buffer (rare on WinMM but legal MIDI)
  *     is split at the F7: prefix is emitted as the completed message,
  *     trailing bytes open a new accumulation if they start with F0.
+ *
+ * Serial byte streams use `createSerialMidiFramer` (serialFraming.ts)
+ * instead — the two stay separate deliberately: the input contracts
+ * (node-midi message-shaped fragments vs a raw byte stream) and
+ * malformed-input behavior differ, so neither can substitute for the
+ * other.
  *
  * Exported for unit testing so we don't need a live MIDI port to
  * prove the reassembly is correct.
@@ -187,6 +220,7 @@ function enumeratePorts(
 export function listMidiPorts(
   needles: readonly string[] = [],
 ): { inputs: MidiPortInfo[]; outputs: MidiPortInfo[] } {
+  const midi = loadMidi();
   const input = new midi.Input();
   const output = new midi.Output();
   try {
@@ -294,6 +328,44 @@ export interface ConnectOptions {
  */
 export type MockResponder = (outgoing: number[]) => number[][];
 
+/**
+ * Shared `receiveSysEx` / `receiveSysExMatching` promise construction
+ * for the node-midi-backed connections (`connect`, `mockConnect`):
+ * register a predicate handler on the shared handler set, race it
+ * against a timeout, clean up on either outcome.
+ *
+ * Pre-observes the rejection (same hardening as serialTransport's
+ * `makeReceiver`): callers that register a receiver FIRST and send()
+ * SECOND (the standard register-before-write pattern) abandon this
+ * promise when send() throws synchronously — without the no-op catch
+ * handler, that abandoned rejection is an unhandledRejection and Node
+ * KILLS THE WHOLE SERVER PROCESS. Awaiting callers still receive the
+ * rejection normally.
+ */
+function makeSysExReceiver(
+  handlers: Set<(bytes: number[]) => void>,
+  predicate: (bytes: number[]) => boolean,
+  timeoutMs: number,
+  timeoutLabel: string,
+): Promise<number[]> {
+  const p = new Promise<number[]>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      handlers.delete(handler);
+      reject(new Error(`${timeoutLabel} after ${timeoutMs}ms`));
+    }, timeoutMs);
+    const handler = (bytes: number[]) => {
+      if (bytes[0] !== 0xf0) return;
+      if (!predicate(bytes)) return;
+      clearTimeout(timer);
+      handlers.delete(handler);
+      resolve(bytes);
+    };
+    handlers.add(handler);
+  });
+  p.catch(() => { /* observed; real handling happens at the await site */ });
+  return p;
+}
+
 export interface MockConnectOptions {
   /** Device-specific response synthesizer. Receives every outbound message; returns inbound responses to inject. */
   responder: MockResponder;
@@ -348,34 +420,9 @@ export function mockConnect(opts: MockConnectOptions): MidiConnection {
     send,
     get lastSendError(): Error | undefined { return sendErrCell.value; },
     receiveSysEx: (timeoutMs = 1000) =>
-      new Promise<number[]>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          handlers.delete(handler);
-          reject(new Error(`Timeout waiting for SysEx response after ${timeoutMs}ms`));
-        }, timeoutMs);
-        const handler = (bytes: number[]) => {
-          if (bytes[0] !== 0xf0) return;
-          clearTimeout(timer);
-          handlers.delete(handler);
-          resolve(bytes);
-        };
-        handlers.add(handler);
-      }),
+      makeSysExReceiver(handlers, () => true, timeoutMs, 'Timeout waiting for SysEx response'),
     receiveSysExMatching: (predicate, timeoutMs = 1000) =>
-      new Promise<number[]>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          handlers.delete(handler);
-          reject(new Error(`Timeout waiting for matching SysEx after ${timeoutMs}ms`));
-        }, timeoutMs);
-        const handler = (bytes: number[]) => {
-          if (bytes[0] !== 0xf0) return;
-          if (!predicate(bytes)) return;
-          clearTimeout(timer);
-          handlers.delete(handler);
-          resolve(bytes);
-        };
-        handlers.add(handler);
-      }),
+      makeSysExReceiver(handlers, predicate, timeoutMs, 'Timeout waiting for matching SysEx'),
     onMessage: (handler) => {
       handlers.add(handler);
       return () => handlers.delete(handler);
@@ -390,6 +437,7 @@ export function mockConnect(opts: MockConnectOptions): MidiConnection {
  * with a diagnostic message listing visible ports if no match is found.
  */
 export function connect(opts: ConnectOptions): MidiConnection {
+  const midi = loadMidi();
   const input = new midi.Input();
   const output = new midi.Output();
 
@@ -462,35 +510,14 @@ export function connect(opts: ConnectOptions): MidiConnection {
   const conn: MidiConnection = {
     send,
     get lastSendError(): Error | undefined { return sendErrCell.value; },
+    // The connect() copy of the receivers is the live process-kill
+    // exposure the helper's pre-observe catch closes: send() CAN throw
+    // synchronously here (output.sendMessage on a dead handle) after a
+    // receiver was registered.
     receiveSysEx: (timeoutMs = 1000) =>
-      new Promise<number[]>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          handlers.delete(handler);
-          reject(new Error(`Timeout waiting for SysEx response after ${timeoutMs}ms`));
-        }, timeoutMs);
-        const handler = (bytes: number[]) => {
-          if (bytes[0] !== 0xf0) return;
-          clearTimeout(timer);
-          handlers.delete(handler);
-          resolve(bytes);
-        };
-        handlers.add(handler);
-      }),
+      makeSysExReceiver(handlers, () => true, timeoutMs, 'Timeout waiting for SysEx response'),
     receiveSysExMatching: (predicate, timeoutMs = 1000) =>
-      new Promise<number[]>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          handlers.delete(handler);
-          reject(new Error(`Timeout waiting for matching SysEx after ${timeoutMs}ms`));
-        }, timeoutMs);
-        const handler = (bytes: number[]) => {
-          if (bytes[0] !== 0xf0) return;
-          if (!predicate(bytes)) return;
-          clearTimeout(timer);
-          handlers.delete(handler);
-          resolve(bytes);
-        };
-        handlers.add(handler);
-      }),
+      makeSysExReceiver(handlers, predicate, timeoutMs, 'Timeout waiting for matching SysEx'),
     onMessage: (handler) => {
       handlers.add(handler);
       return () => handlers.delete(handler);

@@ -26,7 +26,7 @@
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { resolveAxeFxIIParamKind } from '@mcp-midi-control/axe-fx-ii/calibration.js';
+import { resolveAxeFxIIParamKind } from '@mcp-midi-control/fractal-gen2/calibration.js';
 
 interface Sample { wire: number; display: number; label: string }
 interface FixtureParam { block: string; name: string; samples: Sample[] }

@@ -14,17 +14,17 @@ import {
   runAm4PresetBinaryTests,
   AM4_PRESET_BINARY_CASE_COUNT,
 } from './am4/presetbinary.test.js';
-import { runAxeFxIISetParamTests, AXEFX2_GOLDEN_CASE_COUNT } from './axe-fx-ii/setparam.test.js';
-import { runAxeFxIIRoutingTests, AXEFX2_ROUTING_CASE_COUNT } from './axe-fx-ii/routing.test.js';
-import { runAxeFxGen1SetParamTests, AXEFXGEN1_GOLDEN_CASE_COUNT } from './axe-fx-gen1/setparam.test.js';
-import { runAxeFxGen1ReadParamTests, AXEFXGEN1_READ_CASE_COUNT } from './axe-fx-gen1/readparam.test.js';
-import { runAxeFxIIAnnotationCoverageTests, AXEFX2_ANNOTATION_CASE_COUNT } from './axe-fx-ii/annotation-coverage.test.js';
-import { runAxeFxIIISetParamTests, AXEFX3_GOLDEN_CASE_COUNT } from './axe-fx-iii/setparam.test.js';
-import { runAxeFxIIICalibrationTest } from './axe-fx-iii/calibration.test.js';
-import { runGen3RoutingTests, GEN3_ROUTING_CASE_COUNT } from './axe-fx-iii/routing.test.js';
-import { runGen3SubactionTests, GEN3_SUBACTION_CASE_COUNT } from './axe-fx-iii/subactions.test.js';
-import { runModernFamilyTests, MODERN_FAMILY_CASE_COUNT } from './modern-family/catalog.test.js';
-import { runVp4SetParamTests, VP4_SETPARAM_CASE_COUNT } from './vp4/setparam.test.js';
+import { runAxeFxIISetParamTests, AXEFX2_GOLDEN_CASE_COUNT } from './gen2/axe-fx-ii/setparam.test.js';
+import { runAxeFxIIRoutingTests, AXEFX2_ROUTING_CASE_COUNT } from './gen2/axe-fx-ii/routing.test.js';
+import { runAxeFxGen1SetParamTests, AXEFXGEN1_GOLDEN_CASE_COUNT } from './gen1/setparam.test.js';
+import { runAxeFxGen1ReadParamTests, AXEFXGEN1_READ_CASE_COUNT } from './gen1/readparam.test.js';
+import { runAxeFxIIAnnotationCoverageTests, AXEFX2_ANNOTATION_CASE_COUNT } from './gen2/axe-fx-ii/annotation-coverage.test.js';
+import { runAxeFxIIISetParamTests, AXEFX3_GOLDEN_CASE_COUNT } from './gen3/axe-fx-iii/setparam.test.js';
+import { runAxeFxIIICalibrationTest } from './gen3/axe-fx-iii/calibration.test.js';
+import { runGen3RoutingTests, GEN3_ROUTING_CASE_COUNT } from './gen3/axe-fx-iii/routing.test.js';
+import { runGen3SubactionTests, GEN3_SUBACTION_CASE_COUNT } from './gen3/axe-fx-iii/subactions.test.js';
+import { runModernFamilyTests, MODERN_FAMILY_CASE_COUNT } from './gen3/modern-family/catalog.test.js';
+import { runVp4SetParamTests, VP4_SETPARAM_CASE_COUNT } from './gen3/vp4/setparam.test.js';
 
 const tests: Array<{ name: string; run: () => void | Promise<void> }> = [
   {

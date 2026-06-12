@@ -20,7 +20,7 @@ import {
   FM9_RANGES,
   FM9_RANGE_SECTIONS,
   type Fm9ParamRange,
-} from '../packages/fractal-midi/src/fm9/ranges.generated.js';
+} from '../packages/fractal-midi/src/gen3/fm9/ranges.generated.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');

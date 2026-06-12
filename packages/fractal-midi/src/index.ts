@@ -5,7 +5,7 @@
 //
 //   import { packValue, fractalChecksum } from 'fractal-midi/shared';
 //   import { ... } from 'fractal-midi/am4';
-//   import { ... } from 'fractal-midi/axe-fx-ii';
+//   import { ... } from 'fractal-midi/gen2/axe-fx-ii';
 //
 // The root `VERSION` constant is convenience-only — useful for log
 // lines and version pinning sanity checks. It's read from package.json

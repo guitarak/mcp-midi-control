@@ -9,7 +9,7 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-block-record-stride-8
 relates_to: [scene-state-ushort, alphabetical-name-cascade-block-ordering, vendor-envelope-descriptor-table, wire-id-pairs-per-placed-block]
 consumed_in:
-  - packages/axe-fx-ii/src/sceneChannelMap.ts
+  - packages/fractal-gen2/src/sceneChannelMap.ts
 ---
 
 # Block-record table stride-8 (II)

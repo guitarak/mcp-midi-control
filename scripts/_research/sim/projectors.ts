@@ -14,7 +14,7 @@ import {
   buildPlacedFlagResponse,
   buildStreamResponse,
   gen3Decode14,
-} from '@mcp-midi-control/fractal-modern/simResponders.js';
+} from '@mcp-midi-control/fractal-gen3/simResponders.js';
 import type { SimDeviceState } from './types.js';
 
 /** sub=0x7b placed-flag: nonzero value bytes iff the effect is in the active preset. */

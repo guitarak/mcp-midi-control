@@ -8,7 +8,7 @@
  *
  * The result closes (or contradicts) the "FM3 routing gated" status:
  * once byte patterns are confirmed, `buildSetGridRouting` can be unlocked
- * for FM3 (rows=4) and the writer gate in fractal-modern removed.
+ * for FM3 (rows=4) and the writer gate in fractal-gen3 removed.
  *
  * Prerequisites:
  *   - FM3-Edit installed and open

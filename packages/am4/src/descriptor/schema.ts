@@ -138,7 +138,7 @@ export function buildBlocks(): Record<string, BlockSchema> {
     // The wire-side key (used by the dispatcher's resolveParamName) is
     // still `name`; this change only affects what the LLM reads as the
     // friendly label. Mirrors the Axe-Fx II pattern at
-    // packages/axe-fx-ii/src/descriptor/schema.ts:193.
+    // packages/fractal-gen2/src/descriptor/schema.ts:193.
     blocks[block].params[name] = {
       display_name: param.displayLabel ?? bridge?.canonicalLabel ?? name,
       unit: param.unit,                 // AM4-native name passes through

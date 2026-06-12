@@ -4,7 +4,7 @@
  * The AM4 navigation dirty-gate was re-based (2026-06-03) off the
  * non-deterministic working-buffer fingerprint and onto the in-memory
  * `markDirty`/`markClean`/`isDirty` tracker (packages/core/src/server-shared/
- * bufferDirty.ts) — the same model Axe-Fx II and fractal-modern use.
+ * bufferDirty.ts) — the same model Axe-Fx II and fractal-gen3 use.
  * `markDirty` fires on every acked AM4 edit-class write; `markClean` on
  * save / switch.
  *

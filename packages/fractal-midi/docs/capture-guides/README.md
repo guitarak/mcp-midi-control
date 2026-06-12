@@ -3,9 +3,12 @@
 This server controls Fractal Audio gear by conversation. The modern Fractal
 family (Axe-Fx III / FM3 / FM9, and VP4 with reads plus first writes) already works today: you can
 set amps, drives, and reverbs by their real model names, build presets, switch
-scenes, and read the device back. It is **community beta** because the parameter
-WRITE path, while byte-verified against the published spec and real captures, has
-not yet been confirmed moving a knob on real hardware. Gen-1 (Axe-Fx Standard /
+scenes, and read the device back. It is **community beta**: the FM3's read and
+continuous-write paths are hardware-confirmed end-to-end (2026-06-12 field
+test) and its set-by-name discrete write is hardware-confirmed via a
+2026-06-10 community session, while the III's and several remaining ops are
+byte-verified against the published spec and real captures but not yet
+confirmed moving a knob on real hardware. Gen-1 (Axe-Fx Standard /
 Ultra) supports full parameter WRITES (set_param / set_params) plus reads, also
 decoded from the spec and hardware-unconfirmed; preset authoring there awaits
 one structural capture (see the gen-1 row below).
@@ -72,7 +75,7 @@ with the front-panel readings noted, so display values land exactly. Full steps:
 | Device | Test / probe page | Captures | Top ask |
 |---|---|---|---|
 | Axe-Fx III | [testing-axe-fx-iii.md](testing-axe-fx-iii.md) | [captures-gen3.md](captures-gen3.md) | **Cache file** (#1) for device-true rosters; then the write test. Set-by-name + apply_preset work today via the shared gen-3 roster. |
-| FM3 | [testing-fm3.md](testing-fm3.md) | [captures-gen3.md](captures-gen3.md) | **End-to-end connection test** (T1) — the FM3 connects over USB **serial** (it is not a USB MIDI device; the server auto-detects the port, community-beta). Codec paths (set-by-name, striped read, continuous write) already FM3-hardware-confirmed. Cache file still wanted. |
+| FM3 | [testing-fm3.md](testing-fm3.md) | [captures-gen3.md](captures-gen3.md) | Serial transport + read path + continuous write + bypass/scene/preset switch **hardware-CONFIRMED end-to-end** (2026-06-12 field test, macOS); set-by-name discrete write also hardware-confirmed (2026-06-10 community session, frames byte-identical to this server's encoder). Remaining: **set_block** (re-run the verify probe with a preset that has no Drive block), **save_preset** (T4), a **Windows** serial-driver run, and the **cache file** (#1) for device-true display ranges. |
 | FM9 | [testing-fm9.md](testing-fm9.md) | [captures-gen3.md](captures-gen3.md) | **`fm9:verify` write-verify probe** (#3) flips writes to confirmed. Rosters and knob ranges are device-true (cache in); reads + preset receive confirmed. |
 | VP4 | [testing-vp4.md](testing-vp4.md) | [captures-vp4.md](captures-vp4.md) | **Cache file** (#1) for rosters; then confirm the decoded writes (continuous-knob set_param, set_bypass, save_preset) on hardware. Block placement + scene switching stay gated pending a capture. Reads work. |
 | Standard / Ultra | [testing-axe-fx-gen1.md](testing-axe-fx-gen1.md) | [captures-axe-fx-gen1.md](captures-axe-fx-gen1.md) | **Top ask: ONE structural editing-session capture (place block / route / save in gen-1 AxeEdit) -- the single unlock for apply_preset + save** (C2 in the guide). Also: port name + a write/read confirmation; legacy captures confirm reads + decode the patch-dump body. |

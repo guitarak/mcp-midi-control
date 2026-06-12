@@ -19,11 +19,11 @@
  * Wired into npm test for regression coverage.
  */
 
-import { KNOWN_PARAMS as AXE_FX_II_KNOWN_PARAMS } from 'fractal-midi/axe-fx-ii';
+import { KNOWN_PARAMS as AXE_FX_II_KNOWN_PARAMS } from 'fractal-midi/gen2/axe-fx-ii';
 import { CACHE_PARAMS as AM4_CACHE_PARAMS } from 'fractal-midi/am4';
-import { PARAM_BY_KEY as AXE_FX_III_PARAM_BY_KEY } from 'fractal-midi/axe-fx-iii';
-import { FM3_PARAMS_BY_FAMILY } from 'fractal-midi/fm3';
-import { FM9_PARAMS_BY_FAMILY } from 'fractal-midi/fm9';
+import { PARAM_BY_KEY as AXE_FX_III_PARAM_BY_KEY } from 'fractal-midi/gen3/axe-fx-iii';
+import { FM3_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm3';
+import { FM9_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm9';
 
 import {
   PITCH_RECIPES,
@@ -48,8 +48,8 @@ import {
 import { findPatchOffset } from '@mcp-midi-control/hydrasynth/patchEncoder.js';
 import { HYDRASYNTH_DESCRIPTOR } from '@mcp-midi-control/hydrasynth/descriptor.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
-import { MODERN_FRACTAL_DESCRIPTORS } from '@mcp-midi-control/fractal-modern/device.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
+import { MODERN_FRACTAL_DESCRIPTORS } from '@mcp-midi-control/fractal-gen3/device.js';
 import { collectApplyPresetErrors } from '@mcp-midi-control/core/protocol-generic/dispatcher/preflight.js';
 import type { DeviceDescriptor } from '@mcp-midi-control/core/protocol-generic/types.js';
 

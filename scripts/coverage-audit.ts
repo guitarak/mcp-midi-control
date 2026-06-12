@@ -30,8 +30,8 @@ import { dirname, join } from 'node:path';
 // matches) rather than the .ts source.
 const require = createRequire(import.meta.url);
 const FRACTAL_MIDI_AM4_DIR = dirname(require.resolve('fractal-midi/am4'));
-const FRACTAL_MIDI_AXEFX2_DIR = dirname(require.resolve('fractal-midi/axe-fx-ii'));
-const FRACTAL_MIDI_AXEFX3_DIR = dirname(require.resolve('fractal-midi/axe-fx-iii'));
+const FRACTAL_MIDI_AXEFX2_DIR = dirname(require.resolve('fractal-midi/gen2/axe-fx-ii'));
+const FRACTAL_MIDI_AXEFX3_DIR = dirname(require.resolve('fractal-midi/gen3/axe-fx-iii'));
 
 const PARAMS_TS = join(FRACTAL_MIDI_AM4_DIR, 'params.js');
 const BLOCK_TYPES_TS = join(FRACTAL_MIDI_AM4_DIR, 'blockTypes.js');

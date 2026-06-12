@@ -14,8 +14,8 @@ relates_to: [septet-21bit-byte2-mask-preservation, msb-first-14bit-preset-payloa
 consumed_in:
   - fractal-midi/src/shared/packValue.ts
   - fractal-midi/src/am4/setParam.ts
-  - fractal-midi/src/axe-fx-ii/setParam.ts
-  - fractal-midi/src/axe-fx-iii/setParam.ts
+  - fractal-midi/src/gen2/axe-fx-ii/setParam.ts
+  - fractal-midi/src/gen3/axe-fx-iii/setParam.ts
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-store-preset.txt (LSB-first septet pairs in FUN_140337060 L122-127, L175-179 and FUN_14033ec70 L1379-1380, L1407-1408, L1435-1436, L1493-1495, L1521-1522)
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-actions-and-shapes.txt (5-septet 32-bit width-variant at FUN_14033ec70 L22782-22786 and FUN_140336a40 L23076-23080; N=2 inside the III binary confirms the same shift-table {0, 7, 14, 21, 28} the cookbook documents for the 2-septet form generalizes to 5 septets)
 ---

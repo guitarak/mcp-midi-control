@@ -17,7 +17,7 @@
 import { registerDevice } from '@mcp-midi-control/core/protocol-generic/registry.js';
 import { executeSwitchPreset } from '@mcp-midi-control/core/protocol-generic/dispatcher/navigation.js';
 import { executeGetParam } from '@mcp-midi-control/core/protocol-generic/dispatcher/params.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 
 registerDevice(AXEFX2_DESCRIPTOR);
 

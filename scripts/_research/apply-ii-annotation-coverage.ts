@@ -21,7 +21,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
-const PARAMS_TS = path.join(ROOT, 'packages', 'fractal-midi', 'src', 'axe-fx-ii', 'params.ts');
+const PARAMS_TS = path.join(ROOT, 'packages', 'fractal-midi', 'src', 'gen2', 'axe-fx-ii', 'params.ts');
 const GHIDRA = path.join(ROOT, 'samples', 'captured', 'decoded', 'ghidra-axeedit2-paramtables.json');
 const LABELS = path.join(ROOT, 'samples', 'captured', 'decoded', 'labels', 'axe-edit-catalog.json');
 

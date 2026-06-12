@@ -3,7 +3,7 @@
   "device": "axe-fx-iii",
   "model_byte": "0x10",
   "support_status": "community-beta (decoded; hardware confirmations from community captures)",
-  "source": "fractal-midi/src/axe-fx-iii — Axe-Edit III binary mining + published v1.4 third-party MIDI spec + community captures",
+  "source": "fractal-midi/src/gen3/axe-fx-iii — Axe-Edit III binary mining + published v1.4 third-party MIDI spec + community captures",
   "notes": [
     "AXE_FX_III_BLOCKS (effect IDs) is shared across the gen-3 family (III/FM3/FM9).",
     "GEN3_READ_ROSTERS maps enum ordinals to display names for set-by-name; the ordinal IS the wire set value (float32(ordinal))."

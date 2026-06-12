@@ -164,5 +164,5 @@ tonal property. Those live in the existing lineage prose
 - the maintainer's private backlog notes (gitignored), where the design entry lives
 - `packages/am4/src/descriptor/agentGuidance.ts` (where the amp
   voicing pitfall narrative lives that this data complements)
-- `packages/axe-fx-ii/src/lineageLookup.ts` (the helper the descriptor
+- `packages/fractal-gen2/src/lineageLookup.ts` (the helper the descriptor
   wiring step will use to join amp loudness data into II lookups)

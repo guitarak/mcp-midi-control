@@ -135,7 +135,7 @@ verification status against the founder's XL+ where applicable:
 |----|---------------|-----------|---------------|
 | 0x01 | GET_BLOCK_PARAMETERS_LIST | both | 🟡 wiki |
 | 0x02 | GET / SET_BLOCK_PARAMETER_VALUE | both | 🟢 hardware-verified Q8.02, GET is channel-aware (respects fn=0x11). SET is also channel-aware for writes (confirmed 2026-05-26: compressor X/Y independently addressable). SET uses 16-bit wire integer via 3x7-bit septets; required for enum/select params where fn=0x2e no-ops. Bypass (paramId=255) is block-global (same on X/Y). |
-| **0x03** | **SYSEX_PATCH_DUMP** (request) | req | **🟢 hardware-verified Q8.02 (2026-06-10), TWO addressing forms.** (1) `[preset_hi, preset_lo]` MSB-first: dumps that slot's STORED flash contents as the 66-frame 0x77/0x78/0x79 chain, **and RELOADS the stored preset into the edit buffer as a side effect** (live probe: an fn 0x09 buffer rename was lost the moment the request was answered) — destructive to unsaved edits. (2) **`0x7F 0x7F` sentinel (AM4-style): dumps the EDIT BUFFER** — confirmed three ways in the same probe session: two sentinel dumps across a live buffer rename differ (tracks the buffer), the rename SURVIVES the request (no reload side effect), and pushing the 66-frame response back to the device restored the dumped buffer state (round-trip verified by name re-read). All three dump responses carry 0x77 header payload `[0x7f, 0x00, 0x00, 0x20]` regardless of addressing. Captures: `samples/captured/hw132/`. Builders: `buildPatchDumpRequest` / `buildEditBufferDumpRequest` in `src/axe-fx-ii/setParam.ts` (goldens in the consumer repo's `verify-axe-fx-ii-encoding.ts`). |
+| **0x03** | **SYSEX_PATCH_DUMP** (request) | req | **🟢 hardware-verified Q8.02 (2026-06-10), TWO addressing forms.** (1) `[preset_hi, preset_lo]` MSB-first: dumps that slot's STORED flash contents as the 66-frame 0x77/0x78/0x79 chain, **and RELOADS the stored preset into the edit buffer as a side effect** (live probe: an fn 0x09 buffer rename was lost the moment the request was answered) — destructive to unsaved edits. (2) **`0x7F 0x7F` sentinel (AM4-style): dumps the EDIT BUFFER** — confirmed three ways in the same probe session: two sentinel dumps across a live buffer rename differ (tracks the buffer), the rename SURVIVES the request (no reload side effect), and pushing the 66-frame response back to the device restored the dumped buffer state (round-trip verified by name re-read). All three dump responses carry 0x77 header payload `[0x7f, 0x00, 0x00, 0x20]` regardless of addressing. Captures: `samples/captured/hw132/`. Builders: `buildPatchDumpRequest` / `buildEditBufferDumpRequest` in `src/gen2/axe-fx-ii/setParam.ts` (goldens in the consumer repo's `verify-axe-fx-ii-encoding.ts`). |
 | **0x06** | **SET_CELL_ROUTING** (undocumented) | req | **🟢 hardware-decoded on Q8.02 XL+ (2026-05-13)**: 3-byte payload `[src_cell, dst_cell, connect]` adds/removes a cable between adjacent-column cells. Byte-exact golden in `scripts/verify-axe-fx-ii-encoding.ts`. See § 5c. |
 | **0x07** | **GET / SET_MODIFIER_VALUE** | both | **🟢 modifier READ decoded (Ares 2.00 capture).** The field-indexed modifier read channel: device reply = `F0 00 01 74 07 07 [effId:2][slot:2][field:2][value16:3][ASCII label] 00 [cs] F7`. field 0x00=source, 0x01/0x02=min/max, 0x03..0x06=start/mid/end/slope, 0x07=damping, 0x08=target effectId, 0x09=target paramId, 0x0a..0x0e=toggles+scale/offset. Source enum (partial): 0 NONE, 1 LFO 1A, 4 LFO 2B, 5 ADSR 1, 26 SCENE 1, 27 SCENE 2. THIS is how modifiers are read, not fn 0x18. See cookbook [[ii-fn07-modifier-read]] + § 5i. |
 | 0x08 | GET_FIRMWARE_VERSION | both | 🟡 wiki |
@@ -154,7 +154,7 @@ verification status against the founder's XL+ where applicable:
 | **0x18** | **SYSEX_GET_MODIFIER_INFO** (AxeEdit name) | req | **🟡 request decoded, response hardware-gated.** Per-block modifier descriptor read. In `session-58-direct-sync.syx` AxeEdit fires 24 of these, one per modifier-capable block, sweeping a contiguous effectId range 100..123 (Compressor 1 through Phaser 2) in catalog order. Request payload is 8 bytes: a 14-bit septet effectId selector `[effectId_lo][effectId_hi]` plus 6 zero pad bytes. **Hardware-confirmed request-only (Ares 2.00, 2026-05-29):** with a target set via fn 0x37 (device 0x64-acks `[37 00]`) and a modifier assigned on Amp 1 Input Drive, fn 0x18 still emits NO reply. The modifier data is read over **fn 0x07** instead (field-indexed; see that row + § 5i). fn 0x37 SET_TARGET_BLOCK wire shape also confirmed here: payload = effectId septet pair. See [`axeedit-opcode-table.md`](axeedit-opcode-table.md). |
 | **0x1C** | **BANK_DUMP_REQUEST** | req | **🟢 wire-confirmed** (community capture, multiple authors): 2-byte payload `[bank_id, cs]` where bank_id = 0 (Bank A), 1 (B), 2 (C), 3 (System). Device responds with the corresponding bank as a 0x77/0x78/0x79 envelope sequence. Captured wire: `F0 00 01 74 03 1C 00 1A F7` (Bank A), `…1C 01 1B F7` (B), `…1C 02 18 F7` (C), `…1C 03 19 F7` (System). |
 | **0x1D** | **STORE_PRESET (save-to-location)** | req | **🟢 wire-confirmed XL+ Q8.02 ( capture +  round-trip, 2026-05-11)**: 2-byte payload `[preset_high, preset_low]` MSB-first; device responds with 0x64 echoing 0x1D + result_code |
-| **0x1F** | **SYSEX_GET_ALL_PARAMS** (AxeEdit name) | both | **🟢 hardware-verified  ( primitive).** Bulk per-block parameter dump. Lands in `fractal-midi/src/axe-fx-ii/` as the per-block read path. See § 5e below + `samples/captured/probe-axefx2-bulk-read.syx`. |
+| **0x1F** | **SYSEX_GET_ALL_PARAMS** (AxeEdit name) | both | **🟢 hardware-verified  ( primitive).** Bulk per-block parameter dump. Lands in `fractal-midi/src/gen2/axe-fx-ii/` as the per-block read path. See § 5e below + `samples/captured/probe-axefx2-bulk-read.syx`. |
 | **0x20** | **GET_GRID_LAYOUT_AND_ROUTING** | both | **🟢 wire-confirmed XL+ Q8.02 ( captures, 2026-05-12)**: 200-byte frame, 192-byte payload, column-major (12 cols × 4 rows × 4 bytes/cell). Each cell `[blockId_lo, blockId_hi, routing_mask, byte3]`. See § 5c. |
 | **0x21** | **SYSEX_RESYNC / FRONT_PANEL_CHANGE_DETECTED** | resp | **🟢 confirmed via passive capture.** Device-emitted state-changed broadcast. Sending this from host triggers the device to push current state as `0x74/0x75/0x76` state-broadcast triples per placed block (which we already decode). Likely usable as an atomic-read primitive without further capture work. AxeEdit name `SYSEX_RESYNC`; wiki name `FRONT_PANEL_CHANGE_DETECTED`. |
 | 0x23 | MIDI_LOOPER_STATUS_ENABLE / MIDI_LOOPER_STATUS | both | 🟡 wiki |
@@ -430,7 +430,7 @@ block-selector request return the same frame shape.
   preset, so neither can be asserted.
 
 **Codec:** `buildQueryStates` / `isQueryStatesResponse` /
-`parseQueryStatesResponse` in `src/axe-fx-ii/setParam.ts` return opaque
+`parseQueryStatesResponse` in `src/gen2/axe-fx-ii/setParam.ts` return opaque
 5-byte records (tag + four state septets + a packed 28-bit word) and
 make no ordering or effectId commitment. Cookbook entry:
 [[ii-fn0e-query-states]].
@@ -444,7 +444,7 @@ make no ordering or effectId commitment. Cookbook entry:
 
 Returns every parameter on a single addressed block in one round-trip,
 as an alternative to issuing N × fn 0x02 GET_BLOCK_PARAMETER_VALUE
-reads. Lands in `fractal-midi/src/axe-fx-ii/` as a first-class bulk-read
+reads. Lands in `fractal-midi/src/gen2/axe-fx-ii/` as a first-class bulk-read
 path. Capture: `samples/captured/probe-axefx2-bulk-read.syx`.
 
 **NOT channel-aware** (corrected 2026-05-25). fn=0x1F returns monolithic
@@ -701,7 +701,7 @@ F0 00 01 74 07 28 [STR_0\0 STR_1\0 STR_2\0 ... STR_N\0] [cksum] F7
   `message` events, and our receive paths at the time dropped the
   continuation fragments (they don't start with F0). Root-caused +
   fixed 2026-06-09: the Axe-Fx II transport
-  (`packages/axe-fx-ii/src/midi.ts`) and the enum-dump probe now
+  (`packages/fractal-gen2/src/midi.ts`) and the enum-dump probe now
   reassemble fragments via the shared `createSysExAssembler`
   (`packages/core/src/midi/transport.ts`), so the full ~3.5 KB
   266-entry amp table arrives intact. Re-run DONE on hardware
@@ -755,7 +755,7 @@ match hardware ground truth.
 (in `mcp-midi-control`). Decoders:
 `scripts/_research/decode-fn28-enum-strings.ts` (extracts strings),
 `scripts/_research/diff-fn28-vs-catalog.ts` (cross-references against
-`fractal-midi/src/axe-fx-ii/params.ts`).
+`fractal-midi/src/gen2/axe-fx-ii/params.ts`).
 
 ## 5i. fn 0x07 modifier read (field-indexed) 🟢
 

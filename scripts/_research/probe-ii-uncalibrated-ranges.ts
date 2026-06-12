@@ -34,7 +34,7 @@ import { guardAgainstRunningEditors } from '../_lib/editor-guard.js';
 // the same way scripts/verify-param-kind.ts does it. Without this import
 // resolveParamKind('axe-fx-ii', ...) returns the UNKNOWN envelope for every
 // param and the target filter collapses to "everything", which is wrong.
-import '@mcp-midi-control/axe-fx-ii/descriptor.js';
+import '@mcp-midi-control/fractal-gen2/descriptor.js';
 import { resolveParamKind } from '@mcp-midi-control/core/protocol-generic/paramKind.js';
 import {
   KNOWN_PARAMS,
@@ -43,8 +43,8 @@ import {
   isGetBlockParameterResponse,
   parseGetBlockParameterResponse,
   buildSetBlockParameterValueInteger,
-} from 'fractal-midi/axe-fx-ii';
-import { IDS_BY_GROUP } from '../../packages/fractal-midi/src/axe-fx-ii/blockTypes.js';
+} from 'fractal-midi/gen2/axe-fx-ii';
+import { IDS_BY_GROUP } from '../../packages/fractal-midi/src/gen2/axe-fx-ii/blockTypes.js';
 import { createSysExAssembler } from '../../packages/core/src/midi/transport.js';
 
 const PACE_MS = 90, SETTLE_MS = 130, TIMEOUT_MS = 900;

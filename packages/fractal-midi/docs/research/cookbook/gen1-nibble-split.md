@@ -8,8 +8,8 @@ verified_on:
 firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-gen1-nibble-split
 consumed_in:
-  - packages/fractal-midi/src/axe-fx-gen1/nibble.ts
-  - packages/fractal-midi/src/axe-fx-gen1/setParam.ts
+  - packages/fractal-midi/src/gen1/nibble.ts
+  - packages/fractal-midi/src/gen1/setParam.ts
   - packages/fractal-midi/docs/devices/axe-fx-gen1/SYSEX-MAP.md
 ---
 

@@ -15,7 +15,7 @@
  */
 import { readFileSync } from 'node:fs';
 
-import { KNOWN_PARAMS } from 'fractal-midi/axe-fx-ii';
+import { KNOWN_PARAMS } from 'fractal-midi/gen2/axe-fx-ii';
 
 const XML_PATH =
   'samples/captured/decoded/binarydata/axe-edit-extracted/__block_layout.xml';

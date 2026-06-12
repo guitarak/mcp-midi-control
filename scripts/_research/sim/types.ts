@@ -8,7 +8,7 @@
  *   - block key = effectId           (decode14 of query bytes 8..9)
  *   - param key = paramId            (decode14 of query bytes 10..11)
  */
-import type { FractalModernConfig } from '@mcp-midi-control/fractal-modern/factory.js';
+import type { FractalModernConfig } from '@mcp-midi-control/fractal-gen3/factory.js';
 
 export type { FractalModernConfig };
 

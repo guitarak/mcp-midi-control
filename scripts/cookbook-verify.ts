@@ -1131,7 +1131,7 @@ function caseIiFn07ModifierRead(): string | null {
 
 function caseGen3Fn1fPollBlockBulkRead(): string | null {
   // Self-contained reimplementation of the gen-3 fn=0x1F poll + positional
-  // 0x74/0x75/0x76 burst assembly (see fractal-midi/src/axe-fx-iii/setParam.ts).
+  // 0x74/0x75/0x76 burst assembly (see fractal-midi/src/gen3/axe-fx-iii/setParam.ts).
   const xor7f = (bytes: readonly number[]): number => {
     let x = 0;
     for (const b of bytes) x ^= b;
@@ -1156,7 +1156,7 @@ function caseGen3Fn1fPollBlockBulkRead(): string | null {
   // 2. Frame paging: two 0x75 sections concatenate in arrival order into one
   //    positional value array. (The reader then indexes it channel-blocked,
   //    index = channel × stride + paramId; that projection is tested in
-  //    verify-response-shape-parity / verify-fractal-modern-family, not here —
+  //    verify-response-shape-parity / verify-fractal-gen3-family, not here —
   //    this golden asserts only the transport-level concatenation.)
   // HEAD is 12 bytes: payload is <eid:14b><itemCount:14b> only — NO flag byte
   // (the byte before F7 is the checksum). FM9-confirmed 2026-06-04.
@@ -1504,7 +1504,7 @@ function caseGen1NibbleSplit(): string | null {
   // param id, value) goes on the wire as two MIDI bytes, low nibble first:
   //   [v & 0x0f, (v >> 4) & 0x0f]. Each byte is a single nibble (0..15), so
   // the high bit is always clear. NOT gen-2 septet, NOT gen-3 float32.
-  // See fractal-midi/src/axe-fx-gen1/nibble.ts.
+  // See fractal-midi/src/gen1/nibble.ts.
   const split = (v: number): [number, number] => [v & 0x0f, (v >> 4) & 0x0f];
   const join = (lo: number, hi: number): number => ((hi & 0x0f) << 4) | (lo & 0x0f);
   // Worked examples printed in the published Ultra SysEx doc.

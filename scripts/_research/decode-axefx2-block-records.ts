@@ -21,8 +21,8 @@ import {
   parsePresetDump,
   PRESET_DUMP_LEN,
   extractPresetName,
-} from '@mcp-midi-control/axe-fx-ii/presetDump.js';
-import type { ParsedPresetDump } from '@mcp-midi-control/axe-fx-ii/presetDump.js';
+} from '@mcp-midi-control/fractal-gen2/presetDump.js';
+import type { ParsedPresetDump } from '@mcp-midi-control/fractal-gen2/presetDump.js';
 
 function decodeChunkNative(payload: Uint8Array): Uint16Array {
   const count = (payload[0] & 0x7f) | ((payload[1] & 0x7f) << 7);

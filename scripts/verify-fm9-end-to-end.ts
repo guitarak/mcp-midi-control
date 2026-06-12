@@ -6,7 +6,7 @@
  *
  * Run: npx tsx scripts/verify-fm9-end-to-end.ts   (also a launch-verify gate)
  */
-import { FM9_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/device.js';
+import { FM9_DESCRIPTOR } from '@mcp-midi-control/fractal-gen3/device.js';
 import { encodeValue } from '@mcp-midi-control/core/protocol-generic/dispatcher/resolvers.js';
 
 let failed = 0;

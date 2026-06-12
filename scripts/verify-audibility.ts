@@ -1,6 +1,6 @@
 /**
  * Goldens for the Axe-Fx II audibility walker
- * (`packages/axe-fx-ii/src/tools/audibility.ts`).
+ * (`packages/fractal-gen2/src/tools/audibility.ts`).
  *
  * Pure-function tests over synthetic GridCell[] inputs. No hardware,
  * no dispatcher; the walker is what both `verifyChain` and `getPreset`
@@ -25,8 +25,8 @@
  * Run: npx tsx scripts/verify-audibility.ts
  */
 
-import { checkAudibility } from '../packages/axe-fx-ii/src/tools/audibility.js';
-import type { GridCell } from 'fractal-midi/axe-fx-ii';
+import { checkAudibility } from '../packages/fractal-gen2/src/tools/audibility.js';
+import type { GridCell } from 'fractal-midi/gen2/axe-fx-ii';
 
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string): void {
@@ -37,7 +37,7 @@ function check(label: string, ok: boolean, detail?: string): void {
   }
 }
 
-// Block IDs we reference. Matches BLOCK_BY_ID in fractal-midi/axe-fx-ii.
+// Block IDs we reference. Matches BLOCK_BY_ID in fractal-midi/gen2/axe-fx-ii.
 const AMP_1 = 106;
 const CAB_1 = 109;
 const REV_1 = 110;

@@ -157,13 +157,13 @@ are needed.
 A device that shares a wire codec with an existing family does NOT get
 its own package: it gets a per-device **config**. The modern Fractal
 gen-3 devices (Axe-Fx III / FM3 / FM9 / VP4) all live in
-`packages/fractal-modern/` as configs under `src/configs/`. Each config
+`packages/fractal-gen3/` as configs under `src/configs/`. Each config
 binds the shared codec to a model byte, grid/scene shape, and param
 catalog by calling `createModernFractalDescriptor()`:
 
 ```
-packages/fractal-modern/src/configs/axe-fx-iii.ts   ← the canonical config example
-packages/fractal-modern/src/configs/<your-device>.ts ← copy and adjust
+packages/fractal-gen3/src/configs/axe-fx-iii.ts   ← the canonical config example
+packages/fractal-gen3/src/configs/<your-device>.ts ← copy and adjust
 ```
 
 A device on a brand-new codec (a different vendor or a fundamentally
@@ -177,7 +177,7 @@ existing device package and update:
 | the MIDI helper | Port-discovery needles, connection helper |
 | the device export | Exposes `DESCRIPTOR` cleanly |
 
-`packages/fractal-modern/src/configs/axe-fx-iii.ts` is the **canonical
+`packages/fractal-gen3/src/configs/axe-fx-iii.ts` is the **canonical
 template** for a config-based device: it demonstrates how to ship
 community-beta ops with a warning banner, how to populate
 `DeviceCapabilities`, how to write a `coerceLocation` adapter, and how to

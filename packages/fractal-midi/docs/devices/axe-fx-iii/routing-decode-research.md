@@ -142,7 +142,7 @@ high-level operation each one finalizes.
 
 - Capture and parse the 0x75 DATA frame as described above.
 - Add `parseGridDump(buffer)` + `serializeGridDump(grid)` to
-  `packages/axe-fx-iii/src/grid.ts` once the cell layout is verified.
+  `packages/fractal-gen3/src/grid.ts` once the cell layout is verified.
 - Wire `axefx3_get_block_layout` to read via the EFFECT_DUMP
   multi-frame exchange instead of polling per-cell.
 - Cross-check the descriptor-table byte_count values against captured

@@ -22,7 +22,7 @@
 
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
-import { AMP_EFFECT_TYPE_VALUES } from 'fractal-midi/axe-fx-ii';
+import { AMP_EFFECT_TYPE_VALUES } from 'fractal-midi/gen2/axe-fx-ii';
 
 const FINDINGS_PATH = path.resolve(
   'samples/captured/probe-axefx2-new-opcodes-findings.md',

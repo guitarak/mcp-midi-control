@@ -259,10 +259,10 @@ exercises the gates. Extending it to cover more of the unified
 
 ## References
 
-- `packages/core/src/server-shared/bufferDirty.ts`: shared deterministic dirty-flag tracker (`markDirty`/`markClean`/`isDirty`). Axe-Fx II, fractal-modern, AND AM4 all use it.
-- `packages/axe-fx-ii/src/tools/shared.ts:guardActiveBufferOrSave`:
+- `packages/core/src/server-shared/bufferDirty.ts`: shared deterministic dirty-flag tracker (`markDirty`/`markClean`/`isDirty`). Axe-Fx II (fractal-gen2), fractal-gen3, AND AM4 all use it.
+- `packages/fractal-gen2/src/tools/shared.ts:guardActiveBufferOrSave`:
   reference implementation of the warn/discard/save-first guard
-- `packages/axe-fx-ii/src/midi.ts`: device-sourced dirty
+- `packages/fractal-gen2/src/midi.ts`: device-sourced dirty
   classification (state-broadcast listener)
 - `packages/am4/src/tools/safeEdit.ts:guardActiveAM4BufferOrSave`:
   AM4 guard; consults `isDirty`, fires `markDirty`/`markClean` at the

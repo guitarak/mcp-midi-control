@@ -1,6 +1,6 @@
 {
   "name": "fractal-midi",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Pure-TypeScript codec and parameter dictionaries for Fractal Audio devices (AM4, Axe-Fx II, Axe-Fx III, FM3, FM9, VP4, Axe-Fx Standard/Ultra). No MIDI transport dependency, bring your own.",
   "license": "Apache-2.0",
   "author": "Stephen Staker <stephenstaker@gmail.com>",
@@ -20,29 +20,29 @@
       "types": "./dist/am4/index.d.ts",
       "default": "./dist/am4/index.js"
     },
-    "./axe-fx-ii": {
-      "types": "./dist/axe-fx-ii/index.d.ts",
-      "default": "./dist/axe-fx-ii/index.js"
+    "./gen1": {
+      "types": "./dist/gen1/index.d.ts",
+      "default": "./dist/gen1/index.js"
     },
-    "./axe-fx-iii": {
-      "types": "./dist/axe-fx-iii/index.d.ts",
-      "default": "./dist/axe-fx-iii/index.js"
+    "./gen2/axe-fx-ii": {
+      "types": "./dist/gen2/axe-fx-ii/index.d.ts",
+      "default": "./dist/gen2/axe-fx-ii/index.js"
     },
-    "./axe-fx-gen1": {
-      "types": "./dist/axe-fx-gen1/index.d.ts",
-      "default": "./dist/axe-fx-gen1/index.js"
+    "./gen3/axe-fx-iii": {
+      "types": "./dist/gen3/axe-fx-iii/index.d.ts",
+      "default": "./dist/gen3/axe-fx-iii/index.js"
     },
-    "./fm3": {
-      "types": "./dist/fm3/index.d.ts",
-      "default": "./dist/fm3/index.js"
+    "./gen3/fm3": {
+      "types": "./dist/gen3/fm3/index.d.ts",
+      "default": "./dist/gen3/fm3/index.js"
     },
-    "./fm9": {
-      "types": "./dist/fm9/index.d.ts",
-      "default": "./dist/fm9/index.js"
+    "./gen3/fm9": {
+      "types": "./dist/gen3/fm9/index.d.ts",
+      "default": "./dist/gen3/fm9/index.js"
     },
-    "./vp4": {
-      "types": "./dist/vp4/index.d.ts",
-      "default": "./dist/vp4/index.js"
+    "./gen3/vp4": {
+      "types": "./dist/gen3/vp4/index.d.ts",
+      "default": "./dist/gen3/vp4/index.js"
     },
     "./catalog/*.json": "./catalog/*.json"
   },

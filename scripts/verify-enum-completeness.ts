@@ -39,7 +39,7 @@
  * Status: offline, no hardware, no MIDI.
  */
 
-import { KNOWN_PARAMS } from 'fractal-midi/axe-fx-ii';
+import { KNOWN_PARAMS } from 'fractal-midi/gen2/axe-fx-ii';
 
 // ── Tunables ─────────────────────────────────────────────────────────
 

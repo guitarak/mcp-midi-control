@@ -12,12 +12,12 @@
  *
  * Run: npx tsx scripts/_research/probe-ii-opaque-amp-labels.ts
  */
-import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
+import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
 import {
   buildGetBlockParameterValue,
   isGetBlockParameterResponse,
   parseGetBlockParameterResponse,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 const AMP_EFFECT_ID = parseInt(process.env.AMP_EFFECT_ID ?? '106', 10);
 const TIMEOUT_MS = 800;

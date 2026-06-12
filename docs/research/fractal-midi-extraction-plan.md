@@ -25,8 +25,8 @@ Two public GitHub repos at the end of this work:
 
 Per-vendor split, not per-device, confirmed in
 [`MULTI-DEVICE-ROADMAP.md`](MULTI-DEVICE-ROADMAP.md) §"Two-tier
-architecture." `fractal-midi/am4`, `fractal-midi/axe-fx-ii`,
-`fractal-midi/axe-fx-iii` are subpath exports.
+architecture." `fractal-midi/am4`, `fractal-midi/gen2/axe-fx-ii`,
+`fractal-midi/gen3/axe-fx-iii` are subpath exports.
 
 ## Naming: `fractal-midi`, not `fractal-protocol`
 
@@ -112,7 +112,7 @@ go to `fractal-midi`; files marked **STAY** remain in
 | `midi.ts`, `device.ts` | **STAY** | node-midi I/O wrapper |
 | `tools/` | **STAY** | MCP tool registrations |
 
-### `packages/axe-fx-ii/src/` and `packages/axe-fx-iii/src/`
+### `packages/fractal-gen2/src/` and `packages/fractal-gen3/src/`
 
 Same pattern as AM4:
 
@@ -137,8 +137,8 @@ same roadmap doc: separate extraction, same pattern.
 ```ts
 // Pure data: copy-paste-able into any language
 import { params, blocks, lineage, applicability } from 'fractal-midi/am4';
-import { params as iiParams } from 'fractal-midi/axe-fx-ii';
-import { params as iiiParams } from 'fractal-midi/axe-fx-iii';
+import { params as iiParams } from 'fractal-midi/gen2/axe-fx-ii';
+import { params as iiiParams } from 'fractal-midi/gen3/axe-fx-iii';
 
 // Pure codec: display value in, SysEx bytes out
 import { buildSetParam, parseSetParam } from 'fractal-midi/am4/codec';
@@ -336,7 +336,7 @@ Once the FM3-Edit installer is in hand:
 3. **Generate catalog.** Adapt
    `scripts/_research/generate-axefx3-params-from-catalog.ts` to
    produce `packages/fm3/src/params.ts` (or, post-extraction, write
-   directly to `fractal-midi/src/fm3/`). Same Param interface shape
+   directly to `fractal-midi/src/gen3/fm3/`). Same Param interface shape
    as III.
 4. **Codec.** Clone III's `setParam.ts` and swap `AXE_FX_III_MODEL_ID
    = 0x10` to `FM3_MODEL_ID = 0x11`. Wire envelope, sub-action codes,

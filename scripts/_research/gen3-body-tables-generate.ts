@@ -3,7 +3,7 @@
  *
  * Reads the BoodieTraps Apache-2.0 `fractal-syx-codec` data JSONs (the
  * block type rosters + the param-name -> body-word-index map) and emits the
- * committed data module `packages/fractal-modern/src/gen3BodyTables.ts`.
+ * committed data module `packages/fractal-gen3/src/gen3BodyTables.ts`.
  *
  * SOURCE: fractal-syx-codec by Andrew Mercurio ("BoodieTraps"), Apache-2.0,
  * derived by correlating decoded Fractal factory presets (see repo NOTICE +
@@ -32,7 +32,7 @@ const SRC_DIR = join(
   'fractal-syx-codec-main',
   'data',
 );
-const OUT = join('packages', 'fractal-modern', 'src', 'gen3BodyTables.ts');
+const OUT = join('packages', 'fractal-gen3', 'src', 'gen3BodyTables.ts');
 
 // Block name -> its <block>_type_binary_ids.json basename. Cab's type roster
 // is the DynaCab list (the Cab block stores a DynaCab id, not a "Cab type").

@@ -9,7 +9,7 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-display-log10-scaling
 relates_to: [display-q16-fixedpoint]
 consumed_in:
-  - fractal-midi/src/axe-fx-ii/params.ts (entries with `scaling: 'log10'`)
+  - fractal-midi/src/gen2/axe-fx-ii/params.ts (entries with `scaling: 'log10'`)
 ---
 
 # Log10 scaling display ↔ wire coercion

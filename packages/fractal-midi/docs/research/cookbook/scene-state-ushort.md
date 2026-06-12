@@ -9,9 +9,9 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-scene-state-ushort
 relates_to: [septet-21bit-byte2-mask-preservation, alphabetical-name-cascade-block-ordering, block-record-stride-8]
 consumed_in:
-  - packages/axe-fx-ii/src/sceneChannelMap.ts (BLOCK_LAYOUT_MAP scene state)
-  - packages/axe-fx-ii/src/blockBinaryLayout.ts
-  - packages/axe-fx-ii/src/tools/applyExecutor.ts (apply_preset slots[].params.X/.Y nesting path)
+  - packages/fractal-gen2/src/sceneChannelMap.ts (BLOCK_LAYOUT_MAP scene state)
+  - packages/fractal-gen2/src/blockBinaryLayout.ts
+  - packages/fractal-gen2/src/tools/applyExecutor.ts (apply_preset slots[].params.X/.Y nesting path)
 # Note: the standalone axefx2_set_scene_channels tool was deprecated ;
 # scene-state writes now go via apply_preset's channel-nested params path.
 ---

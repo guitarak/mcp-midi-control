@@ -720,7 +720,7 @@ const XML_CATALOG_JSON = 'samples/captured/decoded/labels/axe-edit-catalog.json'
 // fractal-midi/, so it can't use `require.resolve` (points at built dist).
 const _scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const FRACTAL_MIDI_REPO = path.resolve(_scriptDir, '..', 'packages', 'fractal-midi');
-const FRACTAL_MIDI_AXEFX2_SRC = path.join(FRACTAL_MIDI_REPO, 'src', 'axe-fx-ii');
+const FRACTAL_MIDI_AXEFX2_SRC = path.join(FRACTAL_MIDI_REPO, 'src', 'gen2', 'axe-fx-ii');
 
 if (!existsSync(FRACTAL_MIDI_REPO)) {
     console.error(

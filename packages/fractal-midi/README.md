@@ -5,13 +5,14 @@ guitar processors. Build and parse the SysEx wire bytes a Fractal
 device speaks, without pulling in a MIDI transport library.
 
 > Covers AM4 and Axe-Fx II at hardware-verified parity, the modern Fractal
-> family (Axe-Fx III / FM3 / FM9) at codec and calibration via public-capture
-> verification and editor-binary mining, and the Axe-Fx Standard/Ultra (gen-1)
-> as a SET-only descriptor. The gen-3 family stays community-driven for
-> hardware verification; see the per-device notes in the coverage table.
+> family (Axe-Fx III / FM3 / FM9 / VP4) at codec and calibration via
+> public-capture verification and editor-binary mining, and the Axe-Fx
+> Standard/Ultra (gen-1) as a set + parameter-read descriptor. The gen-3
+> family stays community-driven for hardware verification; see the
+> per-device notes in the coverage table.
 
 > **Unaffiliated community library.** "Fractal Audio", "AM4",
-> "Axe-Fx", "Axe-Fx II", "Axe-Fx III", "FM3", and "FM9" are
+> "Axe-Fx", "Axe-Fx II", "Axe-Fx III", "FM3", "FM9", and "VP4" are
 > trademarks of Fractal Audio Systems, Inc. This project neither
 > claims endorsement from, nor affiliation with, Fractal Audio
 > Systems. The package name uses the "Fractal" trademark
@@ -55,28 +56,35 @@ Node >= 18. ESM-only.
 ## Usage
 
 ```ts
-import { buildSetParam, parseSetParam } from 'fractal-midi/am4/codec';
-import { params, blocks } from 'fractal-midi/am4';
+import { buildSetParam, KNOWN_PARAMS } from 'fractal-midi/am4';
 
-// Build the SysEx bytes for "set amp gain to 7.5"
-const bytes = buildSetParam({ block: 'amp', param: 'gain', value: 7.5 });
-// → Uint8Array starting with 0xF0 ... 0xF7
-
-// Round-trip: parse captured bytes back to display values
-const display = parseSetParam(bytes);
-// → { block: 'amp', param: 'gain', value: 7.5 }
+// Build the SysEx bytes for "set amp gain to 7.5" (display value in)
+const bytes = buildSetParam('amp.gain', 7.5);
+// → number[] starting with 0xF0 ... ending 0xF7 — send via your MIDI library
 
 // Inspect the dictionary directly
-console.log(params.amp.gain);
-// → { unit: 'knob-0-10', range: [0, 10], pidHigh: ..., pidLow: ..., ... }
+console.log(KNOWN_PARAMS['amp.gain']);
+// → { block: 'amp', name: 'gain', unit: ..., displayMin: 0, displayMax: 10,
+//     pidLow: ..., pidHigh: ..., ... }
 ```
 
-The Axe-Fx II and Axe-Fx III sub-paths follow the same shape:
+The Axe-Fx II and Axe-Fx III sub-paths follow the same shape (each
+device's builders and dictionaries carry that device's own names):
 
 ```ts
-import { buildSetParam } from 'fractal-midi/axe-fx-ii/codec';
-import { params } from 'fractal-midi/axe-fx-iii';
+import { buildSetBlockParameterValue, KNOWN_PARAMS } from 'fractal-midi/gen2/axe-fx-ii';
+import { buildSetParameter, PARAMS_BY_FAMILY } from 'fractal-midi/gen3/axe-fx-iii';
 ```
+
+> **Breaking change in 0.4.0 — generation-prefixed subpaths.** Device
+> subpaths are now organized by Fractal codec generation:
+> `fractal-midi/gen1` (Axe-Fx Standard/Ultra, formerly `/axe-fx-gen1`),
+> `fractal-midi/gen2/axe-fx-ii` (formerly `/axe-fx-ii`), and
+> `fractal-midi/gen3/{axe-fx-iii,fm3,fm9,vp4}` (formerly `/axe-fx-iii`,
+> `/fm3`, `/fm9`, `/vp4`). `fractal-midi/am4` and `fractal-midi/shared`
+> are unchanged (the AM4 is its own codec, not one of the three
+> generations), and **`catalog/*.json` paths are unchanged** — JSON
+> consumers are unaffected.
 
 ### Not using TypeScript? Use the JSON catalog
 
@@ -96,9 +104,10 @@ the TypeScript source on every change and CI-gated against drift.
 | AM4 | ✅ | ✅ | ✅ | ✅ |
 | Axe-Fx II | ✅ | ✅ | ✅ | ✅ |
 | Axe-Fx III | ✅ (full catalog) | ✅ ([see note](#axe-fx-iii-codec-note)) | ✅ ([see note](#axe-fx-iii-calibration-note)) | 🟡 community beta ([see note](#axe-fx-iii-hardware-note)) |
-| FM3 | ✅ (device-true, mined from FM3-Edit) | ✅ (shared gen-3) | 🟡 (linear; some non-linear pending) | ❌ community beta |
+| FM3 | ✅ (device-true, mined from FM3-Edit) | ✅ (shared gen-3) | 🟡 (linear; some non-linear pending) | 🟡 community beta ([see note](#fm3--fm9) — core surface field-confirmed 2026-06) |
 | FM9 | ✅ (device-true, mined from FM9-Edit) | ✅ (shared gen-3) | 🟡 (linear; some non-linear pending) | ❌ community beta |
-| Axe-Fx Standard/Ultra (gen-1) | ✅ (922 params) | ✅ (nibble-split, SET-only) | 🟡 (linear; 171 non-linear pending) | ❌ community beta (no gen-1 hardware) |
+| VP4 | ✅ (device-true, mined from VP4-Edit) | ✅ (gen-3 envelope; own fn=0x01 write frame, decoded byte-exact from community captures, fw 4.03) | 🟡 (continuous writes take raw wire values; calibration pending) | 🟡 community beta (reads confirmed via community captures; decoded writes untested on hardware) |
+| Axe-Fx Standard/Ultra (gen-1) | ✅ (922 params) | ✅ (nibble-split, set + param read) | 🟡 (linear; 171 non-linear pending) | ❌ community beta (no gen-1 hardware) |
 
 ### Coverage notes
 
@@ -148,9 +157,15 @@ FM3-Edit / FM9-Edit JUCE binaries (paramIds are device-specific and are
 never reused from the III) on the shared gen-3 codec. Calibration
 covers the linear params; some non-linear display formulas are still
 pending. Neither has been hardware-verified by the maintainer, so they
-remain community beta: FM9 has real community captures confirming the
-shared read and preset-dump paths, while FM3 confirmation is still
-open.
+remain community beta. The FM9 has real community captures confirming
+the shared read and preset-dump paths. The FM3's core surface was
+hardware-confirmed end-to-end by a 2026-06-12 community field test over
+its USB-serial transport (discovery, framing, the whole read path,
+continuous SET, bypass, scene and preset switching, all through this
+codec's own frames), and discrete set-by-name SET was confirmed on FM3
+hardware by a 2026-06-10 community session via frames byte-identical to
+this codec's builder; block placement (`set_block`), store-to-location,
+and the Windows serial-driver path remain unconfirmed.
 
 ## License
 

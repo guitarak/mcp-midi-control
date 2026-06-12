@@ -50,7 +50,7 @@ Where:
 
 ## Where it's used
 
-Implementation: `fractal-midi/src/axe-fx-ii/setParam.ts`
+Implementation: `fractal-midi/src/gen2/axe-fx-ii/setParam.ts`
 `buildSetCellRouting(srcCell, dstCell, connect)`.
 
 Golden: `scripts/verify-axe-fx-ii-encoding.ts` ships byte-exact

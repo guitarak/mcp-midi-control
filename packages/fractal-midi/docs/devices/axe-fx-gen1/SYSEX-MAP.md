@@ -112,7 +112,7 @@ Generated from the doc via the committed pipeline (never hand-transcribed):
 docs/manuals/AxeFx-Ultra-SysEx-Messages.htm
   → scripts/_research/parse-gen1-sysex.ts        (parse + nibble validation, 0 mismatches)
   → scripts/_research/gen1-canonicalize.ts       (snake_case keys + scaling flags)
-  → packages/fractal-midi/scripts/generate-gen1-catalog.ts  (emits src/axe-fx-gen1/{params,blockTypes}.ts)
+  → packages/fractal-midi/scripts/generate-gen1-catalog.ts  (emits src/gen1/{params,blockTypes}.ts)
 ```
 
 Display-first: continuous params with a documented linear range convert

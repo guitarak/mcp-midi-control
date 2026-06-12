@@ -1,5 +1,5 @@
 /**
- * Generate `packages/fractal-midi/src/fm9/ranges.generated.ts`: the
+ * Generate `packages/fractal-midi/src/gen3/fm9/ranges.generated.ts`: the
  * device-true FM9 display-range dictionary (min/max/scale/step/typecode plus
  * enum counts) per (block family, paramId), mined from an FM9-Edit
  * `effectDefinitions_12_<fw>.cache` WALK JSON produced by the strict
@@ -55,14 +55,14 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FM9_PARAMS_BY_FAMILY } from '../packages/fractal-midi/src/fm9/params.js';
+import { FM9_PARAMS_BY_FAMILY } from '../packages/fractal-midi/src/gen3/fm9/params.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
 
 const WALK = process.argv[2]
   ?? resolve(root, 'samples/captured/fm9-community-2026-06-09/effectDefinitions_12_11p0.walk.json');
-const OUT = resolve(root, 'packages/fractal-midi/src/fm9/ranges.generated.ts');
+const OUT = resolve(root, 'packages/fractal-midi/src/gen3/fm9/ranges.generated.ts');
 
 // ---------------------------------------------------------------------------
 // Walk JSON shapes (subset of scripts/_research/parse-effectdefinitions-cache.ts output)

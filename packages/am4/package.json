@@ -1,6 +1,6 @@
 {
   "name": "@mcp-midi-control/am4",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Fractal AM4 device descriptor, writer, and reader.",
   "private": true,
   "license": "Apache-2.0",
@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@mcp-midi-control/core": "*",
-    "fractal-midi": "0.3.0"
+    "fractal-midi": "*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json"

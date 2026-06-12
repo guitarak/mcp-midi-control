@@ -29,14 +29,14 @@
  * Total wire time ~6-10 seconds (128 probes × ~50ms each).
  */
 
-import { connectAxeFxII, type AxeFxIIConnection } from '@mcp-midi-control/axe-fx-ii/midi.js';
+import { connectAxeFxII, type AxeFxIIConnection } from '@mcp-midi-control/fractal-gen2/midi.js';
 import {
   buildGetGridLayout,
   buildSwitchPreset,
   isGetGridLayoutResponse,
   parseGetGridLayoutResponse,
   type GridCell,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 function toHex(bytes: readonly number[]): string {
   return bytes.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');

@@ -42,7 +42,7 @@ backups/
 
 # Research-script output — regenerable JSON/manifests from the _research
 # pipelines (gen-1 catalog extraction, gen-2 spec diff, archive crawl).
-# The committed codec (e.g. fractal-midi/src/axe-fx-gen1/params.ts) is the
+# The committed codec (e.g. fractal-midi/src/gen1/params.ts) is the
 # durable artifact; these intermediates are rebuilt by their scripts.
 scripts/_research/gen1-out/
 scripts/_research/gen2-out/

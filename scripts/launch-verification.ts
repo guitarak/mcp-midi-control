@@ -792,7 +792,7 @@ async function verifyAxefxGen1(client: Client): Promise<void> {
   // exercised separately below).
   //
   // COVERAGE BOUNDARY: this exercises a LINEAR param only. The gen-1 non-linear
-  // params (scaling:"pending" in fractal-midi/axe-fx-gen1/params.ts — e.g.
+  // params (scaling:"pending" in fractal-midi/gen1/params.ts — e.g.
   // compressor.sustain, parametric_eq.freq_*) have a known display range but an
   // UNKNOWN display→wire curve, so their display-first coercion is unverified by
   // design and is NOT asserted here. There is nothing to golden-test until a

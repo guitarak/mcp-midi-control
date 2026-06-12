@@ -14,9 +14,9 @@
 import { writeFileSync, readFileSync } from 'node:fs';
 import { registerDevice } from '@mcp-midi-control/core/protocol-generic/registry.js';
 import { executeSwitchPreset, executeSavePreset, executeSwitchScene } from '@mcp-midi-control/core/protocol-generic/dispatcher/navigation.js';
-import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
-import { CHUNK_PAYLOAD_LEN, CHUNKS_PER_PRESET, parsePresetDump } from '@mcp-midi-control/axe-fx-ii/presetDump.js';
+import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
+import { CHUNK_PAYLOAD_LEN, CHUNKS_PER_PRESET, parsePresetDump } from '@mcp-midi-control/fractal-gen2/presetDump.js';
 
 registerDevice(AXEFX2_DESCRIPTOR);
 

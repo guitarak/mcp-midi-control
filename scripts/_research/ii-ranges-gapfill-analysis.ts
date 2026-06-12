@@ -4,7 +4,7 @@
  * Analysis (read-only) for the 2026-06-09 Axe-Fx II display-mapping
  * gap-fill. Joins the solved zero-resync II editor-cache walk
  * (effectDefinitions_07.walk.json) to the shipped II catalog
- * (fractal-midi/src/axe-fx-ii/params.ts) via the catalog-vote
+ * (fractal-midi/src/gen2/axe-fx-ii/params.ts) via the catalog-vote
  * block -> section map (same technique as tc_join_ii.py), then
  * classifies every joined float row:
  *
@@ -33,12 +33,12 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
-import { KNOWN_PARAMS, type AxeFxIIParam } from '../../packages/fractal-midi/src/axe-fx-ii/params.js';
+import { KNOWN_PARAMS, type AxeFxIIParam } from '../../packages/fractal-midi/src/gen2/axe-fx-ii/params.js';
 import { KNOWN_PARAMS as AM4_PARAMS } from '../../packages/fractal-midi/src/am4/params.js';
 
 const WALK = 'samples/captured/local-caches-2026-06-09/effectDefinitions_07.walk.json';
 const REPORT = 'samples/captured/local-caches-2026-06-09/ii-gapfill-report.json';
-const CALIBRATION = 'packages/axe-fx-ii/src/calibration.ts';
+const CALIBRATION = 'packages/fractal-gen2/src/calibration.ts';
 
 interface WalkRec {
   kind: 'float' | 'enum';
@@ -76,7 +76,7 @@ const unitNibble = (tc: number): number => (tc >> 8) & 0x0f;
 const isLog10 = (r: WalkRec): boolean =>
   r.kind === 'float' && family(r.tc) >= 4 && family(r.tc) <= 5 && r.min * r.def > 0;
 
-// ---- explicit calibration overlay keys (packages/axe-fx-ii/src/calibration.ts) ----
+// ---- explicit calibration overlay keys (packages/fractal-gen2/src/calibration.ts) ----
 // Extracted textually: that file imports from the fractal-midi dist build,
 // which may be stale this session; the keys + values are what we need.
 const calSrc = readFileSync(CALIBRATION, 'utf8');

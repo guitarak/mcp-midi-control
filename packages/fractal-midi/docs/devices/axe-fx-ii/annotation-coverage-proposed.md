@@ -3,11 +3,11 @@
 > APPLIED. All 67 entries below were re-validated (each `parameterName`
 > anchored to the SeekParamTablesII catalog at the shipping `paramId`, each
 > `xmlLabel` taken verbatim from the AxeEdit `__block_layout` catalog) and
-> applied to `packages/fractal-midi/src/axe-fx-ii/params.ts`. The validator
+> applied to `packages/fractal-midi/src/gen2/axe-fx-ii/params.ts`. The validator
 > and the idempotent apply step live at
 > `scripts/_research/validate-ii-annotation-coverage.ts` and
 > `scripts/_research/apply-ii-annotation-coverage.ts`; the regression golden
-> is `packages/fractal-midi/test/axe-fx-ii/annotation-coverage.test.ts` (67
+> is `packages/fractal-midi/test/gen2/axe-fx-ii/annotation-coverage.test.ts` (67
 > cases). The two `pitch.voice_N_delay` rows carry `parameterName` only: their
 > "Delay 1"/"Delay 2" label is shared with `PITCH_TIME1/2`, so `xmlLabel` was
 > withheld. This section is retained as the decode record.

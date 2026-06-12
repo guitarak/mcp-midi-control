@@ -15,10 +15,10 @@
  * Run via: npx tsx scripts/verify-axefx2-multi-instance.ts
  */
 
-import { translateSpec } from '../packages/axe-fx-ii/src/descriptor/writer.js';
-import { buildApplyPresetOps } from '../packages/axe-fx-ii/src/tools/applyExecutor.js';
+import { translateSpec } from '../packages/fractal-gen2/src/descriptor/writer.js';
+import { buildApplyPresetOps } from '../packages/fractal-gen2/src/tools/applyExecutor.js';
 import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
-import { resolveBlock } from 'fractal-midi/axe-fx-ii';
+import { resolveBlock } from 'fractal-midi/gen2/axe-fx-ii';
 
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string): void {

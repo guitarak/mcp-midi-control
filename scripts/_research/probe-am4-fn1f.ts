@@ -247,7 +247,7 @@ async function main(): Promise<void> {
       md.push('**🎯 HIT.** Device responded with a 0x74/0x75/0x76 state-broadcast');
       md.push("triple — same envelope shape as the Axe-Fx II's fn 0x1F bulk-read.");
       md.push('Decode the chunk contents using the same pattern as');
-      md.push('`packages/axe-fx-ii/src/descriptor/reader.ts:213` (`readAllParams`).');
+      md.push('`packages/fractal-gen2/src/descriptor/reader.ts:213` (`readAllParams`).');
       md.push('Next step: port that pattern to AM4 codec + descriptor.');
       md.push('');
       md.push('Frames:');
@@ -271,7 +271,7 @@ async function main(): Promise<void> {
   md.push('- If any shape is `state_broadcast_triple`: add a `buildGetAllParams`');
   md.push('  to `fractal-midi/src/am4/setParam.ts` mirroring the II shape, and');
   md.push('  wire a descriptor-layer `readAllParams` analogous to');
-  md.push('  `packages/axe-fx-ii/src/descriptor/reader.ts:213`. Cut a new');
+  md.push('  `packages/fractal-gen2/src/descriptor/reader.ts:213`. Cut a new');
   md.push('  fractal-midi release; install in this repo; expose via the');
   md.push('  unified `get_params` tool.');
   md.push('- If any shape is `multipurpose_nack`: log the result_code, then');

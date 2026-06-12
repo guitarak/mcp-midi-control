@@ -29,7 +29,7 @@
 //          come back DISTINCT between X and Y (proves Y is read from quarter 1
 //          of the dump, not a copy of the X quarter).
 //
-// Wire model (matches packages/axe-fx-ii/src/descriptor/reader.ts getPreset):
+// Wire model (matches packages/fractal-gen2/src/descriptor/reader.ts getPreset):
 //   - fn 0x20 GET_GRID_LAYOUT → one Drive 1 (id 133) placed, routed.
 //   - fn 0x0E QUERY_STATES    → one engaged/X record (active channel = X
 //                                at zero round-trips, the default path).
@@ -49,7 +49,7 @@
 // Importing the descriptor registers the Axe-Fx II param-kind resolver as
 // an import-time side effect (same as the live server boot), so decodeWire
 // is available for calibrated knobs.
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 import type { MidiConnection } from '@mcp-midi-control/core/midi/transport.js';
 import type { DispatchCtx, PresetSnapshot } from '@mcp-midi-control/core/protocol-generic/types.js';
 import {
@@ -58,7 +58,7 @@ import {
   AXE_FX_II_XL_PLUS_MODEL_ID,
   type AxeFxIIBlock,
   type AxeFxIIParam,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 let failures = 0;
 function check(label: string, ok: boolean, detail?: string): void {

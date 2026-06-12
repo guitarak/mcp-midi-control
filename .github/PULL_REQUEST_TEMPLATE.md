@@ -12,7 +12,7 @@
 
 ## Wire-layer changes
 
-<!-- Only fill this if you touched packages/am4/**, packages/axe-fx-ii/**, packages/axe-fx-iii/**, packages/hydrasynth/**, or anything that changes MIDI bytes sent or parsed. Otherwise delete the section. -->
+<!-- Only fill this if you touched packages/am4/**, packages/fractal-gen1/**, packages/fractal-gen2/**, packages/fractal-gen3/**, packages/hydrasynth/**, packages/fractal-midi/**, or anything that changes MIDI bytes sent or parsed. Otherwise delete the section. -->
 
 - [ ] Added byte-exact goldens against a captured `.syx` or documented test (`scripts/verify-*.ts`)
 - [ ] If a new pidHigh / function / NRPN was added, the matching case is in `scripts/verify-msg.ts`

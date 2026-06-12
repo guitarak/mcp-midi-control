@@ -1,5 +1,5 @@
 /**
- * Generate `packages/fractal-midi/src/fm9/rosters.generated.ts` — the
+ * Generate `packages/fractal-midi/src/gen3/fm9/rosters.generated.ts` — the
  * device-true FM9 enum rosters (amp / drive-FUZZ / reverb type), mined from an
  * FM9-Edit `effectDefinitions_12_<fw>.cache` and validated against the
  * hardware-confirmed ordinal anchors before emission.
@@ -29,7 +29,7 @@ const root = resolve(__dirname, '..');
 
 const CACHE = process.argv[2]
   ?? resolve(root, 'samples/captured/fm9-community-2026-06-09/effectDefinitions_12_11p0.cache');
-const OUT = resolve(root, 'packages/fractal-midi/src/fm9/rosters.generated.ts');
+const OUT = resolve(root, 'packages/fractal-midi/src/gen3/fm9/rosters.generated.ts');
 
 function recAt(buf: Buffer, off: number): { name: string; next: number } | undefined {
   if (off < 0 || off + 4 > buf.length) return undefined;

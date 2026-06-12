@@ -76,7 +76,7 @@ npx tsx scripts/_research/fractal-editor-emulator.ts \
 Use `--model 10` for III-Edit, `--model 11` for FM3-Edit (each needs its own
 connect+sync capture to seed the verbatim render-gate frames; FM9 is the only
 captured corpus so far). The shape builders are golden-tested offline by
-`scripts/verify-fractal-modern-sim.ts` (no editor needed). The cookbook entry
+`scripts/verify-fractal-gen3-sim.ts` (no editor needed). The cookbook entry
 [`gen3-editor-sync-read-surface`](../research/cookbook/gen3-editor-sync-read-surface.md)
 documents the read surface the simulator answers.
 
@@ -95,7 +95,7 @@ via `scripts/_research/probe-fm3-routing.ts`. Key findings:
 
 Full decode: cookbook entry
 [`gen3-fn01-grid-routing`](../research/cookbook/gen3-fn01-grid-routing.md),
-implementation: `packages/fractal-midi/src/axe-fx-iii/setParam.ts`
+implementation: `packages/fractal-midi/src/gen3/axe-fx-iii/setParam.ts`
 (`buildSetGridRouting`, rows=4 branch).
 
 ## The gen-3 connect handshake (`query_sys_info`)

@@ -14,8 +14,8 @@ import {
   crc16ccitt,
   decodeRawPatch,
   reencodeRawPatch,
-} from '../packages/fractal-modern/dist/presetHuffman.js';
-import { parsePresetDump } from '../packages/fractal-modern/dist/presetDump.js';
+} from '../packages/fractal-gen3/dist/presetHuffman.js';
+import { parsePresetDump } from '../packages/fractal-gen3/dist/presetDump.js';
 
 let ok = 0;
 let fail = 0;

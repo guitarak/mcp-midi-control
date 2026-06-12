@@ -1,5 +1,5 @@
 /**
- * Generate `fractal-midi/src/axe-fx-ii/typeApplicability.ts` from the
+ * Generate `fractal-midi/src/gen2/axe-fx-ii/typeApplicability.ts` from the
  * AxeEdit II `__block_layout.xml` JUCE BinaryData resource.
  *
  * Mirrors the AM4 pipeline (`scripts/_research/{extract,gen}-type-
@@ -44,7 +44,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
-import { KNOWN_PARAMS } from 'fractal-midi/axe-fx-ii';
+import { KNOWN_PARAMS } from 'fractal-midi/gen2/axe-fx-ii';
 
 const SHOW_ANNOTATION_GAPS = process.argv.includes('--show-annotation-gaps');
 const ANNOTATION_GAPS_OUT =
@@ -54,7 +54,7 @@ const XML_PATH =
   'samples/captured/decoded/binarydata/axe-edit-extracted/__block_layout.xml';
 // Output lands in the fractal-midi workspace package.
 const FRACTAL_MIDI_REPO = process.env.FRACTAL_MIDI_REPO ?? 'packages/fractal-midi';
-const OUT_TS = `${FRACTAL_MIDI_REPO}/src/axe-fx-ii/typeApplicability.ts`;
+const OUT_TS = `${FRACTAL_MIDI_REPO}/src/gen2/axe-fx-ii/typeApplicability.ts`;
 
 // ─── XML block name → params.ts block slug ──────────────────────────
 // One row per <EditorControls name="X"> tag seen in the II XML.
@@ -595,7 +595,7 @@ if (SHOW_ANNOTATION_GAPS) {
   md.push('annotation to each matched registry entry; no new param entries, no');
   md.push('encoding research. Per [[feedback_shipped_capabilities_index]] the');
   md.push('previous "188 unmatched" report was partially false-positive in this');
-  md.push('way (e.g. `amp.treble` IS shipped at `fractal-midi/src/axe-fx-ii/');
+  md.push('way (e.g. `amp.treble` IS shipped at `fractal-midi/src/gen2/axe-fx-ii/');
   md.push('params.ts:1875` but lacks the `parameterName: "DISTORT_TREBLE"`');
   md.push('annotation — the generator silently classifies it as missing).');
   md.push('');

@@ -25,9 +25,9 @@
 import {
   buildApplyPresetAtOps,
   type ApplyPresetAtInput,
-} from '@mcp-midi-control/axe-fx-ii/tools/applyExecutor.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
-import { getCalibration } from '@mcp-midi-control/axe-fx-ii/calibration.js';
+} from '@mcp-midi-control/fractal-gen2/tools/applyExecutor.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
+import { getCalibration } from '@mcp-midi-control/fractal-gen2/calibration.js';
 
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string): void {

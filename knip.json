@@ -9,11 +9,12 @@
       "entry": ["src/server/index.ts", "src/cli/*.ts"]
     },
     "packages/fractal-midi": {
-      "entry": ["src/index.ts", "src/*/index.ts", "test/run-all.ts"]
+      "entry": ["src/index.ts", "src/*/index.ts", "src/*/*/index.ts", "test/run-all.ts"]
     },
     "packages/am4": { "entry": ["src/device.ts"] },
-    "packages/axe-fx-ii": { "entry": ["src/device.ts", "src/tools.ts"] },
-    "packages/fractal-modern": { "entry": ["src/device.ts"] },
+    "packages/fractal-gen1": { "entry": ["src/descriptor.ts"] },
+    "packages/fractal-gen2": { "entry": ["src/device.ts", "src/tools.ts"] },
+    "packages/fractal-gen3": { "entry": ["src/device.ts"] },
     "packages/hydrasynth": { "entry": ["src/device.ts", "src/server.ts"] }
   }
 }

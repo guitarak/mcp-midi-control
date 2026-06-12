@@ -1,10 +1,16 @@
 # Testing: FM3
 
-> **Highest value:** the end-to-end connection test (T1 below) — the FM3's USB
-> serial transport is this server's newest, least-tested layer. The CODEC paths
-> (discrete set-by-name, the striped read, continuous writes, SysEx preset
-> switch) are already hardware-confirmed on an FM3 by a community collaborator;
-> what needs confirming is THIS server driving them over the FM3's serial port.
+> **Status (2026-06 hardware sessions, fw 12.00, macOS):** the serial
+> transport, discovery, framing, the whole read path, continuous `set_param`,
+> `set_bypass`, `switch_scene`, and the SysEx preset switch are
+> **hardware-confirmed end-to-end through this server's own probes**
+> (2026-06-12 field test), and **set-by-name discrete `set_param` is
+> hardware-confirmed** via a 2026-06-10 community session (frames
+> byte-identical to this server's encoder, sent from the tester's own rig).
+> What remains unconfirmed: **`set_block`** (needs a loaded preset WITHOUT a
+> Drive block so the probe's placement test can run) and **`save_preset`**
+> (T4 below — never auto-tested by design). A Windows serial-driver run would
+> also be new coverage (the field tests were macOS).
 >
 > Beyond the tests below, the highest-value FM3 artifact needs no capture tools at all: the editor's cache file (the device's complete parameter dictionary — including the display ranges the catalog still lacks for FM3 — offline, see [captures-gen3.md C2](captures-gen3.md)). The [harvest script](harvest-script.md) does NOT work on the FM3 (it talks MIDI ports; the FM3 is serial-only over USB).
 
@@ -14,7 +20,8 @@ See [README.md](README.md) for setup. Want to record captures too? See [captures
 
 The FM3 is **not a USB MIDI device** on any OS (Fractal's docs are explicit).
 Over USB its control channel is a serial port, and the server speaks raw MIDI
-over it (community-beta):
+over it (hardware-confirmed on macOS, 2026-06-12; Windows serial-driver path
+still unconfirmed):
 
 - **Windows:** install Fractal's **FM3 USB Serial Driver** (separate from the
   audio driver; both come in the FM3 driver download). The FM3 then appears

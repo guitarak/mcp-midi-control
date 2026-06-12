@@ -9,8 +9,8 @@ verified_on:
 golden: scripts/cookbook-verify.ts#case-gen3-fn01-grid-set-position-insert
 relates_to: [septet-14bit, xor-7f-envelope-checksum, iii-fn01-set-parameter-envelope, gen3-fn1f-poll-block-bulk-read]
 consumed_in:
-  - packages/fractal-midi/src/axe-fx-iii/setParam.ts (buildSetGridCell)
-  - packages/fractal-midi/test/modern-family/catalog.test.ts (byte-exact insert golden, models 0x10/0x11/0x12)
+  - packages/fractal-midi/src/gen3/axe-fx-iii/setParam.ts (buildSetGridCell)
+  - packages/fractal-midi/test/gen3/modern-family/catalog.test.ts (byte-exact insert golden, models 0x10/0x11/0x12)
 ---
 
 # Gen-3 block insert / grid_set_position (fn=0x01 sub=0x32)
@@ -79,10 +79,10 @@ cols, FM3 = 4 rows x 12 cols (all three cross-checked against official
 Fractal specs; the III product page states "six rows and 14 columns"
 verbatim, the wiki lists FM9 "14x6" and FM3 "12x4").
 
-Note: the shipped `fractal-modern` config now sets `grid: { rows: 6 }` for
+Note: the shipped `fractal-gen3` config now sets `grid: { rows: 6 }` for
 III and FM9, matching the wire (two editors). The gen-3 codec's
 `buildSetGridCell` takes the row count via `opts.rows` (default 6) so the
-cell-index stride is `(col-1)*rows + (row-1)`; the `fractal-modern` writer
+cell-index stride is `(col-1)*rows + (row-1)`; the `fractal-gen3` writer
 passes `shape.grid.rows`. FM3 stays at its smaller (uncaptured) row count.
 
 ### Effect IDs read off the wire
@@ -170,5 +170,5 @@ and the septet effect-id field.
   (was the fn=0x05 II-port); the gen-3 `set_block` warning copy updated to name
   the confirmed op. A byte-exact golden ties the production builder to the
   captured frames for models 0x10/0x11/0x12 in
-  `test/modern-family/catalog.test.ts`. The codec-backed device simulator's
+  `test/gen3/modern-family/catalog.test.ts`. The codec-backed device simulator's
   insert mutator parses the same shape (effectId @8-9, gridPos @12-13).

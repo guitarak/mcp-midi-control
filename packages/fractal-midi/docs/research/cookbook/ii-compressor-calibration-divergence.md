@@ -9,8 +9,8 @@ firmware_sensitive: true
 golden: scripts/cookbook-verify.ts#case-ii-compressor-calibration-divergence
 relates_to: [display-log10-scaling]
 consumed_in:
-  - packages/axe-fx-ii/src/calibration.ts (II compressor overlay entries)
-  - fractal-midi/src/axe-fx-ii/params.ts (base compressor param definitions)
+  - packages/fractal-gen2/src/calibration.ts (II compressor overlay entries)
+  - fractal-midi/src/gen2/axe-fx-ii/params.ts (base compressor param definitions)
 ---
 
 # II compressor calibration range divergence from AM4
@@ -104,4 +104,4 @@ pairs from the table above.
   comp and look_ahead match AM4 exactly; filter (no AM4 sibling) is
   10..1000 Hz log10. All three calibrated in calibration.ts and
   hardware-verified via probe-cpr-calibration-verify.ts (15/15 pass).
-  Consumed in: packages/axe-fx-ii/src/calibration.ts.
+  Consumed in: packages/fractal-gen2/src/calibration.ts.

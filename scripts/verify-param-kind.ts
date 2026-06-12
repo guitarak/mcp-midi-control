@@ -29,10 +29,10 @@
 
 // Eager-load every device descriptor so their resolvers register
 // before we probe the helper.
-import '@mcp-midi-control/axe-fx-ii/descriptor.js';
+import '@mcp-midi-control/fractal-gen2/descriptor.js';
 import '@mcp-midi-control/am4/descriptor.js';
 import '@mcp-midi-control/hydrasynth/descriptor.js';
-import '@mcp-midi-control/fractal-modern/descriptor.js';
+import '@mcp-midi-control/fractal-gen3/descriptor.js';
 
 import {
   resolveParamKind,

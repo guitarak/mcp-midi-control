@@ -27,9 +27,9 @@
  * Run:  npx tsx scripts/_research/bk070-readonly-layout-discovery.ts
  */
 
-import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
-import { parsePresetDump } from '@mcp-midi-control/axe-fx-ii/presetDump.js';
-import { BLOCK_BINARY_LAYOUT } from '@mcp-midi-control/axe-fx-ii/blockBinaryLayout.js';
+import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
+import { parsePresetDump } from '@mcp-midi-control/fractal-gen2/presetDump.js';
+import { BLOCK_BINARY_LAYOUT } from '@mcp-midi-control/fractal-gen2/blockBinaryLayout.js';
 import {
   buildGetGridLayout,
   parseGetGridLayoutResponse,
@@ -39,7 +39,7 @@ import {
   isGetPresetNumberResponse,
   parseGetPresetNumberResponse,
   AXE_FX_II_BLOCKS,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 const SYSEX_START = 0xf0;
 const AXEFX2_MODEL = 0x07;

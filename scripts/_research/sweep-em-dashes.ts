@@ -39,7 +39,7 @@ function globMatch(pattern: string): string[] {
 
 const TARGETS = [
   'packages/am4/src/tools/*.ts',
-  'packages/axe-fx-ii/src/tools/*.ts',
+  'packages/fractal-gen2/src/tools/*.ts',
   'packages/hydrasynth/src/tools/*.ts',
   'packages/core/src/protocol-generic/tools/*.ts',
 ];

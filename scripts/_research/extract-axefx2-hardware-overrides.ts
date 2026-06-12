@@ -1,6 +1,6 @@
 /**
  * Extract HARDWARE_OVERRIDES table data from the current shipping
- * packages/axe-fx-ii/src/params.ts.
+ * packages/fractal-gen2/src/params.ts.
  *
  * Compares current entries against what `extract-axe-fx-ii-params.ts`
  * emits from the wiki + XML join. Any field on a shipping entry NOT
@@ -16,7 +16,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 
-const PARAMS_TS = 'packages/axe-fx-ii/src/params.ts';
+const PARAMS_TS = 'packages/fractal-gen2/src/params.ts';
 
 // Step 1: save current file, run generator, capture regen output,
 // restore the original.

@@ -10,7 +10,7 @@
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { resolveAxeFxIIParamKind } from '../../packages/axe-fx-ii/src/calibration.js';
+import { resolveAxeFxIIParamKind } from '../../packages/fractal-gen2/src/calibration.js';
 
 interface Sample { setWire: number; echoedWire: number; label: string }
 interface ParamSweep { paramId: number; name: string; controlType: string; originalWire: number; samples: Sample[] }

@@ -1427,7 +1427,7 @@ directly? No, on three independent grounds:
    positions cannot be lifted.
 
 2. **III itself has NOT decoded its own inner per-param layout.**
-   `packages/fractal-modern/src/presetDump.ts` L47 (committed):
+   `packages/fractal-gen3/src/presetDump.ts` L47 (committed):
    `"Inner per-scene / per-block decode is the subject of future
    work (the III channel-state decode); this module treats chunk payloads
    as opaque blobs."` There is no III mining output to port.

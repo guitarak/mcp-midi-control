@@ -85,8 +85,9 @@ if (-not $isSourceInstall) {
         @{ Rel = 'node_modules\@mcp-midi-control\server-all\dist\server\index.js'; Why = 'MCP server entry point' },
         @{ Rel = 'node_modules\@mcp-midi-control\core\package.json'; Why = 'core device-registry package' },
         @{ Rel = 'node_modules\@mcp-midi-control\am4\package.json'; Why = 'AM4 device adapter' },
-        @{ Rel = 'node_modules\@mcp-midi-control\axe-fx-ii\package.json'; Why = 'Axe-Fx II device adapter' },
-        @{ Rel = 'node_modules\@mcp-midi-control\fractal-modern\package.json'; Why = 'modern Fractal family adapter (Axe-Fx III / FM3 / FM9)' },
+        @{ Rel = 'node_modules\@mcp-midi-control\fractal-gen1\package.json'; Why = 'Axe-Fx Standard/Ultra (gen-1) device adapter' },
+        @{ Rel = 'node_modules\@mcp-midi-control\fractal-gen2\package.json'; Why = 'Axe-Fx II (gen-2) device adapter' },
+        @{ Rel = 'node_modules\@mcp-midi-control\fractal-gen3\package.json'; Why = 'modern Fractal family adapter (Axe-Fx III / FM3 / FM9 / VP4)' },
         @{ Rel = 'node_modules\@mcp-midi-control\hydrasynth\package.json'; Why = 'Hydrasynth device adapter' }
     )
 

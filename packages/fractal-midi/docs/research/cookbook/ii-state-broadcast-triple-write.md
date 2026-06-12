@@ -71,8 +71,8 @@ FM9 capture was a panel edit + reads, no synthesized write). Status stays
 
 ## Consumer
 
-- Builder: `packages/fractal-midi/src/axe-fx-ii/setParam.ts:buildStateBroadcastTriple`
-- Reader: `packages/axe-fx-ii/src/descriptor/reader.ts:readAllParams`
+- Builder: `packages/fractal-midi/src/gen2/axe-fx-ii/setParam.ts:buildStateBroadcastTriple`
+- Reader: `packages/fractal-gen2/src/descriptor/reader.ts:readAllParams`
 
 ## Cross-references
 
@@ -87,6 +87,6 @@ FM9 capture was a panel edit + reads, no synthesized write). Status stays
   hardware capture (FM9 model `0x12`, FW 11.00, community-contributed) shows the
   identical `0x74/0x75/0x76` triple as the `fn=0x1F` poll response; body is positional
   in device-true paramId order (Reverb idx 0 = Mix = 65534 = 100%). Parsed by
-  `parseGen3StateBroadcastHead/Body` (`src/axe-fx-iii/setParam.ts`), golden in
+  `parseGen3StateBroadcastHead/Body` (`src/gen3/axe-fx-iii/setParam.ts`), golden in
   `test/axe-fx-iii/setparam.test.ts`, consumed by gen-3 dirty-state in the MCP-server
   layer. Write-acceptance NOT generalized (read direction only).

@@ -22,8 +22,8 @@
 import {
   buildApplyPresetAtOps,
   type ApplyPresetAtInput,
-} from '@mcp-midi-control/axe-fx-ii/tools/applyExecutor.js';
-import { buildSetCellRouting } from 'fractal-midi/axe-fx-ii';
+} from '@mcp-midi-control/fractal-gen2/tools/applyExecutor.js';
+import { buildSetCellRouting } from 'fractal-midi/gen2/axe-fx-ii';
 
 function hex(bytes: number[]): string {
   return bytes.map((b) => b.toString(16).padStart(2, '0')).join(' ');
@@ -305,7 +305,7 @@ check(
 console.log('\nCase 6: BK-058 channel-Y executor walk');
 
 // Use real AMP param names so findParam(target, name) resolves. The
-// canonical names live in fractal-midi/axe-fx-ii's amp param table;
+// canonical names live in fractal-midi/gen2/axe-fx-ii's amp param table;
 // any two valid names work for this shape assertion.
 const channelY: ApplyPresetAtInput = {
   preset_number: 600,

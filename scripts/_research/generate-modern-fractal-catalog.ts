@@ -33,9 +33,9 @@
  *   npx tsx scripts/_research/generate-modern-fractal-catalog.ts <dev> <CONST_PREFIX>
  * Example:
  *   npx tsx scripts/_research/generate-modern-fractal-catalog.ts fm3 FM3
- *   -> packages/fractal-midi/src/fm3/params.ts
+ *   -> packages/fractal-midi/src/gen3/fm3/params.ts
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import {
   findAm4Override,
   loadAm4ParamOverrides,
@@ -183,7 +183,7 @@ lines.push(` * (inherited from the AM4 symbol-name overlay — the same resolver
 lines.push(` * catalog uses; join by name, not paramId). The rest stay 'unverified' and pass`);
 lines.push(` * the raw 16-bit wire integer through, same as the III's uncalibrated path.`);
 lines.push(` */`);
-lines.push(`import type { Param } from '../axe-fx-iii/params.js';`);
+lines.push(`import type { Param } from '../types.js';`);
 lines.push(``);
 lines.push(`export const ${prefix}_PARAMS: readonly Param[] = [`);
 for (const p of wire) lines.push(entry(p));
@@ -202,13 +202,20 @@ lines.push(`/** Effect families present in this device's catalog. */`);
 lines.push(`export const ${prefix}_FAMILIES: readonly string[] = ${JSON.stringify(families)};`);
 lines.push(``);
 
-mkdirSync(`packages/fractal-midi/src/${dev}`, { recursive: true });
-const outPath = `packages/fractal-midi/src/${dev}/params.ts`;
+// Catalogs live under the gen-3 generation bucket (src/gen3/<dev>/)
+// since the gen1/gen2/gen3 reorg.
+const outDir = `packages/fractal-midi/src/gen3/${dev}`;
+mkdirSync(outDir, { recursive: true });
+const outPath = `${outDir}/params.ts`;
 writeFileSync(outPath, lines.join('\n'), 'utf-8');
 
-// index.ts re-export
-const idx = `export { ${prefix}_PARAMS, ${prefix}_PARAMS_BY_FAMILY, ${prefix}_FAMILIES } from './params.js';\n`;
-writeFileSync(`packages/fractal-midi/src/${dev}/index.ts`, idx, 'utf-8');
+// index.ts re-export — seeded only if absent: device dirs with a codec
+// (vp4) curate their own index.ts; never clobber it.
+const idxPath = `${outDir}/index.ts`;
+if (!existsSync(idxPath)) {
+  const idx = `export { ${prefix}_PARAMS, ${prefix}_PARAMS_BY_FAMILY, ${prefix}_FAMILIES } from './params.js';\n`;
+  writeFileSync(idxPath, idx, 'utf-8');
+}
 
 console.log(
   `${dev}: wrote ${outPath} (${wire.length} params, ${families.length} families; ` +

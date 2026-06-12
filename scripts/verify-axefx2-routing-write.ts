@@ -20,14 +20,14 @@
  * Run: npx tsx scripts/verify-axefx2-routing-write.ts
  */
 
-import { connectAxeFxII, type AxeFxIIConnection } from '@mcp-midi-control/axe-fx-ii/midi.js';
+import { connectAxeFxII, type AxeFxIIConnection } from '@mcp-midi-control/fractal-gen2/midi.js';
 import {
   buildGetGridLayout,
   buildSwitchPreset,
   isGetGridLayoutResponse,
   parseGetGridLayoutResponse,
   type GridCell,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 import { fractalChecksum } from 'fractal-midi/shared';
 
 const SLOT_666_WIRE = 665;

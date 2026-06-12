@@ -29,13 +29,13 @@ import {
   executeSavePreset,
 } from '@mcp-midi-control/core/protocol-generic/dispatcher/navigation.js';
 import { executeGetParam } from '@mcp-midi-control/core/protocol-generic/dispatcher/params.js';
-import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
+import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 import {
   parsePresetDump,
   serializePresetDump,
   CHUNKS_PER_PRESET,
-} from '@mcp-midi-control/axe-fx-ii/presetDump.js';
+} from '@mcp-midi-control/fractal-gen2/presetDump.js';
 
 registerDevice(AXEFX2_DESCRIPTOR);
 

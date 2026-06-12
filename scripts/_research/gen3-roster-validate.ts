@@ -4,11 +4,11 @@
  * hardware, and confirm the target param symbols exist in our gen-3 catalogs.
  *
  * Source tables (Apache-2.0, Andrew Mercurio): docs/_private/fractal-syx-codec-main/.../data/
- * Our anchors: FM9_ENUM_OVERRIDES (fractal-midi/fm9) — read-leg ordinal->name points
+ * Our anchors: FM9_ENUM_OVERRIDES (fractal-midi/gen3/fm9) — read-leg ordinal->name points
  * captured from a real FM9. If Drew's table disagrees with any captured anchor, STOP.
  */
 import { readFileSync } from 'node:fs';
-import { FM9_ENUM_OVERRIDES } from '../../packages/fractal-midi/src/fm9/index.ts';
+import { FM9_ENUM_OVERRIDES } from '../../packages/fractal-midi/src/gen3/fm9/index.ts';
 
 const DREW = 'docs/_private/fractal-syx-codec-main/fractal-syx-codec-main/data';
 

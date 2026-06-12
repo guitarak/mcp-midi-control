@@ -9,8 +9,8 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-wire-id-pairs-per-placed-block
 relates_to: [alphabetical-name-cascade-block-ordering]
 consumed_in:
-  - packages/axe-fx-ii/src/blockBinaryLayout.ts (block-name → wire-ids table from FUN_00595260)
-  - fractal-midi/src/axe-fx-ii/blockTypes.ts
+  - packages/fractal-gen2/src/blockBinaryLayout.ts (block-name → wire-ids table from FUN_00595260)
+  - fractal-midi/src/gen2/axe-fx-ii/blockTypes.ts
 ---
 
 # Wire-id pairs per placed block

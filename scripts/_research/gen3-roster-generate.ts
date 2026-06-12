@@ -1,5 +1,5 @@
 /**
- * P1 generator: emit packages/fractal-midi/src/axe-fx-iii/gen3ReadRosters.ts
+ * P1 generator: emit packages/fractal-midi/src/gen3/axe-fx-iii/gen3ReadRosters.ts
  * from the validated fractal-syx-codec read-ordinal tables (Apache-2.0,
  * A. Mercurio). Run once; the emitted module is committed. Source JSON lives in
  * Drew's repo (gitignored under docs/_private), so this is a one-time import.
@@ -88,6 +88,6 @@ export function mergeGen3EnumOverrides(
 }
 `;
 
-const target = 'packages/fractal-midi/src/axe-fx-iii/gen3ReadRosters.ts';
+const target = 'packages/fractal-midi/src/gen3/axe-fx-iii/gen3ReadRosters.ts';
 writeFileSync(target, out);
 console.log(`Wrote ${target}: ${BLOCK_TO_SYMBOL.length} block tables, ${total} labels.`);

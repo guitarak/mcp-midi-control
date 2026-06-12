@@ -12,8 +12,8 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-vendor-envelope-descriptor-table
 relates_to: [param-descriptor-16byte, alphabetical-name-cascade-block-ordering, msb-first-14bit-preset-payload, block-record-stride-8, xor-fold-hash, xor-7f-envelope-checksum, iii-multiproduct-editor-binary]
 consumed_in:
-  - packages/axe-fx-ii/src/presetDump.ts (II preset push, descriptor tables at 0xe04440 + 0xdff900)
-  - packages/fractal-modern/src/presetDump.ts (III preset push, descriptor table 0x1407ab940 + factory-bank structural fixtures N=384)
+  - packages/fractal-gen2/src/presetDump.ts (II preset push, descriptor tables at 0xe04440 + 0xdff900)
+  - packages/fractal-gen3/src/presetDump.ts (III preset push, descriptor table 0x1407ab940 + factory-bank structural fixtures N=384)
   - mcp-midi-control/scripts/_research/parse-ghidra-decompile.ts (III table extractor)
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-misc-descriptors.descriptors.json (24 III tables, cross-linked to caller functions)
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-dump-descriptors.descriptors.json (2 III tables: 0x1407ab440 + 0x1407aba40)
@@ -176,7 +176,7 @@ contributor, a third fixture (hardware capture) gets added.
   the third device axis on this primitive (alongside II + III).
   Mining report: `synthesis-log/mine-ghidra-am4edit-envelope-descriptors-2026-05-22-1820.md`.
 - 2026-05-22 (III preset-push module shipped, agent a77b2de911a789ec3):
-  `packages/fractal-modern/src/presetDump.ts` + `scripts/verify-preset-dump-iii.ts`
+  `packages/fractal-gen3/src/presetDump.ts` + `scripts/verify-preset-dump-iii.ts`
   ship the III consumer. Per-preset wire shape: **1 x 0x77 (13B, 5-byte
   payload) + 16 x 0x78 (3082B, 3074-byte payload) + 1 x 0x79 (11B,
   3-byte payload) = 49,336B**, byte-identical-shape to AM4's chunk

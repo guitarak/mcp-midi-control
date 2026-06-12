@@ -27,8 +27,10 @@ In scope:
 - The MCP server (`packages/server-all/src/`).
 - The cross-device foundation (`packages/core/src/`).
 - The vendor protocol layers (`packages/am4/src/`,
-  `packages/axe-fx-ii/src/`, `packages/axe-fx-iii/src/`,
-  `packages/hydrasynth/src/`).
+  `packages/fractal-gen1/src/`, `packages/fractal-gen2/src/`,
+  `packages/fractal-gen3/src/`, `packages/hydrasynth/src/`).
+- The codec package (`packages/fractal-midi/src/`) — parses untrusted
+  SysEx / capture input and is published independently to npm.
 - Scripts under `scripts/` that process untrusted input (e.g. cache
   parsers, capture parsers).
 - The distributed Windows release ZIP (`setup.cmd` + bundled Node runtime

@@ -9,8 +9,8 @@
  *  (4) Characterize the 152 super-duos2 .syx envelope (0x77/0x78/0x79) + body entropy.
  */
 import { readFileSync } from 'node:fs';
-import { decode5SeptetFloat32 } from '../../packages/fractal-midi/src/axe-fx-iii/setParam.ts';
-import { parsePresetDump, extractPresetName } from '../../packages/fractal-modern/src/presetDump.ts';
+import { decode5SeptetFloat32 } from '../../packages/fractal-midi/src/gen3/axe-fx-iii/setParam.ts';
+import { parsePresetDump, extractPresetName } from '../../packages/fractal-gen3/src/presetDump.ts';
 
 function decode14(lo: number, hi: number): number {
   return (lo & 0x7f) | ((hi & 0x7f) << 7);

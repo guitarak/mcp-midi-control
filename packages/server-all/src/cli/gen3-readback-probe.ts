@@ -20,7 +20,8 @@
  *     get_preset across many blocks (today only reverb is spot-checked).
  *
  *   JOB 2 — a GET-response read-back spot-check. We fire the canonical
- *     fn=0x01 sub=0x09 GET at Reverb 1's TYPE param (effectId 66, paramId 10)
+ *     fn=0x01 sub=0x09 GET at Reverb 1's TYPE param (effectId 66; paramId
+ *     resolved from the device-true catalog — 0 on FM3/III, 10 on FM9)
  *     and log what comes back. RESOLVED (2026-06-08): there is NO separate
  *     "raw-id" space — the SET value is float32(read-ordinal) @ pos 12, and
  *     the read roster ordinal IS the set-by-name value. "Medium Spring" =
@@ -42,10 +43,11 @@ import {
   connectAxeFxIII,
   toHex,
   type MidiConnection,
-} from '@mcp-midi-control/fractal-modern/midi.js';
+} from '@mcp-midi-control/fractal-gen3/midi.js';
 import {
   AXE_FX_III_BLOCKS,
   type AxeFxIIIBlock,
+  PARAMS_BY_FAMILY,
   buildBlockBulkReadPoll,
   assembleGen3BlockBulkRead,
   isGen3BroadcastFrame,
@@ -56,7 +58,9 @@ import {
   buildGetScene,
   buildGetTempo,
   buildStatusDump,
-} from 'fractal-midi/axe-fx-iii';
+} from 'fractal-midi/gen3/axe-fx-iii';
+import { FM3_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm3';
+import { FM9_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm9';
 
 // Universal MIDI Identity Request (not Fractal-specific): F0 7E 7F 06 01 F7.
 // Every class-compliant device should reply with F0 7E <ch> 06 02 <mfr…>
@@ -64,22 +68,36 @@ import {
 // its firmware without the owner typing it. 100% read-only, standard MIDI.
 const IDENTITY_REQUEST = [0xf0, 0x7e, 0x7f, 0x06, 0x01, 0xf7];
 
+type ParamsByFamily = Readonly<Record<string, readonly { name: string; paramId: number }[]>>;
+
 interface DeviceSpec {
   label: string;
   modelByte: number;
   connect: () => MidiConnection;
+  /** Device-true param catalog — paramIds DIFFER across the gen-3 family. */
+  paramsByFamily: ParamsByFamily;
 }
 const DEVICES: Record<string, DeviceSpec> = {
-  fm9: { label: 'FM9', modelByte: 0x12, connect: connectFM9 },
-  fm3: { label: 'FM3', modelByte: 0x11, connect: connectFM3 },
-  'axe-fx-iii': { label: 'Axe-Fx III', modelByte: 0x10, connect: connectAxeFxIII },
+  fm9: { label: 'FM9', modelByte: 0x12, connect: connectFM9, paramsByFamily: FM9_PARAMS_BY_FAMILY },
+  fm3: { label: 'FM3', modelByte: 0x11, connect: connectFM3, paramsByFamily: FM3_PARAMS_BY_FAMILY },
+  'axe-fx-iii': { label: 'Axe-Fx III', modelByte: 0x10, connect: connectAxeFxIII, paramsByFamily: PARAMS_BY_FAMILY },
 };
+
+/**
+ * Resolve a device-true paramId by family + name. paramIds are DEVICE-SPECIFIC
+ * (reverb TYPE is 10 on FM9 but 0 on the III and FM3; amp TYPE is 10 / 0 / 6) —
+ * hardcoded FM9-shaped ids mis-addressed the 2026-06-12 FM3 field test.
+ */
+function paramIdOf(byFamily: ParamsByFamily, family: string, name: string): number {
+  const p = (byFamily[family] ?? []).find((x) => x.name === name);
+  if (!p) throw new Error(`device catalog has no ${family}.${name}`);
+  return p.paramId;
+}
 
 // Reverb 1 TYPE — our one ground-truth enum: "Medium Spring" = ordinal 16.
 // (The "raw 524" was a retired pos-15 packValue16 misread of float32(16); there
 // is no separate raw-id space — the SET value is float32(read-ordinal) @ pos 12.)
 const REVERB_EFFECT_ID = 66;
-const REVERB_TYPE_PARAM_ID = 10;
 const GROUND_TRUTH = { name: 'Medium Spring', ordinal: 16, enumCount: 79 };
 
 // Per-poll listen window. Bursts arrive ~1 ms after the poll; 400 ms is a
@@ -99,6 +117,7 @@ if (!device) {
   process.exit(1);
 }
 const MODEL = device.modelByte;
+const REVERB_TYPE_PARAM_ID = paramIdOf(device.paramsByFamily, 'REVERB', 'REVERB_TYPE');
 const outArg = process.argv[3] ?? `${deviceKey}-probe-output.json`;
 const outPath = path.isAbsolute(outArg) ? outArg : path.resolve(process.cwd(), outArg);
 
@@ -160,7 +179,7 @@ interface BlockResult {
   blockId?: number;
   itemCount?: number;
   valueCount?: number;
-  reverbTypeOrdinal?: number; // reverb block only: positional record[10]
+  reverbTypeOrdinal?: number; // reverb block only: positional record[REVERB_TYPE_PARAM_ID] (device-true)
   assembled: boolean;
   error?: string;
 }
@@ -256,7 +275,8 @@ async function runJob2(): Promise<GetExperiment> {
   }
 
   // If the GET triggered a broadcast burst, the reverb-type ordinal lives at
-  // record[10]. Pull it so the verdict can compare against ground truth too.
+  // record[REVERB_TYPE_PARAM_ID] (the device-true catalog id — 0 on FM3/III,
+  // 10 on FM9). Pull it so the verdict can compare against ground truth too.
   // CAVEAT: broadcast positional index == catalog paramId is only verified for
   // REVERB_MIX (paramId 0). It is FALSIFIED for the amp/DISTORT block (paramId
   // 2 -> index 149; FM9 capture 2026-06-04). This probe's verdict cross-checks
@@ -345,13 +365,14 @@ function buildEnumListRequest(sub0: number, effectId: number, paramId: number): 
   const head = [0xf0, ...FRACTAL_MFR, MODEL, 0x01, sub0, 0x00, ...enc14(effectId), ...enc14(paramId), 0, 0, 0, 0, 0, 0, 0, 0, 0];
   return [...head, xor7(head), 0xf7];
 }
-// Byte-confirmed (effectId, type-selector paramId) for the blocks we have
-// ground truth for. Expand to the full block set once a capture confirms the
-// request shape.
+// (effectId, type-selector paramId) for the blocks we have ground truth for —
+// typeParamId resolved from the DEVICE-TRUE catalog (amp TYPE is 10 on FM9 but
+// 0 on the III and 6 on the FM3). Expand to the full block set once a capture
+// confirms the request shape.
 const ENUM_LIST_TARGETS = [
-  { block: 'amp (DISTORT)', effectId: 58, typeParamId: 10 },
-  { block: 'reverb', effectId: 66, typeParamId: 10 },
-  { block: 'drive (FUZZ)', effectId: 118, typeParamId: 0 },
+  { block: 'amp (DISTORT)', effectId: 58, typeParamId: paramIdOf(device.paramsByFamily, 'DISTORT', 'DISTORT_TYPE') },
+  { block: 'reverb', effectId: 66, typeParamId: REVERB_TYPE_PARAM_ID },
+  { block: 'drive (FUZZ)', effectId: 118, typeParamId: paramIdOf(device.paramsByFamily, 'FUZZ', 'FUZZ_TYPE') },
 ];
 const ENUM_LIST_SUBS = [0x2e, 0x1f];
 
@@ -387,7 +408,7 @@ async function main(): Promise<void> {
 
   const report = {
     probe: 'gen3-readback-probe',
-    version: 3,
+    version: 4, // v4: paramIds resolved from the device-true catalog (FM9-shaped hardcodes mis-addressed FM3/III)
     device: device.label,
     capturedAt: new Date().toISOString(),
     modelByte: MODEL,

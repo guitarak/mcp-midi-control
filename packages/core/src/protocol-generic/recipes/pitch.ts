@@ -13,11 +13,11 @@
  *   executor is responsible for display->wire conversion.
  *
  * Device coverage:
- *   - Axe-Fx II  : full coverage. Catalog at fractal-midi/axe-fx-ii
+ *   - Axe-Fx II  : full coverage. Catalog at fractal-midi/gen2/axe-fx-ii
  *     KNOWN_PARAMS `pitch.*` (voice_1_shift, voice_2_shift,
  *     voice_1_detune, voice_2_detune, mix, voice_1_level,
  *     voice_2_level, control).
- *   - Axe-Fx III : full coverage. Catalog at fractal-midi/axe-fx-iii
+ *   - Axe-Fx III : full coverage. Catalog at fractal-midi/gen3/axe-fx-iii
  *     PARAMS family=PITCH (PITCH_SHIFT1, PITCH_SHIFT2, PITCH_DETUNE1,
  *     PITCH_DETUNE2, PITCH_MIX, PITCH_LEVEL1, PITCH_LEVEL2,
  *     PITCH_CTRL).
@@ -178,7 +178,7 @@ export const PITCH_RECIPES: Readonly<Record<string, PitchRecipeSpec>> = Object.f
   // voice_1_harmony semantics in INTEL HARM mode: 1=unison, 2=second,
   // 3=third, 4=fourth, 5=fifth, 6=sixth, 7=seventh. Set per the
   // pitch_block agent_guidance section in
-  // packages/axe-fx-ii/src/descriptor/agentGuidance.ts. III mirrors
+  // packages/fractal-gen2/src/descriptor/agentGuidance.ts. III mirrors
   // the same semantics; we mirror PITCH_HARMONY1 + PITCH_KEY +
   // PITCH_SCALE + PITCH_EFFECT_TYPE in the III column.
 

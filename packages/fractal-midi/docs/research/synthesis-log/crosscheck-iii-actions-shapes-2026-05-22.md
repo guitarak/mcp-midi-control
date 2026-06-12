@@ -55,7 +55,7 @@ The buffer length is `iVar2 = (param_3[5] * 8 + 6) / 7 + 0xf` (L22659), so the f
 
 `[action14:2] [effectId14:2] [paramId14:2] [value32:5] [modifier14:2] [tailCount14:2] [tail:N]`
 
-This matches the cookbook's existing 6-field interpretation precisely. The byte-pinned shapes per field also confirm the byte-verified shipped shape in `packages/axe-fx-iii/src/setParam.ts` (since the captured corpus uses values in [0..16383], bytes 8-10 of field 3 are zero in every captured frame, and the on-wire bytes agree with the cookbook's `[drag-context:3] [value:3] [reserved:3]` retrospective decomposition).
+This matches the cookbook's existing 6-field interpretation precisely. The byte-pinned shapes per field also confirm the byte-verified shipped shape in `packages/fractal-gen3/src/setParam.ts` (since the captured corpus uses values in [0..16383], bytes 8-10 of field 3 are zero in every captured frame, and the on-wire bytes agree with the cookbook's `[drag-context:3] [value:3] [reserved:3]` retrospective decomposition).
 
 **Suggested `consumed_in:` addition:**
 

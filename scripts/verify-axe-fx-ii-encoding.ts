@@ -57,7 +57,7 @@ import {
     parseStorePresetResponse,
     unpackValue16,
     wireToDisplay,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 import { fractalChecksum } from 'fractal-midi/shared';
 
 let failures = 0;

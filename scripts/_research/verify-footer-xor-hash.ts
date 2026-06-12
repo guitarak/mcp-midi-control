@@ -29,8 +29,8 @@ import {
   PRESET_DUMP_LEN,
   CHUNK_PAYLOAD_LEN,
   FOOTER_PAYLOAD_LEN,
-} from '@mcp-midi-control/axe-fx-ii/presetDump.js';
-import type { ParsedPresetDump } from '@mcp-midi-control/axe-fx-ii/presetDump.js';
+} from '@mcp-midi-control/fractal-gen2/presetDump.js';
+import type { ParsedPresetDump } from '@mcp-midi-control/fractal-gen2/presetDump.js';
 
 // Decode one chunk payload as N native ushorts following the
 // (key=0, val_b=6, val_c=2) + (key=1, val_b=8, val_c=3072) descriptor.

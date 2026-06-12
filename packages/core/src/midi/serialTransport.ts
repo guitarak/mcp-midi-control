@@ -11,9 +11,12 @@
  *   - Linux:   /dev/ttyACM* (cdc_acm)
  * The byte stream on that port is raw MIDI (SysEx frames verbatim) at a
  * nominal 115200 baud — CDC-ACM ignores the baud setting, we set it anyway.
- * Evidence: a community collaborator's FM3 hardware sessions drive
- * set/read/dump over this exact channel. Our implementation is decoded from
- * that evidence and is community-beta (hardware-unverified end to end).
+ * HARDWARE-CONFIRMED end to end (FM3 fw 12.00, macOS Apple Silicon,
+ * 2026-06-12 community field test): discovery by Fractal VID, open, framing
+ * (zero malformed frames across broadcast bursts), and the full read+write
+ * probe session ran over THIS implementation. macOS lists the /dev/tty.*
+ * node; we prefer the /dev/cu.* callout twin when present (tty.* can block
+ * on carrier-detect on some setups).
  *
  * ## Deferred open
  *
@@ -46,6 +49,7 @@
  * core transport barrel) never loads the native binding — environments
  * without it stay healthy until a serial connect is actually attempted.
  */
+import fs from 'node:fs';
 import type { MidiConnection } from './transport.js';
 import { createSerialMidiFramer } from './serialFraming.js';
 
@@ -114,6 +118,13 @@ export interface SerialConnectOptions {
   notFoundLeadIn?: string;
   /** Device-specific hints appended to the discovery-failure diagnostic. */
   notFoundHints?: readonly string[];
+  /**
+   * Sink for the one-line "connected via serial <path>" notice emitted after a
+   * successful open, so field reports are self-documenting about which port
+   * (and which match rule) carried the session. Default: console.error (safe
+   * for MCP stdio servers — stderr goes to the host's log, not the protocol).
+   */
+  log?: (line: string) => void;
 }
 
 interface SerialPortLike {
@@ -211,6 +222,7 @@ export function connectSerial(opts: SerialConnectOptions = {}): MidiConnection {
     try {
       const SerialPort = SerialPortCtor;
       let path = opts.explicitPath;
+      let matchNote = 'explicit path';
       if (!path) {
         const candidates = await listSerialCandidates();
         const hit = candidates.find((c) => c.matchReason !== undefined);
@@ -219,6 +231,18 @@ export function connectSerial(opts: SerialConnectOptions = {}): MidiConnection {
           return;
         }
         path = hit.path;
+        matchNote = `matched: ${hit.matchReason}`;
+        // macOS lists the /dev/tty.* node, but tty.* can block on
+        // carrier-detect on some setups; the /dev/cu.* callout twin is the
+        // conventional macOS choice. Prefer it when it exists (field report,
+        // FM3 over USB-CDC, 2026-06-12).
+        if (path.startsWith('/dev/tty.')) {
+          const cuTwin = `/dev/cu.${path.slice('/dev/tty.'.length)}`;
+          if (candidates.some((c) => c.path === cuTwin) || fs.existsSync(cuTwin)) {
+            path = cuTwin;
+            matchNote += '; preferred cu.* callout twin over tty.*';
+          }
+        }
       }
       if (closed) return;
       const sp = new SerialPort({ path, baudRate, autoOpen: false }) as unknown as SerialPortLike;
@@ -235,6 +259,8 @@ export function connectSerial(opts: SerialConnectOptions = {}): MidiConnection {
       }
       port = sp;
       opened = true;
+      // One-line connect notice so field reports are self-documenting.
+      (opts.log ?? console.error)(`connected via serial ${path} (${matchNote})`);
       openFailureRejecters.clear(); // can no longer fire; release the refs
       // Flush sends queued while the open was in flight, in order.
       for (const bytes of sendQueue.splice(0)) writeNow(bytes);

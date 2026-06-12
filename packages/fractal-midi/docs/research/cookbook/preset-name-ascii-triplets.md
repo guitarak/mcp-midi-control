@@ -10,7 +10,7 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-preset-name-ascii-triplets
 relates_to: [vendor-envelope-descriptor-table, septet-21bit-byte2-mask-preservation]
 consumed_in:
-  - packages/axe-fx-ii/src/presetDump.ts (extractPresetName)
+  - packages/fractal-gen2/src/presetDump.ts (extractPresetName)
 ---
 
 # Preset name ASCII triplets (II)

@@ -63,8 +63,8 @@
 import midi from 'midi';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
-import { KNOWN_PARAMS, AXE_FX_II_BLOCKS } from 'fractal-midi/axe-fx-ii';
-import type { AxeFxIIParam } from 'fractal-midi/axe-fx-ii';
+import { KNOWN_PARAMS, AXE_FX_II_BLOCKS } from 'fractal-midi/gen2/axe-fx-ii';
+import type { AxeFxIIParam } from 'fractal-midi/gen2/axe-fx-ii';
 import { createSysExAssembler } from '../../packages/core/src/midi/transport.js';
 
 const AXE_FX_II_MODEL = 0x07;

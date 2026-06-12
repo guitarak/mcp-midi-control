@@ -7,7 +7,7 @@
 // that dispatcher to find the actual chunk-1 parser.
 //
 // Cross-device note: Axe-Fx III's own preset-binary inner per-param
-// layout is ALSO unsolved (see packages/fractal-modern/src/presetDump.ts
+// layout is ALSO unsolved (see packages/fractal-gen3/src/presetDump.ts
 // L47 — "treats chunk payloads as opaque blobs"). The outer envelope
 // descriptor tables ARE shared cross-device (AM4 0x1405dcf40 vs III
 // 0x1407ab940, both byte-identical 3072-byte payload shape per
@@ -156,7 +156,7 @@ public class DecompileAM4InboundStreamPath extends GhidraScript {
         w("================================================================================");
         w("");
         w("Cross-device note: III's own per-param chunk-1 layout is ALSO unsolved");
-        w("(packages/fractal-modern/src/presetDump.ts L47 — 'treats chunk payloads as");
+        w("(packages/fractal-gen3/src/presetDump.ts L47 — 'treats chunk payloads as");
         w("opaque blobs'). Outer envelope is shared (cookbook vendor-envelope-");
         w("descriptor-table — AM4 0x1405dcf40 ≡ III 0x1407ab940 = 3072 bytes), but");
         w("inner per-param layout is novel work for both devices. HOP 3 must derive");

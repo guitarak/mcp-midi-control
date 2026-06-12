@@ -33,7 +33,7 @@
 // any failed assertion.
 
 import { registerParamKindResolver } from '@mcp-midi-control/core/protocol-generic/paramKind.js';
-import { resolveAxeFxIIParamKind } from '@mcp-midi-control/axe-fx-ii/calibration.js';
+import { resolveAxeFxIIParamKind } from '@mcp-midi-control/fractal-gen2/calibration.js';
 
 // Register the Axe-Fx II param-kind resolver before any encode/decode
 // calls. In production the descriptor module does this at import time;
@@ -44,10 +44,10 @@ registerParamKindResolver('axe-fx-ii', resolveAxeFxIIParamKind);
 import {
   buildApplyPresetAtOps,
   type ApplyPresetAtOp,
-} from '@mcp-midi-control/axe-fx-ii/tools/applyExecutor.js';
-import { translateSpec } from '@mcp-midi-control/axe-fx-ii/descriptor/writer.js';
+} from '@mcp-midi-control/fractal-gen2/tools/applyExecutor.js';
+import { translateSpec } from '@mcp-midi-control/fractal-gen2/descriptor/writer.js';
 import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
-import { DRIVE_EFFECT_TYPE_VALUES } from 'fractal-midi/axe-fx-ii';
+import { DRIVE_EFFECT_TYPE_VALUES } from 'fractal-midi/gen2/axe-fx-ii';
 
 let failures = 0;
 

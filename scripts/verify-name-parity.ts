@@ -31,7 +31,7 @@ import { findPatchOffset, PATCH_OFFSETS } from '@mcp-midi-control/hydrasynth/pat
 import {
   KNOWN_PARAMS as AXEFX2_KNOWN_PARAMS,
   AXE_FX_II_BLOCKS,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 let failed = 0;
 let passed = 0;

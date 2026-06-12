@@ -5,7 +5,7 @@
  * family: folding it into the `createModernFractalCodec` /
  * `createModernCatalog` factory must NOT change a single block, param key,
  * firmware symbol, unit, or paramId the III exposes. The pre-factory
- * `packages/axe-fx-iii` descriptor was deleted in the migration, so there
+ * `packages/fractal-gen3` descriptor was deleted in the migration, so there
  * is no module to diff against. This gate freezes the III's surface as a
  * committed snapshot (counts + sha256 of a canonical dump) and fails if
  * the factory-built `AXEFX3_DESCRIPTOR` or the III catalog drifts.
@@ -27,8 +27,8 @@
  * Run:  npx tsx scripts/verify-axe-fx-iii-identity.ts [--update]
  */
 import { createHash } from 'node:crypto';
-import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/device.js';
-import { PARAMS_BY_FAMILY, AXE_FX_III_BLOCKS } from 'fractal-midi/axe-fx-iii';
+import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-gen3/device.js';
+import { PARAMS_BY_FAMILY, AXE_FX_III_BLOCKS } from 'fractal-midi/gen3/axe-fx-iii';
 
 function sha256(s: string): string {
   return createHash('sha256').update(s).digest('hex');

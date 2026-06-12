@@ -9,7 +9,7 @@ verified_on:
 golden: scripts/cookbook-verify.ts#case-gen3-editor-sync-read-surface
 relates_to: [gen3-fn1f-poll-block-bulk-read, gen3-fn01-grid-set-position-insert, septet-14bit, xor-7f-envelope-checksum]
 consumed_in:
-  - packages/fractal-modern/src/simResponders.ts
+  - packages/fractal-gen3/src/simResponders.ts
 ---
 
 # Gen-3 editor connect/sync read surface (fn=0x01 sub-action reads)
@@ -181,9 +181,9 @@ idx 0..7                  8  9 10 11    12   13 14 15 16 17 18   19   20   21 22
 | 23 | B23 | **`((|destRow−3| + (srcCol even ? 2 : 0)) % 4) << 5`** — universal across all dest rows/cols. |
 
 **DECODED and shipped (2026-06-05).** `buildSetGridRouting` in
-`fractal-midi/src/axe-fx-iii/setParam.ts` (golden:
+`fractal-midi/src/gen3/axe-fx-iii/setParam.ts` (golden:
 `scripts/cookbook-verify.ts#case-gen3-fn01-grid-routing`). Wired into
-`fractal-modern/src/writer.ts` `apply_preset` (step 1.5). Validated by two
+`fractal-gen3/src/writer.ts` `apply_preset` (step 1.5). Validated by two
 controlled-capture sweeps (FM9-Edit 0x12, loopMIDI, no hardware, 2026-06-05):
 26 corpus cables total, 26/26 byte-exact (source rows 2-6 all cols + row-1 odd
 cols). Dest col is implicit: always src col + 1. Drawing onto an empty dest
@@ -262,7 +262,7 @@ Re-run any kind's report on an existing session log with
 echo-of-bytes-5..11 invariant, the `0x7b` placed marker + 23-byte length, and
 the 12-byte `0x74` head (no flag byte) on embedded FM9 frames. The full
 connect-sweep (every query served with length + echo match for the render-gate
-subs) runs in `scripts/verify-fractal-modern-sim.ts`.
+subs) runs in `scripts/verify-fractal-gen3-sim.ts`.
 
 ## FM3 cross-family confirmation (query side)
 
@@ -294,7 +294,7 @@ handshake), not a full response-shape confirmation.
 ## Refinement history
 
 - 2026-06-04: decoded while building the codec-backed device simulator
-  (`scripts/_research/sim/` + `packages/fractal-modern/src/simResponders.ts`).
+  (`scripts/_research/sim/` + `packages/fractal-gen3/src/simResponders.ts`).
   Echo invariant + per-sub length gates + placed-flag semantics confirmed from
   the FM9 connect+sync capture; the `0x74` head-is-12-bytes correction is logged
   in [[gen3-fn1f-poll-block-bulk-read]].

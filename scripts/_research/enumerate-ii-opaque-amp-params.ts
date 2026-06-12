@@ -12,8 +12,8 @@
  *
  * Read-only. Run: npx tsx scripts/_research/enumerate-ii-opaque-amp-params.ts
  */
-import { resolveAxeFxIIParamKind } from '../../packages/axe-fx-ii/src/calibration.js';
-import { KNOWN_PARAMS, type AxeFxIIParam } from 'fractal-midi/axe-fx-ii';
+import { resolveAxeFxIIParamKind } from '../../packages/fractal-gen2/src/calibration.js';
+import { KNOWN_PARAMS, type AxeFxIIParam } from 'fractal-midi/gen2/axe-fx-ii';
 
 interface Row {
   key: string;

@@ -10,7 +10,7 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-vp4-fn01-swapped-septet-float32
 relates_to: [septet-14bit, xor-7f-envelope-checksum, gen3-fn01-set-float32-ordinal]
 consumed_in:
-  - packages/fractal-midi/src/vp4/setParam.ts (encodeVp4Float / decodeVp4Float)
+  - packages/fractal-midi/src/gen3/vp4/setParam.ts (encodeVp4Float / decodeVp4Float)
 ---
 
 # VP4 fn=0x01 value field — swapped-septet float32

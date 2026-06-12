@@ -26,7 +26,7 @@ import { createRequire } from 'node:module';
 
 // Lineage JSON now lives inside the `fractal-midi` package. Resolve via
 // the package's `./shared` subpath export so this works whether we run
-// from source (tsx) or built dist — same trick `packages/axe-fx-ii/src/
+// from source (tsx) or built dist — same trick `packages/fractal-gen2/src/
 // lineageLookup.ts` uses.
 const require = createRequire(import.meta.url);
 const sharedIndex = require.resolve('fractal-midi/shared');

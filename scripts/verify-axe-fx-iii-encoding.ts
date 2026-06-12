@@ -56,8 +56,8 @@ import {
   parseMultipurposeResponse,
   parseSetGetParameterResponse,
   describeMultipurposeResultCode,
-} from 'fractal-midi/axe-fx-iii';
-import { resolveEffectId, AXE_FX_III_BLOCKS } from 'fractal-midi/axe-fx-iii';
+} from 'fractal-midi/gen3/axe-fx-iii';
+import { resolveEffectId, AXE_FX_III_BLOCKS } from 'fractal-midi/gen3/axe-fx-iii';
 import { fractalChecksum } from 'fractal-midi/shared';
 
 function hex(bytes: readonly number[]): string {
@@ -192,7 +192,7 @@ check('buildGetTempo()', buildGetTempo(),
 // ── 0x01 PARAMETER_SETGET (🟢 SET verified, 🟡 GET hypothesis) ─────
 // Wire shape byte-verified against 10 public captures spanning two
 // effect blocks and two sub-action codes. See:
-//   - `packages/axe-fx-iii/src/setParam.ts` FN_PARAMETER_SETGET doc-
+//   - `packages/fractal-gen3/src/setParam.ts` FN_PARAMETER_SETGET doc-
 //     comment for the evidence chain.
 //   - `docs/devices/axe-fx-iii/set-parameter-captures.md` for the captured frames.
 //   - `docs/devices/axe-fx-iii/fn01-decode.md` for the field-layout table.

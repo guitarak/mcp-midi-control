@@ -6,7 +6,7 @@
  *
  * Graph building, BFS reachability, cut-vertex analysis, and all
  * detection logic are device-agnostic and live here. Per-device
- * adapters (packages/axe-fx-ii, packages/fractal-modern) import
+ * adapters (packages/fractal-gen2, packages/fractal-gen3) import
  * checkAudibility and pass a config.
  *
  * v1 scope (locked 2026-05-22 after wiki research):

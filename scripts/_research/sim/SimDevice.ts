@@ -33,7 +33,7 @@ import {
   FN_PARAMETER_SETGET,
   SUB_PLACED_FLAG,
   SUB_STREAM,
-} from '@mcp-midi-control/fractal-modern/simResponders.js';
+} from '@mcp-midi-control/fractal-gen3/simResponders.js';
 import type { FractalModernConfig, SimDeviceState, PresetState, BlockState } from './types.js';
 import { seedFromCapture, echoKeyOf, type CaptureFrame, type CaptureSeed } from './seed.js';
 import { projectPlacedFlag, projectStream, projectBulkRead } from './projectors.js';

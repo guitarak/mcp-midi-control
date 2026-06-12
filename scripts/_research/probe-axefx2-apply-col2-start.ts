@@ -20,16 +20,16 @@
  * Run: `npx tsx scripts/_research/probe-axefx2-apply-col2-start.ts`
  */
 
-import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
+import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
 import {
   buildApplyPresetOps,
   runApplyPresetAtOps,
-} from '@mcp-midi-control/axe-fx-ii/tools/applyExecutor.js';
+} from '@mcp-midi-control/fractal-gen2/tools/applyExecutor.js';
 import {
   buildGetGridLayout,
   isGetGridLayoutResponse,
   parseGetGridLayoutResponse,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((res) => setTimeout(res, ms));

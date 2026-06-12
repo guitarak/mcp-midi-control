@@ -55,7 +55,7 @@ for (const e of entries) {
 
 // Also emit a quick TypeScript-enum-style block for codec import.
 console.log('');
-console.log('## TypeScript enum (for fractal-midi/src/axe-fx-ii/opcodes.ts)');
+console.log('## TypeScript enum (for fractal-midi/src/gen2/axe-fx-ii/opcodes.ts)');
 console.log('');
 console.log('```typescript');
 console.log('// Generated from samples/captured/decoded/ghidra-axeedit2-opcode-map.txt');

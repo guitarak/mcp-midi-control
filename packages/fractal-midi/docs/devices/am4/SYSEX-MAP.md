@@ -2136,7 +2136,7 @@ Codec helper `buildGetAllParams(effectId)` ships in
 `readAllParams(conn, effectId)` ships in
 the consumer's `packages/am4/` directory, mirroring the
 Axe-Fx II `readAllParams` at
-`packages/axe-fx-ii/src/descriptor/reader.ts:213` (subscribe-before-
+`packages/fractal-gen2/src/descriptor/reader.ts:213` (subscribe-before-
 send + accumulate-triple pattern; NACK + timeout handling). Wire
 goldens for `buildGetAllParams(1)` and `buildGetAllParams(106)` live
 in `fractal-midi/test/am4/setparam.test.ts`.

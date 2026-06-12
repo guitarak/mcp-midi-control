@@ -9,7 +9,7 @@ firmware_sensitive: false
 golden: scripts/verify-axe-fx-ii-encoding.ts (buildPatchDumpRequest + buildEditBufferDumpRequest byte goldens)
 relates_to: [ii-fn1f-atomic-read, am4-fn03-stored-dump-request, ii-axeedit-opcode-table]
 consumed_in:
-  - fractal-midi/src/axe-fx-ii/setParam.ts
+  - fractal-midi/src/gen2/axe-fx-ii/setParam.ts
   - fractal-midi/docs/devices/axe-fx-ii/SYSEX-MAP.md
 ---
 

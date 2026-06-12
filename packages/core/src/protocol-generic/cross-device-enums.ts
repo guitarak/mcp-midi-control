@@ -771,7 +771,7 @@ export const CROSS_DEVICE_ENUMS: Readonly<Record<string, CrossDeviceEnumRow>> =
     // gen-3 (axeFxIII column, shared by III/FM3/FM9): the reverb TYPE names use
     // the device's ADJECTIVE-FIRST form ("Small Room", "Medium Spring") — NOT
     // AM4's comma form ("Room, Small"). This is the form the decoder emits
-    // (fractal-modern TYPE_BINARY_IDS, byte-validated across 384 III factory
+    // (fractal-gen3 TYPE_BINARY_IDS, byte-validated across 384 III factory
     // presets) and is hardware-corroborated by the 2026-06-03 FM9 SET echoes
     // (read-roster ordinal 16 = "Medium Spring", 45 = "Music Hall"; the wire
     // value is float32(ordinal) at SET pos 12, and the old "raw-id 524/529"

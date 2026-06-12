@@ -16,7 +16,7 @@ consumed_in: []
 Ask a gen-3 Fractal (Axe-Fx III 0x10 / FM3 0x11 / FM9 0x12) to send a
 STORED preset back as the 0x77/0x78/0x79 dump chain. This is the
 device→host backup trigger that pairs with the already-decoded preset-dump
-envelope (`fractal-modern/src/presetDump.ts`).
+envelope (`fractal-gen3/src/presetDump.ts`).
 
 ## Formal definition
 
@@ -51,7 +51,7 @@ Seven captured requests decoded to valid indices 49, 129, 197, 273, 274,
 355, 444; each paired to an IN `fn=0x77` head echoing the same number.
 Reassembled dump for preset 49: `word[1]=0xAA55`, name "4x12 Plexi DARK
 AltCab -'25f". Every dump/request frame's XOR-7F checksum validates.
-Builder: `buildRequestPresetDump` in `fractal-midi/axe-fx-iii`. Full
+Builder: `buildRequestPresetDump` in `fractal-midi/gen3/axe-fx-iii`. Full
 writeup is in the maintainer's private session notes.
 
 ## Where this does NOT yet apply

@@ -49,28 +49,28 @@ import {
   KNOWN_PARAMS as AXEFX2_KNOWN_PARAMS,
   AXE_FX_II_BLOCKS,
   PARAM_ALIASES_AXEFX2,
-} from '../src/axe-fx-ii/index.js';
+} from '../src/gen2/axe-fx-ii/index.js';
 import {
   PARAMS as AXEFX3_PARAMS,
   AXE_FX_III_BLOCKS,
   GEN3_READ_ROSTERS,
-} from '../src/axe-fx-iii/index.js';
-import { FM3_PARAMS } from '../src/fm3/index.js';
+} from '../src/gen3/axe-fx-iii/index.js';
+import { FM3_PARAMS } from '../src/gen3/fm3/index.js';
 import {
   FM9_PARAMS,
   FM9_ENUM_OVERRIDES,
   FM9_RANGES,
-} from '../src/fm9/index.js';
+} from '../src/gen3/fm9/index.js';
 import {
   FM9_AMP_ROSTER,
   FM9_DRIVE_ROSTER,
   FM9_REVERB_TYPE_ROSTER,
-} from '../src/fm9/rosters.generated.js';
-import { VP4_PARAMS } from '../src/vp4/index.js';
+} from '../src/gen3/fm9/rosters.generated.js';
+import { VP4_PARAMS } from '../src/gen3/vp4/index.js';
 import {
   KNOWN_PARAMS as GEN1_KNOWN_PARAMS,
   AXE_FX_GEN1_BLOCKS,
-} from '../src/axe-fx-gen1/index.js';
+} from '../src/gen1/index.js';
 
 const SCHEMA_VERSION = 1;
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -132,7 +132,7 @@ const CATALOGS: DeviceCatalog[] = [
     model_byte: '0x07',
     support_status: 'hardware-verified (XL+, firmware Quantum 8.02)',
     source:
-      'fractal-midi/src/axe-fx-ii — wiki SysEx tables + Axe-Edit __block_layout.xml + ' +
+      'fractal-midi/src/gen2/axe-fx-ii — wiki SysEx tables + Axe-Edit __block_layout.xml + ' +
       'Ghidra param-table scan; enum values inline per param (enumValues)',
     data: {
       KNOWN_PARAMS: AXEFX2_KNOWN_PARAMS,
@@ -146,7 +146,7 @@ const CATALOGS: DeviceCatalog[] = [
     model_byte: '0x10',
     support_status: 'community-beta (decoded; hardware confirmations from community captures)',
     source:
-      'fractal-midi/src/axe-fx-iii — Axe-Edit III binary mining + published v1.4 ' +
+      'fractal-midi/src/gen3/axe-fx-iii — Axe-Edit III binary mining + published v1.4 ' +
       'third-party MIDI spec + community captures',
     notes: [
       'AXE_FX_III_BLOCKS (effect IDs) is shared across the gen-3 family (III/FM3/FM9).',
@@ -167,7 +167,7 @@ const CATALOGS: DeviceCatalog[] = [
       'community-beta (device-true catalog; discrete set-by-name and striped read ' +
       'hardware-confirmed on FM3 by a community collaborator)',
     source:
-      'fractal-midi/src/fm3 — mined from the FM3-Edit binary; paramIds are FM3-true, ' +
+      'fractal-midi/src/gen3/fm3 — mined from the FM3-Edit binary; paramIds are FM3-true, ' +
       'NOT reused from the Axe-Fx III',
     notes: [
       GEN3_BLOCK_NOTE,
@@ -188,7 +188,7 @@ const CATALOGS: DeviceCatalog[] = [
     model_byte: '0x12',
     support_status: 'community-beta (decoded from FM9-Edit cache + community captures)',
     source:
-      'fractal-midi/src/fm9 — mined from the FM9-Edit binary + effectDefinitions cache; ' +
+      'fractal-midi/src/gen3/fm9 — mined from the FM9-Edit binary + effectDefinitions cache; ' +
       'paramIds are FM9-true, NOT reused from the Axe-Fx III',
     notes: [
       GEN3_BLOCK_NOTE,
@@ -214,7 +214,7 @@ const CATALOGS: DeviceCatalog[] = [
       'community-beta (reads + continuous-knob writes decoded from community captures; ' +
       'display calibration pending — wire values pass through as raw 0..65534)',
     source:
-      'fractal-midi/src/vp4 — mined from the VP4-Edit binary; paramIds are VP4-true, ' +
+      'fractal-midi/src/gen3/vp4 — mined from the VP4-Edit binary; paramIds are VP4-true, ' +
       'NOT reused from the Axe-Fx III',
     notes: ['VP4 is a serial 4-slot chain with no amp/cab blocks.'],
     data: {
@@ -229,7 +229,7 @@ const CATALOGS: DeviceCatalog[] = [
       'community-beta (decoded byte-exactly from the published gen-1 SysEx spec; ' +
       'not hardware-verified; params with scaling "pending" require raw wire values)',
     source:
-      'fractal-midi/src/axe-fx-gen1 — published "Axe-FX Ultra System Exclusive Messages" ' +
+      'fractal-midi/src/gen1 — published "Axe-FX Ultra System Exclusive Messages" ' +
       'doc + its 0..255 conversion table',
     data: {
       KNOWN_PARAMS: GEN1_KNOWN_PARAMS,

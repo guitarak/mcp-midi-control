@@ -34,7 +34,7 @@
  * spawned this probe.
  */
 
-import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
+import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
 import {
   buildGetGridLayout,
   buildSetCellRouting,
@@ -46,7 +46,7 @@ import {
   parseGetGridLayoutResponse,
   parseSetCellRoutingResponse,
   parseSetGridCellResponse,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 const SHUNT_BASE_ID = 200;
 const AMP1_BLOCK_ID = 106;

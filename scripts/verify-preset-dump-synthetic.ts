@@ -6,7 +6,7 @@
  * on a fresh clone / CI they SKIP and assert nothing. The shipped
  * export_preset / import_preset path leans on this same parser
  * (parsePresetDump / serializePresetDump / parsePresetBank / extractPresetName
- * in packages/fractal-modern/src/presetDump.ts), so this golden constructs a
+ * in packages/fractal-gen3/src/presetDump.ts), so this golden constructs a
  * valid dump IN MEMORY for every gen-3 model byte and round-trips it, giving
  * the parser a portable backstop that runs everywhere.
  *
@@ -34,7 +34,7 @@ import {
   serializePresetDump,
   extractPresetName,
   type ParsedPresetDump,
-} from '@mcp-midi-control/fractal-modern/presetDump.js';
+} from '@mcp-midi-control/fractal-gen3/presetDump.js';
 
 let pass = 0;
 let fail = 0;

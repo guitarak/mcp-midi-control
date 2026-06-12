@@ -33,9 +33,9 @@ distinct from the soft-warns below).
 **Implementation**:
 - `packages/core/src/protocol-generic/dispatcher/params.ts`:
   `collectPhantomParamWarnings`
-- `packages/axe-fx-ii/src/descriptor/reader.ts`:
+- `packages/fractal-gen2/src/descriptor/reader.ts`:
   `getBlockLayoutSnapshot` (also serves the routing-mask warning)
-- `packages/axe-fx-ii/src/tools/layout.ts`: cache invalidation hooks
+- `packages/fractal-gen2/src/tools/layout.ts`: cache invalidation hooks
   on `axefx2_set_cell_routing` + `axefx2_set_block_at_cell`
 
 **Goldens**: 7+ cases in `scripts/verify-dispatcher.ts` (positive
@@ -61,7 +61,7 @@ unrouted).
 **Goldens**: 7 cases in `scripts/verify-dispatcher.ts`. Launch-
 verification + agent-regression skipped initially (II mock returned
 empty grid); `populated-unrouted` `MOCK_FIXTURE` filed later
-(`packages/axe-fx-ii/src/midi.ts`).
+(`packages/fractal-gen2/src/midi.ts`).
 
 ### Channel-Y inactive warning
 

@@ -5,7 +5,7 @@
  *
  *   npx tsx scripts/_research/smoke-gen1-descriptor.ts
  */
-import { AXEFXGEN1_DESCRIPTOR as D } from '@mcp-midi-control/axe-fx-gen1/descriptor.js';
+import { AXEFXGEN1_DESCRIPTOR as D } from '@mcp-midi-control/fractal-gen1/descriptor.js';
 
 function assert(c: boolean, m: string): void {
   if (!c) throw new Error('SMOKE FAIL: ' + m);

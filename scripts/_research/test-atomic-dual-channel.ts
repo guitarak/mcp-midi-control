@@ -17,13 +17,13 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { registerAxeFxIIPresetBinaryTools } from '@mcp-midi-control/axe-fx-ii/tools/presetBinary.js';
-import { registerAxeFxIIAtomicApplyTool } from '@mcp-midi-control/axe-fx-ii/research/atomicApply.js';
+import { registerAxeFxIIPresetBinaryTools } from '@mcp-midi-control/fractal-gen2/tools/presetBinary.js';
+import { registerAxeFxIIAtomicApplyTool } from '@mcp-midi-control/fractal-gen2/research/atomicApply.js';
 import { registerDevice } from '@mcp-midi-control/core/protocol-generic/registry.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 import { executeSwitchPreset } from '@mcp-midi-control/core/protocol-generic/dispatcher/navigation.js';
-import { BLOCK_LAYOUT_MAP, paramLocationForChannel } from '@mcp-midi-control/axe-fx-ii/sceneChannelMap.js';
-import { parsePresetDump } from '@mcp-midi-control/axe-fx-ii/presetDump.js';
+import { BLOCK_LAYOUT_MAP, paramLocationForChannel } from '@mcp-midi-control/fractal-gen2/sceneChannelMap.js';
+import { parsePresetDump } from '@mcp-midi-control/fractal-gen2/presetDump.js';
 
 registerDevice(AXEFX2_DESCRIPTOR);
 

@@ -139,7 +139,7 @@ async function main() {
   //   │       ├── am4/{package.json,dist/}         (copied from packages/am4)
   //   │       ├── axe-fx-ii/{package.json,dist/}
   //   │       ├── axe-fx-gen1/{package.json,dist/}
-  //   │       ├── fractal-modern/{package.json,dist/}
+  //   │       ├── fractal-gen3/{package.json,dist/}
   //   │       ├── hydrasynth/{package.json,dist/}
   //   │       └── server-all/{package.json,dist/}
   //   ├── LICENSE, NOTICE
@@ -159,9 +159,9 @@ async function main() {
   const WORKSPACE_PACKAGES = [
     'core',
     'am4',
-    'axe-fx-ii',
-    'axe-fx-gen1',
-    'fractal-modern',
+    'fractal-gen1',
+    'fractal-gen2',
+    'fractal-gen3',
     'hydrasynth',
     'server-all',
   ] as const;

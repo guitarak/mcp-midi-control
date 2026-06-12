@@ -9,8 +9,8 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-paramBase-plus-paramId
 relates_to: [alphabetical-name-cascade-block-ordering, block-record-stride-8, wire-id-pairs-per-placed-block, septet-21bit-byte2-mask-preservation]
 consumed_in:
-  - packages/axe-fx-ii/src/blockBinaryLayout.ts (width + X→Y offset tables)
-  - packages/axe-fx-ii/src/sceneChannelMap.ts (BLOCK_LAYOUT_MAP)
+  - packages/fractal-gen2/src/blockBinaryLayout.ts (width + X→Y offset tables)
+  - packages/fractal-gen2/src/sceneChannelMap.ts (BLOCK_LAYOUT_MAP)
 # Note: axefx2_atomic_apply was deprecated ; the active
 # consumer is the apply_preset slots[].params.X/.Y nesting path.
 ---

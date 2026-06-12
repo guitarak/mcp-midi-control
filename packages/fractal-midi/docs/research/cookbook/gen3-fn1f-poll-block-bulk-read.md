@@ -5,7 +5,8 @@ status: matched-singleton
 discovered: FM9 community capture (2026-06-03; hardware-confirmed shape, server-issued poll tester-pending)
 verified_on:
   - fm9
-verified_scope: burst SHAPE byte-confirmed on FM9 (front-panel-driven and poll-answered); our SERVER issuing the poll is mock-tested only, tester-pending on hardware. Weaker than the AM4/II siblings, whose full poll-to-read was hardware-verified.
+  - fm3-fw-12.00
+verified_scope: burst SHAPE byte-confirmed on FM9 (front-panel-driven and poll-answered); our SERVER issuing the poll is FM3-hardware-confirmed end-to-end (2026-06-12 community field test over USB-serial, 35/42 block types assembled, itemCount == valueCount on every one).
 firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-gen3-fn1f-poll-block-bulk-read
 relates_to: [am4-fn1f-atomic-read, ii-fn1f-atomic-read, septet-14bit, xor-7f-envelope-checksum, gen3-paramid-reuse-across-model-bytes]
@@ -55,18 +56,25 @@ END   F0 00 01 74 <model> 76 <cksum> F7                                (8 bytes)
   `parityMock.ts`'s reader-facing mock add a spurious flag byte → a 13-byte
   head; the reader tolerates it because it reads only bytes 6..9, but the real
   device emits 12 bytes. The wire-faithful builder is
-  `fractal-modern`'s `simResponders.buildBroadcastBurst`.)
+  `fractal-gen3`'s `simResponders.buildBroadcastBurst`.)
 
 - The `0x75` body is **CHANNEL-BLOCKED**, not a flat paramId vector. It packs
-  **four contiguous copies** of every paramId slot, one per channel A–D:
-  `index = channel × stride + paramId`, where `stride = itemCount / 4 =
-  (max device-true paramId + 1)`. So paramId `p` on channel `c` is at
-  `c × stride + p`; the channel-A copy (`c = 0`) is at index `p`, which is why a
-  flat `values[paramId]` read *happens to* return channel A. FM9-hardware-confirmed
-  (capture 2026-06-04): an amp Balance (paramId 2) drag on channel B changed only
-  index 149 = 1×147 + 2, with the A/C/D copies constant. `itemCount = stride × 4`
-  holds across 5 distinct blocks in existing captures: DISTORT 588=147×4,
+  one contiguous copy of every paramId slot per channel:
+  `index = channel × stride + paramId`, where `stride = itemCount /
+  channelCount = (max device-true paramId + 1)`. So paramId `p` on channel `c`
+  is at `c × stride + p`; the channel-A copy (`c = 0`) is at index `p`, which
+  is why a flat `values[paramId]` read *happens to* return channel A.
+  FM9-hardware-confirmed (capture 2026-06-04): an amp Balance (paramId 2) drag
+  on channel B changed only index 149 = 1×147 + 2, with the A/C/D copies
+  constant. `itemCount = stride × 4` holds across 5 distinct blocks in
+  existing FM9 captures (all 4-channel blocks): DISTORT 588=147×4,
   REVERB 292=73×4, Phaser 140=35×4, Filter 148=37×4, Drive/Fuzz 172=43×4.
+  ⚠️ **`channelCount` is per-block, NOT uniformly 4** (FM3 field test,
+  2026-06-12): FM3 itemCounts Send 2, Return 6, Ring Mod 26, Megatap 70 are
+  not divisible by 4; Looper 24 vs catalog max paramId 23 → 24×1;
+  Resonator 80 vs max paramId 39 → 40×2. Derive `channelCount` per block from
+  the `fn=0x13` `dd` bits 6:4 or from `itemCount / (catalog max paramId + 1)`;
+  never assume 4.
 - paramIds are per-device (see [[gen3-paramid-reuse-across-model-bytes]]), so the
   per-channel `stride` differs per device/block and the channel-A index of a param
   decodes against each device's own catalog (Reverb TYPE is channel-A index 0 on
@@ -78,8 +86,20 @@ END   F0 00 01 74 <model> 76 <cksum> F7                                (8 bytes)
 
 ## Misapplication failure modes
 
-- **DO NOT** poll an unplaced block. Like AM4, the device answers a poll for an
-  empty effectId with an `fn=0x64` MULTIPURPOSE_RESPONSE NACK, not a burst.
+- ~~**DO NOT** poll an unplaced block. Like AM4, the device answers a poll for
+  an empty effectId with an `fn=0x64` MULTIPURPOSE_RESPONSE NACK, not a
+  burst.~~ **CORRECTED 2026-06-12 (FM3 field test, fw 12.00):** that claim was
+  an AM4/II analogy never gen-3-observed, and is **falsified on FM3** — the
+  field-test session answered `fn=0x1F` polls with full bursts for 35/42 block
+  types while the same session's `fn=0x13` STATUS_DUMP reported only 3 placed
+  blocks (Input/Output/Amp; capture
+  `samples/captured/fm3-community-2026-06-12/fm3-probe-output.json`). A poll
+  answers REGARDLESS of placement, returning the block's working-buffer state.
+  Use `fn=0x13` for placement truth; do not use "poll answered" as a placement
+  detector, and beware reads silently returning unplaced-block state (the AM4
+  phantom-param class). The 7 FM3 single-frame repliers (Tuner, IR Capture,
+  Vocoder, Crossover, Tone Match, RTA, IR Player) are not-pollable block
+  TYPES, not unplaced blocks.
 - **DO NOT** reuse the III's paramId offsets to index an FM3/FM9 dump. The dump
   is positional by *device-true* paramId; using the III's offsets mis-reads the
   value (see [[gen3-paramid-reuse-across-model-bytes]]).
@@ -105,16 +125,17 @@ END   F0 00 01 74 <model> 76 <cksum> F7                                (8 bytes)
 
 `scripts/cookbook-verify.ts#case-gen3-fn1f-poll-block-bulk-read` checks the poll
 shape + positional paging concatenation on a synthetic burst. Wire/decode goldens
-live in `fractal-midi/test/modern-family/catalog.test.ts` (poll well-formedness +
+live in `fractal-midi/test/gen3/modern-family/catalog.test.ts` (poll well-formedness +
 `assembleGen3BlockBulkRead` across two paged sections); the end-to-end reader is
-mock-tested in `scripts/verify-fractal-modern-family.ts` §9 (poll → burst →
+mock-tested in `scripts/verify-fractal-gen3-family.ts` §9 (poll → burst →
 positional decode → enum label, across III/FM3/FM9).
 
 ## Refinement history
 
 - 2026-06-03 (S2): poll builder `buildBlockBulkReadPoll` + assembler
   `assembleGen3BlockBulkRead` shipped on the `ModernFractalCodec` factory; the
-  `fractal-modern` reader (`collectBlockBulkRead`) wires get_param / get_params
+  `fractal-gen3` (formerly `fractal-modern`) reader (`collectBlockBulkRead`)
+  wires get_param / get_params
   through it, labeling enums via the S1 read-leg overlay. The burst shape is
   FM9-hardware-confirmed (capture 2026-06-03, both front-panel-driven and as the
   answer to a poll); the server *issuing* the poll is tester-pending end to end.
@@ -122,7 +143,8 @@ positional decode → enum label, across III/FM3/FM9).
   original "index i == paramId i" claim). `index = channel × stride + paramId`,
   `stride = itemCount/4`; confirmed N=5 blocks (DISTORT/REVERB/Phaser/Filter/Drive)
   from existing-capture itemCount arithmetic + the amp-balance per-channel diff
-  (5-refuter validated). The `fractal-modern` reader now projects the requested
+  (5-refuter validated). The `fractal-gen3` (formerly `fractal-modern`) reader
+  now projects the requested
   channel (channel-invariant → return, else refuse listing per-channel values);
   get_preset reads channel A and warns. See SYSEX-MAP "channel-blocked".
 - 2026-06-04 (device-simulator session): the 0x74 HEAD is **12 bytes with no
@@ -131,6 +153,16 @@ positional decode → enum label, across III/FM3/FM9).
   (292), Amp (588), and Drive (172) bursts. The wire-faithful burst builder is
   `simResponders.buildBroadcastBurst`, which the codec-backed device simulator
   uses to make the editor render the grid over loopMIDI.
+- 2026-06-12 (FM3 community field test, fw 12.00, USB-serial): our server
+  issuing the poll is **FM3-hardware-confirmed end-to-end** (35/42 block types
+  assembled, itemCount == valueCount throughout). Two corrections harvested
+  from the same session: (a) the "unplaced block answers an fn=0x64 NACK"
+  misapplication bullet is **falsified** — polls answer for unplaced blocks
+  (fn=0x13 reported 3 placed blocks while 35 block types answered); placement
+  truth comes from fn=0x13. (b) `channelCount` is per-block, not uniformly 4
+  (Send 2 / Return 6 / Ring Mod 26 / Megatap 70 / Looper 24×1 /
+  Resonator 40×2); `stride = itemCount / channelCount`. Capture:
+  `samples/captured/fm3-community-2026-06-12/fm3-probe-output.json`.
 
 Promotion path: `matched-singleton` to `cross-device-pattern` is already
 half-earned (AM4 + II ship the sibling); this entry stays a singleton until a

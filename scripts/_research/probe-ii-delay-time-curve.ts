@@ -10,7 +10,7 @@ import { guardAgainstRunningEditors } from '../_lib/editor-guard.js';
 import {
   buildGetBlockParameterValue, isGetBlockParameterResponse, parseGetBlockParameterResponse,
   buildSetBlockParameterValueInteger,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 import { createSysExAssembler } from '../../packages/core/src/midi/transport.js';
 
 const EFF = 112, PID = 2, TIMEOUT = 900;

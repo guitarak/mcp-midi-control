@@ -4,7 +4,7 @@
 > a capability — the Axe-Fx II is already hardware-verified and is not missing
 > any capability relative to the modern Fractal family. It only pays off if
 > cross-device capabilities are being added that must land on both II and
-> gen-3. While the focus is first-class **fractal-modern** support, leave the
+> gen-3. While the focus is first-class **fractal-gen3** (formerly fractal-modern) support, leave the
 > II as-is. Revisit only if (a) the II writer starts blocking a gen-3 capability
 > that needs to land in both, or (b) the two paths drift enough to cause bugs.
 > The plan below is kept ready so that revisit is cheap.
@@ -12,9 +12,9 @@
 ## Goal
 
 The modern Fractal family (Axe-Fx III / FM3 / FM9) shares one `makeWriter` /
-`makeReader` factory (`packages/fractal-modern/src/{writer,reader}.ts`): each
+`makeReader` factory (`packages/fractal-gen3/src/{writer,reader}.ts`): each
 device is a config that binds a codec + catalog + grid shape. The Axe-Fx II
-still **hand-rolls** its writer/reader (`packages/axe-fx-ii/src/descriptor/`,
+still **hand-rolls** its writer/reader (`packages/fractal-gen2/src/descriptor/`,
 ~1400 + ~700 LOC). The cost of that duplication is concrete: cross-device
 capabilities have to be implemented twice (multi-instance addressing needed the
 same edit in both the factory and the II writer), and the two paths drift.
@@ -31,7 +31,7 @@ starts. Do not land the whole migration in one commit.
 
 ## Why it isn't a drop-in (the seam)
 
-The factory's `ModernFractalCodec` (`fractal-midi/src/axe-fx-iii/setParam.ts`)
+The factory's `ModernFractalCodec` (`fractal-midi/src/gen3/axe-fx-iii/setParam.ts`)
 is uniform and paramId-based: `buildSetParameter(effectId, paramId, wire)`,
 `buildSetChannel(effectId, 0..3)`, `buildSetScene`, `buildSetGridCell`,
 `buildStorePreset`, `isMultipurposeResponse`, etc. The II diverges on six axes

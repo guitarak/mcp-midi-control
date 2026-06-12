@@ -205,18 +205,19 @@ packages/am4/src/
     navigation.ts     ← switch_preset / save_preset / scan_locations
     safeEdit.ts       ← AM4-specific guardActiveBufferOrSave
 
-packages/axe-fx-ii/src/
+packages/fractal-gen2/src/
   descriptor.ts       ← Axe-Fx II DeviceDescriptor
   midi.ts             ← bidirectional MIDI handle + dirty-state classifier
   setParam.ts         ← wire-byte builders (buildSetBlockParameterValue…)
   params.ts           ← KNOWN_PARAMS registry
   tools.ts            ← device-namespaced tools (code preserved, not registered)
 
-packages/fractal-modern/src/
-  factory.ts          ← createModernFractalDescriptor (gen-3 family: III/FM3/FM9)
+packages/fractal-gen3/src/
+  factory.ts          ← createModernFractalDescriptor (gen-3 family: III/FM3/FM9/VP4)
   catalog.ts          ← createModernCatalog (shared block roster + per-device params)
-  configs/            ← per-device configs (axe-fx-iii, fm3, fm9)
+  configs/            ← per-device configs (axe-fx-iii, fm3, fm9, vp4)
   device.ts           ← exports AXEFX3_DESCRIPTOR / FM3_DESCRIPTOR / FM9_DESCRIPTOR
+                          / VP4_DESCRIPTOR
                           (community beta: write ops attempt the wire and surface
                           any device rejection inline rather than refusing)
 
@@ -227,7 +228,7 @@ packages/hydrasynth/src/
 ```
 
 **Adding a new device.** Write a `DeviceDescriptor` (copy
-`packages/axe-fx-iii/src/descriptor.ts` as a template), register it
+`packages/fractal-gen3/src/descriptor.ts` as a template), register it
 in `packages/server-all/src/server/index.ts` before any descriptor
 whose `port_match` regex it would shadow, and add the package to the
 root `typecheck` + `build` scripts. See `CONTRIBUTING.md` §"Adding a
@@ -242,15 +243,15 @@ new device" for the step-by-step.
 - Factory preset verification: pre/post-name comparison catches
   no-op restores when restoring via device-native flows.
 
-### 4. Device-package layer (`packages/am4/`, `packages/axe-fx-ii/`, ...)
+### 4. Device-package layer (`packages/am4/`, `packages/fractal-gen2/`, ...)
 Pure TypeScript. No Claude, no MCP at this layer. Each device package
 owns its descriptor plus the device-specific reader, writer, and wire
 builders, and is testable in isolation against captured wire bytes via
 `scripts/verify-msg.ts` and friends.
 
-`packages/am4/` is the example here; `packages/axe-fx-ii/`,
-`packages/axe-fx-iii/`, and `packages/hydrasynth/` follow the same
-layout. The shared wire codec (envelope, checksum, septet encoding,
+`packages/am4/` is the example here; `packages/fractal-gen1/`
+(descriptor-only), `packages/fractal-gen2/`, `packages/fractal-gen3/`,
+and `packages/hydrasynth/` follow the same layout. The shared wire codec (envelope, checksum, septet encoding,
 param dictionaries, preset format) lives in the `fractal-midi` package,
 which every device package imports. Each device's wire handling is
 self-contained on top of that shared codec.
@@ -330,8 +331,10 @@ mcp-midi-control/
                        server-shared safe-edit + connection helpers,
                        fractal-shared loudness corpus)
     am4/            Fractal AM4 descriptor (reader + writer adapters)
-    axe-fx-ii/      Fractal Axe-Fx II XL+ descriptor
-    axe-fx-iii/     Fractal Axe-Fx III community-beta descriptor
+    fractal-gen1/   Fractal Axe-Fx Standard/Ultra (gen-1) community-beta descriptor
+    fractal-gen2/   Fractal Axe-Fx II XL+ descriptor
+    fractal-gen3/   Modern Fractal family (Axe-Fx III / FM3 / FM9 / VP4)
+                       community-beta descriptors
     hydrasynth/     ASM Hydrasynth descriptor (Explorer / KB / Deluxe / Desktop)
     server-all/     MCP server entry point (composes all device packages)
   scripts/

@@ -38,10 +38,10 @@ import {
   resolveEnumAlias,
   type CrossDeviceEnumRow,
 } from '../packages/core/src/protocol-generic/cross-device-enums.js';
-import { TYPE_BINARY_IDS } from '@mcp-midi-control/fractal-modern/gen3BodyTables.js';
+import { TYPE_BINARY_IDS } from '@mcp-midi-control/fractal-gen3/gen3BodyTables.js';
 
 // Per-block gen-3 enum vocabulary, validated against the DEVICE-TRUE roster
-// (fractal-modern TYPE_BINARY_IDS — the file-stored names the decoder emits,
+// (fractal-gen3 TYPE_BINARY_IDS — the file-stored names the decoder emits,
 // byte-validated across 384 III factory presets and corroborated by FM9
 // hardware SET echoes). This is the authority: the prior gate validated gen-3
 // names against AM4's REVERB_TYPES/DRIVE_TYPES (comma form), which let a

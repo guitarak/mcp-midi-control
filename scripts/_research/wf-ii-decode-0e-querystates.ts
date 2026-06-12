@@ -8,7 +8,7 @@
  * loop.
  */
 import { readFileSync } from 'node:fs';
-import { BLOCK_BY_ID } from 'fractal-midi/axe-fx-ii';
+import { BLOCK_BY_ID } from 'fractal-midi/gen2/axe-fx-ii';
 
 const file = process.argv[2] ?? 'samples/captured/session-58-direct-sync.syx';
 const buf = readFileSync(file);

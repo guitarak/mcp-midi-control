@@ -20,9 +20,37 @@
  * output), we fall back to output-only and `hasInput` flips false.
  * NRPN/CC tools keep working; only SysEx diagnostics lose visibility.
  */
-import midi, { Input, Output } from 'midi';
+import type { Input, Output } from 'midi';
+import { createRequire } from 'node:module';
 
 import { createSysExAssembler } from '@mcp-midi-control/core/midi/transport.js';
+
+/**
+ * node-midi is loaded LAZILY (and synchronously via createRequire — the
+ * connect/list contracts are sync), mirroring the pattern in
+ * `packages/core/src/midi/transport.ts`: merely importing this module
+ * never touches the native binding. That keeps serial-only sessions
+ * (FM3 over USB-CDC) and `npm install --ignore-scripts` clones with no
+ * node-gyp toolchain booting the server; the binding is only required
+ * when a Hydrasynth port is actually listed or opened.
+ */
+let midiModule: typeof import('midi') | undefined;
+function loadMidi(): typeof import('midi') {
+  if (midiModule === undefined) {
+    try {
+      midiModule = createRequire(import.meta.url)('midi') as typeof import('midi');
+    } catch (err) {
+      const cause = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `The MIDI transport module ("midi" / node-midi) failed to load: ${cause}\n` +
+        'This is an installation problem (missing or broken native binding), not a device ' +
+        'problem. If you installed with --ignore-scripts, run "npm rebuild midi" to build the ' +
+        'binding. Serial-only devices (FM3 over USB-CDC) do not need node-midi.',
+      );
+    }
+  }
+  return midiModule;
+}
 
 const HYDRA_PORT_NEEDLES = ['hydrasynth', 'asm hydra'];
 
@@ -82,6 +110,7 @@ function findHydrasynthInputIndex(input: Input): number {
  * "Hydrasynth not visible") at boot, before any tool call.
  */
 export function listHydrasynthOutputs(): HydrasynthPortInfo[] {
+  const midi = loadMidi();
   const out = new midi.Output();
   try {
     const result: HydrasynthPortInfo[] = [];
@@ -114,6 +143,7 @@ export function connectHydrasynth(): HydrasynthConnection {
   if (process.env.MCP_MOCK_TRANSPORT === '1') {
     return mockHydrasynthConnection();
   }
+  const midi = loadMidi();
   const out = new midi.Output();
   const outIdx = findHydrasynthOutputIndex(out);
   if (outIdx < 0) {

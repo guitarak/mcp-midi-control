@@ -2,7 +2,7 @@
 
 How the `amp` block's opaque deep params got display calibration, and
 which ones still need work. The overlays themselves live in the MCP
-layer at `packages/axe-fx-ii/src/calibration.ts` (`HARDWARE_SWEPT`
+layer at `packages/fractal-gen2/src/calibration.ts` (`HARDWARE_SWEPT`
 table, `provenance: 'hardware-swept'`).
 
 ## Why

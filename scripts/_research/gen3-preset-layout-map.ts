@@ -13,7 +13,7 @@
  * offset 2 + i*3, value = b0 | b1<<7 | b2<<14, masked 16-bit. 1024 words/chunk.
  */
 import { readFileSync } from 'node:fs';
-import { parsePresetBank, parsePresetDump, extractPresetName, type ParsedPresetDump } from '../../packages/fractal-modern/src/presetDump.ts';
+import { parsePresetBank, parsePresetDump, extractPresetName, type ParsedPresetDump } from '../../packages/fractal-gen3/src/presetDump.ts';
 
 const WORDS_PER_CHUNK = 1024;
 const CHUNK_BODY_OFFSET = 2;

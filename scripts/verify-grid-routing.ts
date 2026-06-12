@@ -22,12 +22,12 @@ import {
   runApplyPresetAtOps,
   type ApplyConn,
   type ApplyPresetAtOp,
-} from '../packages/axe-fx-ii/src/tools/applyExecutor.js';
+} from '../packages/fractal-gen2/src/tools/applyExecutor.js';
 import {
   isSetCellRoutingResponse,
   isSetGridCellResponse,
   isGetGridLayoutResponse,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string): void {

@@ -4,7 +4,7 @@
  * the same "current preset" that the device's front-panel UI shows.
  */
 
-import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
+import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
 
 const SYSEX_START = 0xf0;
 const SYSEX_END = 0xf7;

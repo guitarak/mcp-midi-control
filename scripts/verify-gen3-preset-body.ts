@@ -23,18 +23,18 @@ import { spawnSync } from 'node:child_process';
 import {
   parsePresetBank,
   parsePresetDump,
-} from '../packages/fractal-modern/dist/presetDump.js';
-import { decodeRawPatch } from '../packages/fractal-modern/dist/presetHuffman.js';
+} from '../packages/fractal-gen3/dist/presetDump.js';
+import { decodeRawPatch } from '../packages/fractal-gen3/dist/presetHuffman.js';
 import {
   decodeGen3Body,
   decodeGen3PresetDump,
-} from '../packages/fractal-modern/dist/presetBody.js';
+} from '../packages/fractal-gen3/dist/presetBody.js';
 import { gen3WholePresetToSpec } from '../packages/core/dist/protocol-generic/gen3-source.js';
 import { translatePresetSpec } from '../packages/core/dist/protocol-generic/port-preset.js';
 import type { Gen3WholePresetView } from '../packages/core/dist/protocol-generic/types.js';
-import { AXEFX3_DESCRIPTOR } from '../packages/fractal-modern/dist/descriptor.js';
+import { AXEFX3_DESCRIPTOR } from '../packages/fractal-gen3/dist/descriptor.js';
 import { AM4_DESCRIPTOR } from '../packages/am4/dist/descriptor.js';
-import { AXEFX2_DESCRIPTOR } from '../packages/axe-fx-ii/dist/descriptor.js';
+import { AXEFX2_DESCRIPTOR } from '../packages/fractal-gen2/dist/descriptor.js';
 
 let ok = 0;
 let fail = 0;

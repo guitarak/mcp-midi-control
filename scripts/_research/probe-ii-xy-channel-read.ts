@@ -67,8 +67,8 @@ import {
   buildGetBlockChannel,
   isGetBlockChannelResponse,
   parseGetBlockChannelResponse,
-} from 'fractal-midi/axe-fx-ii';
-import type { AxeFxIIChannel } from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
+import type { AxeFxIIChannel } from 'fractal-midi/gen2/axe-fx-ii';
 import { createSysExAssembler } from '../../packages/core/src/midi/transport.js';
 
 // ── Constants ──────────────────────────────────────────────────────

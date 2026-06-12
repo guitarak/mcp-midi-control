@@ -1,5 +1,5 @@
 /**
- * Emit `packages/axe-fx-iii/src/params.ts` — paramId/name catalog
+ * Emit `packages/fractal-gen3/src/params.ts` — paramId/name catalog
  * seeded from the Ghidra-mined Axe-Edit III dispatcher table and
  * calibrated against AM4's hardware-verified display ranges where
  * the III's family matches AM4's.
@@ -18,7 +18,7 @@
  *      `samples/captured/decoded/ghidra-axeedit3-paramnames.json`.
  *      Used when present — this is the canonical source.
  *
- *   2. The committed `packages/axe-fx-iii/src/params.ts` itself
+ *   2. The committed `packages/fractal-gen3/src/params.ts` itself
  *      (fallback). Parsed for its existing `PARAMS` array entries
  *      `(family, paramId, name)`. The committed file is, by
  *      construction, a faithful reproduction of the JSON, so this
@@ -204,7 +204,7 @@ function loadCatalogFromJson(): { flat: FlatEntry[]; cases: { effectFamily: stri
 }
 
 /**
- * Fallback loader. Parses the committed `packages/axe-fx-iii/src/params.ts`
+ * Fallback loader. Parses the committed `packages/fractal-gen3/src/params.ts`
  * — specifically its `PARAMS` array entries — back into FlatEntry rows.
  * Used when the Ghidra JSON is absent (e.g. fresh worktrees without
  * `samples/`). The committed file is, by construction, an exact

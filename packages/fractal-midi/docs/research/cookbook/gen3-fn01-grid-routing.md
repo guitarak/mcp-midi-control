@@ -9,9 +9,9 @@ verified_on:
 golden: scripts/cookbook-verify.ts#case-gen3-fn01-grid-routing
 relates_to: [gen3-fn01-grid-set-position-insert, ii-fn06-set-cell-routing, xor-7f-envelope-checksum]
 consumed_in:
-  - packages/fractal-midi/src/axe-fx-iii/setParam.ts (buildSetGridRouting)
-  - packages/fractal-midi/test/axe-fx-iii/routing.test.ts (35 byte-exact goldens)
-  - packages/fractal-modern/src/writer.ts (routing gate removed for FM3)
+  - packages/fractal-midi/src/gen3/axe-fx-iii/setParam.ts (buildSetGridRouting)
+  - packages/fractal-midi/test/gen3/axe-fx-iii/routing.test.ts (35 byte-exact goldens)
+  - packages/fractal-gen3/src/writer.ts (routing gate removed for FM3)
 ---
 
 # Gen-3 grid routing / SET_GRID_ROUTING (fn=0x01 sub=0x35)

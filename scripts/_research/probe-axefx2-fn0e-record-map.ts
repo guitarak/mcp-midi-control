@@ -11,7 +11,7 @@
 import midi from 'midi';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
-import { buildQueryStates, buildGetGridLayout, buildSetBlockBypass } from 'fractal-midi/axe-fx-ii';
+import { buildQueryStates, buildGetGridLayout, buildSetBlockBypass } from 'fractal-midi/gen2/axe-fx-ii';
 
 const F0 = 0xf0;
 const hex = (b: readonly number[]) => b.map((x) => x.toString(16).padStart(2, '0')).join(' ');

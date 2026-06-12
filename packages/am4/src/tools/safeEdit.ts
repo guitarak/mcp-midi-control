@@ -70,7 +70,7 @@ const LOCATION_STATE_PID_HIGH = 0x000a;
  * Consults the deterministic in-memory dirty flag (`isDirty`), set by
  * `markDirty` at AM4 write call sites and cleared by `markClean` on
  * save/switch. Mirrors `guardActiveBufferOrSave` from Axe-Fx II /
- * fractal-modern, but uses AM4's location-code naming (A01–Z04) and
+ * fractal-gen3, but uses AM4's location-code naming (A01–Z04) and
  * READ_PRESET_NAME for the warning text.
  *
  * - Clean buffer → `proceed: true` regardless of mode.

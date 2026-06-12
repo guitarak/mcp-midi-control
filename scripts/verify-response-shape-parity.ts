@@ -28,7 +28,7 @@
 // assertions (their mock responders synthesize enough wire shapes to run
 // getPreset and getParam against the mock). The gen-3 mock synthesizes the
 // device's 0x74/0x75/0x76 state-broadcast burst in answer to the reader's
-// fn=0x1F bulk-read poll (see packages/fractal-modern/src/parityMock.ts).
+// fn=0x1F bulk-read poll (see packages/fractal-gen3/src/parityMock.ts).
 // Hydrasynth does not implement the slot/scene getPreset contract and is
 // reported as not-applicable, not silently skipped.
 //
@@ -55,10 +55,10 @@ import type {
 // connectXXX wrapper.
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
 import { connectAM4 } from '@mcp-midi-control/am4/midi.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
-import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
-import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/descriptor.js';
-import { connectAxeFxIIIParityMock, connectAxeFxIIIParityMockWith } from '@mcp-midi-control/fractal-modern/midi.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
+import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
+import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-gen3/descriptor.js';
+import { connectAxeFxIIIParityMock, connectAxeFxIIIParityMockWith } from '@mcp-midi-control/fractal-gen3/midi.js';
 
 let failures = 0;
 let passes = 0;

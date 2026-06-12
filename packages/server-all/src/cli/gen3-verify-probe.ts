@@ -29,15 +29,42 @@ import {
   connectFM3,
   connectAxeFxIII,
   type MidiConnection,
-} from '@mcp-midi-control/fractal-modern/midi.js';
-import { buildSwitchPresetPC } from 'fractal-midi/axe-fx-iii';
-import { runVerifyProbe } from './gen3-verify-probe-core.js';
+} from '@mcp-midi-control/fractal-gen3/midi.js';
+import { buildSwitchPresetSysEx, PARAMS_BY_FAMILY } from 'fractal-midi/gen3/axe-fx-iii';
+import { FM3_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm3';
+import { FM9_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm9';
+import { runVerifyProbe, type VerifyProbeReverbIds } from './gen3-verify-probe-core.js';
 
-interface DeviceSpec { label: string; modelByte: number; connect: () => MidiConnection; gridRows: number }
+/**
+ * Resolve the device-true reverb Mix/Type paramIds from the device's own
+ * catalog. paramIds are DEVICE-SPECIFIC across the gen-3 family (FM9: mix=0,
+ * type=10; III + FM3: type=0, mix=13) — hardcoded FM9-shaped ids mis-addressed
+ * the 2026-06-12 FM3 field test (the "mix" test set reverb TYPE; the "type"
+ * test set REVERB_LOWCUT).
+ */
+function reverbIdsFrom(
+  byFamily: Readonly<Record<string, readonly { name: string; paramId: number }[]>>,
+): VerifyProbeReverbIds {
+  const reverb = byFamily['REVERB'] ?? [];
+  const idOf = (name: string): number => {
+    const p = reverb.find((x) => x.name === name);
+    if (!p) throw new Error(`device catalog has no REVERB.${name} — cannot run the reverb write tests`);
+    return p.paramId;
+  };
+  return { mixParamId: idOf('REVERB_MIX'), typeParamId: idOf('REVERB_TYPE') };
+}
+
+interface DeviceSpec {
+  label: string;
+  modelByte: number;
+  connect: () => MidiConnection;
+  gridRows: number;
+  reverbIds: VerifyProbeReverbIds;
+}
 const DEVICES: Record<string, DeviceSpec> = {
-  fm9: { label: 'FM9', modelByte: 0x12, connect: connectFM9, gridRows: 6 },
-  fm3: { label: 'FM3', modelByte: 0x11, connect: connectFM3, gridRows: 4 },
-  'axe-fx-iii': { label: 'Axe-Fx III', modelByte: 0x10, connect: connectAxeFxIII, gridRows: 6 },
+  fm9: { label: 'FM9', modelByte: 0x12, connect: connectFM9, gridRows: 6, reverbIds: reverbIdsFrom(FM9_PARAMS_BY_FAMILY) },
+  fm3: { label: 'FM3', modelByte: 0x11, connect: connectFM3, gridRows: 4, reverbIds: reverbIdsFrom(FM3_PARAMS_BY_FAMILY) },
+  'axe-fx-iii': { label: 'Axe-Fx III', modelByte: 0x10, connect: connectAxeFxIII, gridRows: 6, reverbIds: reverbIdsFrom(PARAMS_BY_FAMILY) },
 };
 
 const deviceKey = (process.argv[2] ?? '').toLowerCase();
@@ -72,14 +99,28 @@ if (!conn.hasInput) {
 // mid-run can still reload (discard the working buffer) before exiting.
 let restorePreset: number | undefined;
 process.on('SIGINT', () => {
-  try {
-    if (restorePreset !== undefined) conn.send(buildSwitchPresetPC(restorePreset));
-  } catch { /* ignore */ }
-  try { conn.close(); } catch { /* ignore */ }
-  console.error('\nInterrupted.' + (restorePreset !== undefined
-    ? ` Reloaded preset ${restorePreset} to discard working-buffer changes.`
-    : ' No writes had been made; nothing to undo.'));
-  process.exit(130);
+  void (async () => {
+    let restoreSent = false;
+    try {
+      // SysEx sub=0x27 switch: full 14-bit preset number (a bare PC truncates
+      // presets >127 to mod 128 — FM3 fw 12.00 field test, 2026-06-12).
+      if (restorePreset !== undefined) {
+        conn.send(buildSwitchPresetSysEx(restorePreset, device.modelByte));
+        restoreSent = true;
+        // Let the transport actually flush the restore frame before tearing
+        // the port down: on the FM3 the connection is USB-CDC serial, and a
+        // close() + process.exit() immediately after send() races the OS
+        // write buffer — the frame can die on the host without ever reaching
+        // the device.
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    } catch { /* ignore */ }
+    try { conn.close(); } catch { /* ignore */ }
+    console.error('\nInterrupted.' + (restoreSent
+      ? ` Sent a reload of preset ${restorePreset} to discard working-buffer changes — confirm on the device.`
+      : ' No writes had been made; nothing to undo.'));
+    process.exit(130);
+  })();
 });
 
 async function main(): Promise<void> {
@@ -88,6 +129,7 @@ async function main(): Promise<void> {
     modelByte: device.modelByte,
     gridRows: device.gridRows,
     label: device.label,
+    reverbIds: device.reverbIds,
     log: (line) => console.error(line),
     onRestorePoint: (n) => { restorePreset = n; },
   });

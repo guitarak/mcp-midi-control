@@ -20,10 +20,10 @@
  * needed beyond the initial read we already did.
  */
 
-import { checkAudibility } from '../../packages/axe-fx-ii/src/tools/audibility.js';
-import type { GridCell } from 'fractal-midi/axe-fx-ii';
+import { checkAudibility } from '../../packages/fractal-gen2/src/tools/audibility.js';
+import type { GridCell } from 'fractal-midi/gen2/axe-fx-ii';
 
-// IDs per fractal-midi/src/axe-fx-ii/blockTypes.ts
+// IDs per fractal-midi/src/gen2/axe-fx-ii/blockTypes.ts
 const COMP_1 = 100;
 const AMP_1 = 106;
 const CAB_1 = 109;

@@ -1,7 +1,7 @@
 /**
  * Backport AM4 display labels onto the Axe-Fx III catalog.
  *
- * The III catalog (`packages/fractal-midi/src/axe-fx-iii/params.ts`)
+ * The III catalog (`packages/fractal-midi/src/gen3/axe-fx-iii/params.ts`)
  * already carries a `displayLabel` for ~90% of its entries (mined from
  * AxeEdit III's layout XML). The long tail that the XML mining missed
  * still has a friendly name on the AM4, whose blocks share the III's
@@ -55,6 +55,7 @@ const III_PARAMS_PATH = join(
   'packages',
   'fractal-midi',
   'src',
+  'gen3',
   'axe-fx-iii',
   'params.ts',
 );

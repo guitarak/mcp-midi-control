@@ -48,10 +48,10 @@ Also rename or annotate 6 wiki entries where AxeEdit and wiki agree
 semantically but use different names (`PARAM_RW` ↔ `PARAM_SET/DUMP`,
 `STORE_PRESET` ↔ `SAVE_PATCH`, etc.).
 
-### A3. 🔜 `fractal-midi/src/axe-fx-ii/opcodes.ts`, typed enum
+### A3. 🔜 `fractal-midi/src/gen2/axe-fx-ii/opcodes.ts`, typed enum
 
 A single source of truth for wire-byte constants. Replaces every
-integer literal in `fractal-midi/src/axe-fx-ii/setParam.ts`
+integer literal in `fractal-midi/src/gen2/axe-fx-ii/setParam.ts`
 (`const FUNC_GET_PRESET_NUMBER = 0x14`) with
 `OPCODES.GET_PRESET_NUMBER`. Generated from the Ghidra dump.
 
@@ -72,9 +72,9 @@ enum table (enum 0x22 → wire 0x21). This MATCHES the wiki's
 
 Pipeline:
 
-1. Codec side (in this repo: `src/axe-fx-ii/setParam.ts`): add
+1. Codec side (in this repo: `src/gen2/axe-fx-ii/setParam.ts`): add
    `buildResync()` builder.
-2. MCP side (the consumer's `packages/axe-fx-ii/` directory): add a
+2. MCP side (the consumer's `packages/fractal-gen2/` directory): add a
    `getWorkingBufferState()` method on the II reader that sends
    RESYNC, subscribes to inbound triples for ~1-2 s, decodes each
    via the existing position-as-paramId logic, and returns

@@ -23,13 +23,13 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { registerDevice } from '@mcp-midi-control/core/protocol-generic/registry.js';
 import { executeSavePreset } from '@mcp-midi-control/core/protocol-generic/dispatcher/navigation.js';
 import { executeSetBypass } from '@mcp-midi-control/core/protocol-generic/dispatcher/layout.js';
-import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
+import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
 import {
   CHUNK_PAYLOAD_LEN,
   CHUNKS_PER_PRESET,
   parsePresetDump,
-} from '@mcp-midi-control/axe-fx-ii/presetDump.js';
+} from '@mcp-midi-control/fractal-gen2/presetDump.js';
 
 registerDevice(AXEFX2_DESCRIPTOR);
 
@@ -55,7 +55,7 @@ function buildMessage(func: number, payload: number[] = []): number[] {
 }
 
 // Axe-Fx II preset addressing is MSB-FIRST [high, low] per
-// fractal-midi/src/axe-fx-ii/setParam.ts:buildSwitchPreset
+// fractal-midi/src/gen2/axe-fx-ii/setParam.ts:buildSwitchPreset
 // (hardware-verified on Q8.02, HW-103). Sending [low, high] LSB-first
 // silently fails for any preset >= 128.
 function msbFirstPreset(value: number): [number, number] {

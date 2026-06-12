@@ -1,7 +1,7 @@
 /**
  * Axe-Fx II preset-dump round-trip golden.
  *
- * Validates that `packages/axe-fx-ii/src/presetDump.ts` parses every byte
+ * Validates that `packages/fractal-gen2/src/presetDump.ts` parses every byte
  * of the three factory banks (Q8.02 XL+, 384 presets total) and re-emits
  * a byte-identical stream. Same shape as `scripts/verify-preset-dump.ts`
  * but for the II envelope (12,951 bytes per preset, 64 chunks × 194-byte
@@ -25,7 +25,7 @@ import {
   parsePresetBank,
   parsePresetDump,
   serializePresetDump,
-} from '@mcp-midi-control/axe-fx-ii/presetDump.js';
+} from '@mcp-midi-control/fractal-gen2/presetDump.js';
 
 const BANK_PATHS = [
   'samples/factory/Axe-Fx-II_XL+_Bank-A_Q8p02.syx',

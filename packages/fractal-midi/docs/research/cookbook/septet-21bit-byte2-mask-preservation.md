@@ -9,8 +9,8 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-septet-21bit-byte2-mask-preservation
 relates_to: [septet-14bit, vendor-envelope-descriptor-table, xor-fold-hash, ii-fn0e-query-states, ii-state-broadcast-triple-write]
 consumed_in:
-  - packages/axe-fx-ii/src/presetDump.ts (writeback path)
-  - packages/axe-fx-ii/src/blockBinaryLayout.ts
+  - packages/fractal-gen2/src/presetDump.ts (writeback path)
+  - packages/fractal-gen2/src/blockBinaryLayout.ts
   - scripts/_research/bk070-modified-push-with-hash.ts
 ---
 
@@ -68,7 +68,7 @@ envelope family. The XOR-fold hash ([[xor-fold-hash]]) computes over the
 DECODED 21-bit ushorts, not the raw 3-byte wire form — so a missing
 preservation rule corrupts both the data AND the hash.
 
-Cost: zero (encode/decode is in `packages/axe-fx-ii/src/presetBinary/`).
+Cost: zero (encode/decode is in `packages/fractal-gen2/src/presetBinary/`).
 
 ## Misapplication failure modes
 

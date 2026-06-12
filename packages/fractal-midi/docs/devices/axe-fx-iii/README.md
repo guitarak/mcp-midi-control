@@ -3,7 +3,7 @@
 Fractal Axe-Fx III (model byte `0x10`). Community-beta; the project
 maintainer doesn't own a III, so wire shapes are decoded from the
 Fractal v1.4 PDF plus public captures and Ghidra mining of AxeEdit III.
-Code lives in [`src/axe-fx-iii/`](../../../src/axe-fx-iii/) (codec) and the consumer MCP descriptors at [`packages/axe-fx-iii/` in the consumer repo](https://github.com/TheAndrewStaker/mcp-midi-control/tree/main/packages/axe-fx-iii).
+Code lives in [`src/gen3/axe-fx-iii/`](../../../src/gen3/axe-fx-iii/) (codec) and the consumer MCP descriptors at [`packages/fractal-gen3/` in the consumer repo](https://github.com/TheAndrewStaker/mcp-midi-control/tree/main/packages/fractal-gen3).
 
 ## Files in this directory
 

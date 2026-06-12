@@ -13,7 +13,7 @@ The classifier pattern from the Axe-Fx II will work, wire up a
 `fn=0x01 + subAction=0x0184` predicate on inbound USB traffic and call
 `markDirty('axe-fx-iii')` from it. Confidence is **MEDIUM**: the
 broadcast frames are byte-decoded and the parser already exists
-(`parseSetGetParameterResponse` in `src/axe-fx-iii/setParam.ts`),
+(`parseSetGetParameterResponse` in `src/gen3/axe-fx-iii/setParam.ts`),
 but the captures come from passive AxeEdit-III sniffs, they prove the
 device emits on USB **while AxeEdit is connected**, not that it emits
 when the host is the MCP server alone. A 30-second hardware test would
@@ -30,7 +30,7 @@ Strongest first.
   consistent with a state-stream the device emits during edits. Field
   layout: `[id_lo id_hi 00 00 value_lo value_hi flag 00*6 cs]`. See
   [`fn01-decode.md`](fn01-decode.md) §"Sub-action `04 01`,   STATE_BROADCAST (device→host)" (lines 105-134) and
-  `src/axe-fx-iii/setParam.ts` `parseSetGetParameterResponse`
+  `src/gen3/axe-fx-iii/setParam.ts` `parseSetGetParameterResponse`
   (lines 300-331, branch at line 314).
 - **v1.4 PDF (`docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt` lines 149-176)
   explicitly enumerates only TWO documented pushes: tempo down-beat
@@ -76,13 +76,13 @@ Strongest first.
 ### If broadcast (recommended starting assumption, port the II pattern)
 
 Mirror the II classifier from
-`src/axe-fx-ii/midi.ts` (the inbound-handler block at lines
+`src/gen2/axe-fx-ii/midi.ts` (the inbound-handler block at lines
 243-268). Specifically:
 
-- Add `isStateBroadcastInboundIII` to `src/axe-fx-iii/midi.ts`:
+- Add `isStateBroadcastInboundIII` to `src/gen3/axe-fx-iii/midi.ts`:
   predicate is `bytes[5]===0x01 && bytes[6]===0x04 && bytes[7]===0x01`
   (fn=0x01 + sub-action `04 01`). The parser exists already at
-  `src/axe-fx-iii/setParam.ts:300-331`, caller doesn't need
+  `src/gen3/axe-fx-iii/setParam.ts:300-331`, caller doesn't need
   it for the dirty signal, just the predicate.
 - In the III connection's inbound-data handler, call
   `markDirty('axe-fx-iii')` whenever the predicate matches.
@@ -92,11 +92,11 @@ Mirror the II classifier from
   preset switch (PC bytes) and after successful save (when
   `buildStorePreset` lands).
 - Wire `guardActiveBufferOrSave` for III in a new
-  `src/axe-fx-iii/tools/shared.ts` modelled exactly on
-  `src/axe-fx-ii/tools/shared.ts` lines 140-256. Reuse
+  `src/gen3/axe-fx-iii/tools/shared.ts` modelled exactly on
+  `src/gen2/axe-fx-ii/tools/shared.ts` lines 140-256. Reuse
   `core/server-shared/safeEdit.ts` for the schema + types.
 
-New files needed in `src/axe-fx-iii/`:
+New files needed in `src/gen3/axe-fx-iii/`:
 - `tools/shared.ts` (mirror II's structure: lazy conn, dirty label,
   `guardActiveBufferOrSave`).
 - Modify `midi.ts` to add the inbound classifier (no new file).
@@ -161,9 +161,9 @@ That's the minimum hardware-loop closure for this question.
 
 ## Cross-references
 
-- `src/axe-fx-iii/setParam.ts:107-110`
+- `src/gen3/axe-fx-iii/setParam.ts:107-110`
   (STATE_BROADCAST comment).
-- `src/axe-fx-iii/setParam.ts:300-331`
+- `src/gen3/axe-fx-iii/setParam.ts:300-331`
   (`parseSetGetParameterResponse` already disambiguates by sub-action).
 - [`fn01-decode.md`](fn01-decode.md) §"Sub-action `04 01`,   STATE_BROADCAST" (lines 105-134).
 - [`SYSEX-MAP.md`](SYSEX-MAP.md) lines 67-69 (0x21 retraction) and
@@ -171,6 +171,6 @@ That's the minimum hardware-loop closure for this question.
 - `docs/research/fractal-broadcast-vs-poll-research.md` (the AM4/II methodology
   reference, replicate this script shape on the III).
 - `docs/devices/axe-fx-iii/manuals/Axe-Fx-III-MIDI-for-3rd-Party-Devices.txt:149-176` ("PUSH DATA" spec).
-- `src/axe-fx-ii/midi.ts:108-268` (classifier to mirror).
+- `src/gen2/axe-fx-ii/midi.ts:108-268` (classifier to mirror).
 - `src/am4/bufferFingerprint.ts` + `src/am4/tools/safeEdit.ts`
   (fallback pattern to port if the hardware test refutes the broadcast).

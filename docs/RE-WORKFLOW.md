@@ -127,7 +127,7 @@ and only THEN (3) a targeted wire capture for the few shapes neither covers.
   display min/max/default/step, and (for enums) the device-true label roster.
   One synced cache file yields the device's complete dictionary with no
   hardware probing; the FM9 device-true ranges
-  (`packages/fractal-midi/src/fm9/ranges.generated.ts`) are generated from one.
+  (`packages/fractal-midi/src/gen3/fm9/ranges.generated.ts`) are generated from one.
   - **The typecode bitfield is decoded too**: nibble fields for unit,
     family/taper, and (newer cache formats) display precision. Families 4/5
     are log10 taper, hardware-confirmed; taper and display decimals are

@@ -10,7 +10,7 @@ firmware_sensitive: false
 golden: scripts/cookbook-verify.ts#case-iii-fn01-set-parameter-envelope
 relates_to: [septet-14bit, xor-7f-envelope-checksum, iii-host-emitter-fn-table]
 consumed_in:
-  - fractal-midi/src/axe-fx-iii/setParam.ts
+  - fractal-midi/src/gen3/axe-fx-iii/setParam.ts
   - fractal-midi/docs/devices/axe-fx-iii/set-parameter-captures.md
   - fractal-midi/docs/devices/axe-fx-iii/fn01-action-codes-decoded.md
   - fractal-midi/samples/captured/decoded/ghidra-axe-edit-iii-store-preset.txt (FUN_14033ec70 is the AxeEdit III canonical builder; L1325-1531)
@@ -66,7 +66,7 @@ Where:
   [[xor-7f-envelope-checksum]].
 
 The wire layout above is byte-verified by `buildSetParameter` in
-`fractal-midi/src/axe-fx-iii/setParam.ts` (lines 156-237) matching all
+`fractal-midi/src/gen3/axe-fx-iii/setParam.ts` (lines 156-237) matching all
 10 captured frames in `set-parameter-captures.md`. An alternative
 6-field structural reading from the AxeEdit III editor binary is
 documented in the Refinement-history note dated 2026-05-22 below.
@@ -74,7 +74,7 @@ documented in the Refinement-history note dated 2026-05-22 below.
 ## Where it's used
 
 Every III parameter write the host initiates uses this envelope. The
-implementation lives at `fractal-midi/src/axe-fx-iii/setParam.ts`
+implementation lives at `fractal-midi/src/gen3/axe-fx-iii/setParam.ts`
 (`buildSetParameter`). The function emits sub-action `09 00` by default
 (typed-input form, the agent-driven write path).
 
@@ -104,7 +104,7 @@ Test corpus: 10 public captures archived in
 
 - Axe-Fx II uses fn=0x02 SET_PARAMETER (different envelope, no
   sub-action prefix); see [[ii-axeedit-opcode-table]] and the II
-  setParam path at `fractal-midi/src/axe-fx-ii/setParam.ts`.
+  setParam path at `fractal-midi/src/gen2/axe-fx-ii/setParam.ts`.
 - AM4 uses fn=0x01 BUT with a completely different payload layout
   (`pidLow / pidHigh / action / hdr4 / value`); see
   [[am4-pidlow-register-families]].
@@ -116,7 +116,7 @@ Test corpus: 10 public captures archived in
 two fixtures:
 
 1. `buildSetParameter(effectId=58, paramId=40, value=508)` from
-   `fractal-midi/src/axe-fx-iii/setParam.ts` must match Source A's
+   `fractal-midi/src/gen3/axe-fx-iii/setParam.ts` must match Source A's
    "Drive 1 Boost ON" frame byte-for-byte.
 2. `buildSetParameter(effectId=70, paramId=2, value=520)` must match
    Source B's "Delay 1 TIME typed v520" frame.

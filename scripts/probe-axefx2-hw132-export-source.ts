@@ -28,7 +28,7 @@ import {
   isGetPresetNumberResponse,
   parseGetPresetNameResponse,
   parseGetPresetNumberResponse,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 import { fractalChecksum } from 'fractal-midi/shared';
 import { guardAgainstRunningEditors } from './_lib/editor-guard.js';
 

@@ -3,7 +3,7 @@
   "device": "fm3",
   "model_byte": "0x11",
   "support_status": "community-beta (device-true catalog; discrete set-by-name and striped read hardware-confirmed on FM3 by a community collaborator)",
-  "source": "fractal-midi/src/fm3 — mined from the FM3-Edit binary; paramIds are FM3-true, NOT reused from the Axe-Fx III",
+  "source": "fractal-midi/src/gen3/fm3 — mined from the FM3-Edit binary; paramIds are FM3-true, NOT reused from the Axe-Fx III",
   "notes": [
     "Gen-3 block effect IDs are family-shared: the block table lives in axe-fx-iii.json (AXE_FX_III_BLOCKS). paramIds are DEVICE-SPECIFIC — never reuse another gen-3 device's paramIds; always use this file's params for this device.",
     "NO ranges/scaling table yet: unlike fm9.json (FM9_RANGES), no FM3-Edit effectDefinitions cache has been contributed, so per-param display ranges are limited to what FM3_PARAMS carries. The FM3-Edit cache file (one file, no capture tools) generates the full table — see the capture guides.",

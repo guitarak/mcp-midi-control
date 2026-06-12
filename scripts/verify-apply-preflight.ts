@@ -17,8 +17,8 @@ import {
 } from '@mcp-midi-control/core/protocol-generic/dispatcher.js';
 import type { PresetSpec } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { AM4_DESCRIPTOR } from '@mcp-midi-control/am4/descriptor.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
-import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-modern/descriptor.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
+import { AXEFX3_DESCRIPTOR } from '@mcp-midi-control/fractal-gen3/descriptor.js';
 
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string): void {

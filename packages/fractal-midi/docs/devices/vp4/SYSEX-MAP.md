@@ -106,7 +106,7 @@ single-row design.
 ## Param catalog — device-true mine validated on hardware
 
 For the fully-read Delay block, every observed paramId is present in the VP4-Edit-mined
-catalog (`src/vp4/params.ts`) at its device-true offset:
+catalog (`src/gen3/vp4/params.ts`) at its device-true offset:
 `10=DELAY_MODEL, 12=DELAY_TIME, 14=DELAY_FEED, 31=DELAY_HOLD, 46=DELAY_ATTEN,
 82=DELAY_RATE4, 84=DELAY_DEPTH4` + BLOCK wrapper `0=LEVEL, 1=MIX, 3=BYPASS`. This is
 the first hardware confirmation that the mined VP4 paramIds are the real wire paramIds.
@@ -184,11 +184,11 @@ the 16-byte SAVE ack above. Do NOT use `get_param` for confirmation (telemetry-m
 
 ## Codec change plan (CORRECTED after review — see `vp4-403-v2/CODEC-PLAN.md`)
 
-1. Add VP4-specific builders in `fractal-midi/src/vp4/setParam.ts` (NOT a mutation of the III
+1. Add VP4-specific builders in `fractal-midi/src/gen3/vp4/setParam.ts` (NOT a mutation of the III
    builders — III divergence is total): the swapped-septet float32 primitive + `buildVp4Save`,
    `buildVp4SetBypass`, a write-echo parser, and (scoped) `buildVp4SetParam`. Golden cases +
    a cookbook entry + `cookbook-verify`/`verify-msg` cases (preflight requires them).
-2. **Shipped community-beta `untested`** (in `fractal-modern` via `write_allowlist`):
+2. **Shipped community-beta `untested`** (in `fractal-gen3` via `write_allowlist`):
    continuous `set_param`/`set_params` (raw 0..65534 wire value → normalized float; %/ms
    calibration pending), `set_bypass` (enable=0.0 / bypass-on replicated), `save_preset`
    (exact frame). DISCRETE `set_param` (enum/type) refuses — zero captured evidence.
@@ -215,7 +215,7 @@ the 16-byte SAVE ack above. Do NOT use `get_param` for confirmation (telemetry-m
   capture (no ASCII even after a 7-in-8 unpack — the name register wasn't polled); no
   4CM-separator / send-return block was polled (the 4CM routing is not a polled block or
   lives inside the eid206 descriptor).
-- **Read-path action item:** `fractal-modern` ships an `fn=0x1F` bulk-poll reader; this
+- **Read-path action item:** `fractal-gen3` ships an `fn=0x1F` bulk-poll reader; this
   capture shows VP4-Edit uses `fn=0x01` GET instead and contains no `fn=0x1F`. Whether
   VP4 answers `fn=0x1F` at all is unconfirmed. Consider adding an `fn=0x01` GET
-  reader/parser for VP4. (Flagged here; `fractal-modern` codec owned by another session.)
+  reader/parser for VP4. (Flagged here; `fractal-gen3` codec owned by another session.)

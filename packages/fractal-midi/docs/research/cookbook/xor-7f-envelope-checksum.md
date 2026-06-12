@@ -14,8 +14,8 @@ relates_to: [vendor-envelope-descriptor-table]
 consumed_in:
   - fractal-midi/src/shared/checksum.ts
   - fractal-midi/src/am4/setParam.ts
-  - fractal-midi/src/axe-fx-ii/setParam.ts
-  - fractal-midi/src/axe-fx-iii/setParam.ts
+  - fractal-midi/src/gen2/axe-fx-ii/setParam.ts
+  - fractal-midi/src/gen3/axe-fx-iii/setParam.ts
 ---
 
 # XOR-7F envelope checksum (universal Fractal)

@@ -16,7 +16,7 @@ import * as path from 'node:path';
 import {
   buildQueryStates, buildGetGridLayout, buildSetBlockBypass,
   buildSetSceneNumber, buildGetSceneNumber, parseSceneNumberResponse,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 const F0 = 0xf0, AMP = 106;
 const hex = (b: readonly number[]) => b.map((x) => x.toString(16).padStart(2, '0')).join(' ');

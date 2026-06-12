@@ -19,7 +19,7 @@ import path from 'node:path';
 
 const PARAMS_TS = path.resolve(
   import.meta.dirname, '..', '..',
-  'packages', 'fractal-midi', 'src', 'axe-fx-ii', 'params.ts',
+  'packages', 'fractal-midi', 'src', 'gen2', 'axe-fx-ii', 'params.ts',
 );
 
 interface Cal { key: string; fields: string; }

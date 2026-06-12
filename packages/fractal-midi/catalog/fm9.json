@@ -3,7 +3,7 @@
   "device": "fm9",
   "model_byte": "0x12",
   "support_status": "community-beta (decoded from FM9-Edit cache + community captures)",
-  "source": "fractal-midi/src/fm9 — mined from the FM9-Edit binary + effectDefinitions cache; paramIds are FM9-true, NOT reused from the Axe-Fx III",
+  "source": "fractal-midi/src/gen3/fm9 — mined from the FM9-Edit binary + effectDefinitions cache; paramIds are FM9-true, NOT reused from the Axe-Fx III",
   "notes": [
     "Gen-3 block effect IDs are family-shared: the block table lives in axe-fx-iii.json (AXE_FX_III_BLOCKS). paramIds are DEVICE-SPECIFIC — never reuse another gen-3 device's paramIds; always use this file's params for this device.",
     "FM9_RANGES carries device-true display ranges (display = value * scale).",

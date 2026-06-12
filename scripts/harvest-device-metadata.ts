@@ -75,7 +75,7 @@ import {
   buildGetTempo,
   buildGetScene,
   buildStatusDump,
-} from 'fractal-midi/axe-fx-iii';
+} from 'fractal-midi/gen3/axe-fx-iii';
 import {
   buildGetPresetName as buildGetPresetNameII,
   buildGetGridLayout,
@@ -83,7 +83,7 @@ import {
   buildQueryStates,
   buildGetPresetNumber,
   buildGetSceneNumber,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 import {
   buildGetAllParams as buildGetAllParamsAm4,
   buildRequestActiveBufferDump,

@@ -1,7 +1,7 @@
 /**
  * Axe-Fx III preset-dump round-trip golden.
  *
- * Validates that `packages/axe-fx-iii/src/presetDump.ts` parses every byte
+ * Validates that `packages/fractal-gen3/src/presetDump.ts` parses every byte
  * of the three factory banks (firmware 28p06, 384 presets total) and
  * re-emits a byte-identical stream. Same shape as
  * `scripts/verify-preset-dump-ii.ts` but for the III envelope:
@@ -42,7 +42,7 @@ import {
   parsePresetBank,
   parsePresetDump,
   serializePresetDump,
-} from '@mcp-midi-control/fractal-modern/presetDump.js';
+} from '@mcp-midi-control/fractal-gen3/presetDump.js';
 
 const BANK_PATHS = [
   'samples/factory/Axe-Fx-III-Factory-Preset-Banks-28p06/Axe-Fx_III_BANK_A-250603-182903.syx',

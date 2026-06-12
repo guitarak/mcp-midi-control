@@ -21,7 +21,7 @@ import {
   buildQueryStates, parseQueryStatesResponse,
   buildGetBlockParameterValue, parseGetBlockParameterResponse,
   buildGetBlockChannel, parseGetBlockChannelResponse,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 const F0 = 0xf0;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

@@ -6,10 +6,10 @@
  */
 
 import { registerDevice } from '@mcp-midi-control/core/protocol-generic/registry.js';
-import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
-import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/axe-fx-ii/descriptor.js';
-import { parsePresetDump, extractPresetName, type ParsedPresetDump } from '@mcp-midi-control/axe-fx-ii/presetDump.js';
-import { AXE_FX_II_BLOCKS } from '@mcp-midi-control/axe-fx-ii/blockTypes.js';
+import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
+import { AXEFX2_DESCRIPTOR } from '@mcp-midi-control/fractal-gen2/descriptor.js';
+import { parsePresetDump, extractPresetName, type ParsedPresetDump } from '@mcp-midi-control/fractal-gen2/presetDump.js';
+import { AXE_FX_II_BLOCKS } from '@mcp-midi-control/fractal-gen2/blockTypes.js';
 
 registerDevice(AXEFX2_DESCRIPTOR);
 

@@ -68,8 +68,11 @@ channel and scene cardinality.
 
 Generic-MIDI primitives reach any other USB MIDI device today. The
 modern Fractal family (Axe-Fx III / FM3 / FM9) and the original Axe-Fx
-Standard/Ultra are in community beta; see [community beta
-status](#community-beta-status) below if you own one.
+Standard/Ultra are in community beta — the FM3's core control surface
+(serial transport, reads, param writes, bypass, scenes, preset
+switching) is already hardware-confirmed end-to-end by a community
+field test; see [community beta status](#community-beta-status) below
+if you own one.
 
 <!-- tool-inventory:generated:start -->
 
@@ -186,7 +189,9 @@ primitives](#generic-midi-primitives-13-tools) below.
   devices still work through the generic-MIDI primitives.
 - **FM3 owners:** the FM3 is not a USB MIDI device on any OS — over USB it is
   a serial device, and the server reaches it through that serial channel
-  automatically (🟡 community beta). On Windows install Fractal's "FM3 USB
+  automatically (hardware-confirmed end-to-end on macOS, 2026-06 community
+  field test; the Windows serial-driver path is implemented but not yet
+  field-confirmed). On Windows install Fractal's "FM3 USB
   Serial Driver" (bundled with the FM3 audio driver download); on macOS no
   driver is needed. The serial port is exclusive: fully quit FM3-Edit /
   Fractal-Bot while the server is connected. If auto-detection misses, set
@@ -209,9 +214,11 @@ confirm each device is visible to the server.
 
 ## Community beta status
 
-Two tiers of Fractal support are decoded and shipping but not yet confirmed on the hardware they target. Both send real wire bytes, and both carry an unverified-on-hardware notice on every write-tool response, so the agent (and you) know the call is a hypothesis until an owner confirms front-panel behavior.
+These Fractal tiers are decoded and shipping, with hardware confirmation accumulating from community field tests (the FM3's core surface is already confirmed end-to-end — see below). Writes send real wire bytes; ops not yet confirmed on the target device carry an unverified-on-hardware notice on the write-tool response, so the agent (and you) know that call is a hypothesis until an owner confirms front-panel behavior.
 
-**Modern Fractal family (Axe-Fx III / FM3 / FM9).** One shared gen-3 codec drives all three; they differ only by model byte, grid/scene shape, and a device-specific param catalog. The Axe-Fx III is the reference the other two are checked against, built from Fractal's published "Axe-Fx III MIDI for Third-Party Devices" v1.4 PDF and the AxeEdit III editor assets; FM3 and FM9 add param catalogs mined from their own editor binaries. The full surface is drivable today: reads (`get_param` / `get_params`, `get_preset` including full stored-preset decode, `export_preset` `.syx` backups of the active or any stored preset), navigation (`switch_preset`, `switch_scene`), and writes (`set_param` including set-by-name for amp / drive / reverb models, `set_block`, `set_bypass`, `apply_preset`, `save_preset`, `rename`). Writes DO send wire bytes: the wire shape is byte-verified against the v1.4 spec plus device captures, but unverified end to end on real hardware, so every write response asks you to confirm the result on the device.
+**Modern Fractal family (Axe-Fx III / FM3 / FM9).** One shared gen-3 codec drives all three; they differ only by model byte, grid/scene shape, and a device-specific param catalog. The Axe-Fx III is the reference the other two are checked against, built from Fractal's published "Axe-Fx III MIDI for Third-Party Devices" v1.4 PDF and the AxeEdit III editor assets; FM3 and FM9 add param catalogs mined from their own editor binaries. The full surface is drivable today: reads (`get_param` / `get_params`, `get_preset` including full stored-preset decode, `export_preset` `.syx` backups of the active or any stored preset), navigation (`switch_preset`, `switch_scene`), and writes (`set_param` including set-by-name for amp / drive / reverb models, `set_block`, `set_bypass`, `apply_preset`, `save_preset`, `rename`).
+
+Hardware confirmation differs by device. The **FM3** is the most verified of the three, via two 2026-06 community hardware sessions: a 2026-06-12 field test (fw 12.00, macOS, full probe session over the USB-serial transport) confirmed the core surface through this server's own code — discovery, framing, the entire read path, continuous `set_param`, `set_bypass`, `switch_scene`, and `switch_preset` end-to-end — and a 2026-06-10 collaborator session confirmed set-by-name discrete `set_param` on FM3 hardware (frames byte-identical to this server's encoder, sent from the tester's own rig). Still awaiting on-device confirmation: `set_block` placement, `save_preset`, and the Windows serial-driver path. The **FM9** has community captures confirming the read, preset-receive, and bank-select paths. The **Axe-Fx III** shares the same byte-verified codec but has no direct hardware run yet. Writes whose op is not yet confirmed on your device carry a notice asking you to confirm the result on the front panel.
 
 **Fractal VP4.** A gen-3 sibling with an AM4-style serial 4-slot chain (no amp/cab). Reads work; `set_param` / `set_params` (continuous knobs, raw wire values), `set_bypass`, and `save_preset` are decoded byte-exact from a community capture (fw 4.03) and ship untested. Block placement, scene switching, and enum/TYPE sets stay gated until their wire shapes are decoded.
 
@@ -697,7 +704,7 @@ and [`docs/TOOL-AUTHORING-GUIDE.md`](./docs/TOOL-AUTHORING-GUIDE.md).
 
 ## Project layout
 
-The source is organized as seven npm workspace packages under
+The source is organized as eight npm workspace packages under
 `packages/`. Each package builds independently to its own `dist/`.
 `fractal-midi` is the pure-TypeScript codec (published to npm);
 the `@mcp-midi-control/*` packages are the MCP server layer (private).
@@ -708,11 +715,17 @@ packages/
 │   └── src/
 │       ├── shared/               #   checksum, packValue, lineage JSON
 │       ├── am4/                  #   AM4 builders, parsers, params, calibration
-│       ├── axe-fx-ii/            #   Axe-Fx II builders, parsers, params
-│       └── axe-fx-iii/           #   Axe-Fx III builders, parsers, params
+│       ├── gen1/                 #   Axe-Fx Standard/Ultra nibble-split codec + catalog
+│       ├── gen2/
+│       │   └── axe-fx-ii/        #   Axe-Fx II builders, parsers, params
+│       └── gen3/
+│           ├── axe-fx-iii/       #   gen-3 codec + Axe-Fx III params, enum overlay
+│           ├── fm3/              #   FM3 device-true param catalog
+│           ├── fm9/              #   FM9 device-true param catalog
+│           └── vp4/              #   VP4 device-true catalog + its own fn=0x01 write frame
 ├── core/                         # @mcp-midi-control/core
 │   └── src/
-│       ├── midi/                 #   node-midi transport + message builders
+│       ├── midi/                 #   node-midi transport + FM3 serial transport
 │       ├── protocol-generic/     #   dispatcher + unified tool surface
 │       └── server-shared/        #   connection registry, safeEdit,
 │                                 #     bufferDirty
@@ -720,13 +733,15 @@ packages/
 │   └── src/
 │       ├── tools/                #   AM4 MCP tool surface (split by family)
 │       └── (descriptor/, midi.ts, …)
-├── axe-fx-ii/                    # @mcp-midi-control/axe-fx-ii
+├── fractal-gen1/                 # @mcp-midi-control/fractal-gen1
+│   └── src/                      #   Axe-Fx Standard/Ultra descriptor (community beta)
+├── fractal-gen2/                 # @mcp-midi-control/fractal-gen2
 │   └── src/
 │       ├── tools/                #   Axe-Fx II XL+ tool surface
 │       └── (descriptor/, midi.ts, …)
-├── fractal-modern/              # @mcp-midi-control/fractal-modern
+├── fractal-gen3/                 # @mcp-midi-control/fractal-gen3
 │   └── src/
-│       ├── configs/             #   Axe-Fx III / FM3 / FM9 per-device configs (community beta)
+│       ├── configs/              #   Axe-Fx III / FM3 / FM9 / VP4 per-device configs (community beta)
 │       └── (factory.ts, catalog.ts, reader.ts, writer.ts, guard.ts, midi.ts, …)
 ├── hydrasynth/                   # @mcp-midi-control/hydrasynth
 │   └── src/
@@ -744,13 +759,18 @@ docs/                             # protocol reference, decisions, research
 scripts/                          # probes, verifiers, smoke tests
 ```
 
-**Adding a new device.** Stand up a new workspace package under
-`packages/<vendor>-<device>/` (mirror axe-fx-ii's layout). Implement
-a `DeviceDescriptor`, register it in
-`packages/server-all/src/server/index.ts`, and add the package as a
-dependency in `packages/server-all/package.json`. The unified tool
-surface (`set_param`, `apply_preset`, etc.) automatically dispatches
-to your device once the descriptor is registered. No new tools needed.
+**Adding a new device.** A new device on an existing codec generation
+is a **config file**, not a new package: add
+`packages/fractal-gen<N>/src/configs/<device>.ts` (the gen-3 family —
+Axe-Fx III / FM3 / FM9 / VP4 — works this way) and export its
+descriptor alongside the others. A new brand or codec gets its own
+workspace package under `packages/<vendor>-<device>/` (mirror
+`packages/fractal-gen3/`'s layout): implement a `DeviceDescriptor`,
+register it in `packages/server-all/src/server/index.ts`, and add the
+package as a dependency in `packages/server-all/package.json`. The
+unified tool surface (`set_param`, `apply_preset`, etc.) automatically
+dispatches to your device once the descriptor is registered. No new
+tools needed.
 
 - [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md): system overview
   + per-layer responsibilities.

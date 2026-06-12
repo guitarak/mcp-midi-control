@@ -135,7 +135,7 @@ identification.
   exists, which is why this entry is matched-singleton rather than
   matched.
 - The codec parser (`parseQueryStatesResponse` in
-  `src/axe-fx-ii/setParam.ts`) currently returns opaque records. It can
+  `src/gen2/axe-fx-ii/setParam.ts`) currently returns opaque records. It can
   now expose the per-block engaged (tag `0x01`) and channel (tag `0x02`)
   state, and identify each record's block by sorting records on the
   28-bit b1..b4 address and zipping to the grid's placed blockIds

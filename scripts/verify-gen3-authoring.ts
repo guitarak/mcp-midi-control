@@ -23,20 +23,20 @@ import {
   parsePresetBank,
   parsePresetDump,
   serializePresetDump,
-} from '../packages/fractal-modern/dist/presetDump.js';
+} from '../packages/fractal-gen3/dist/presetDump.js';
 import {
   decodeRawPatch,
   reencodeRawPatch,
   computeRawPatchXor,
-} from '../packages/fractal-modern/dist/presetHuffman.js';
-import { decodeGen3PresetDump } from '../packages/fractal-modern/dist/presetBody.js';
+} from '../packages/fractal-gen3/dist/presetHuffman.js';
+import { decodeGen3PresetDump } from '../packages/fractal-gen3/dist/presetBody.js';
 import {
   reframeRawPatch,
   encodeFooterXor,
   swapBlockType,
   renamePreset,
   listBlockTypes,
-} from '../packages/fractal-modern/dist/presetAuthor.js';
+} from '../packages/fractal-gen3/dist/presetAuthor.js';
 
 let ok = 0;
 let fail = 0;

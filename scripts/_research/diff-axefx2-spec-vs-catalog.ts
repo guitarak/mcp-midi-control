@@ -20,8 +20,8 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { KNOWN_PARAMS } from '../../packages/fractal-midi/src/axe-fx-ii/params.js';
-import { AXE_FX_II_BLOCKS, BLOCK_BY_ID } from '../../packages/fractal-midi/src/axe-fx-ii/blockTypes.js';
+import { KNOWN_PARAMS } from '../../packages/fractal-midi/src/gen2/axe-fx-ii/params.js';
+import { AXE_FX_II_BLOCKS, BLOCK_BY_ID } from '../../packages/fractal-midi/src/gen2/axe-fx-ii/blockTypes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GEN2 = join(HERE, 'gen2-out');

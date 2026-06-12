@@ -477,7 +477,7 @@ All milestones below shipped through 2026-05-14:
    `routing[]` + `instance≠1` (linear device contract); Axe-Fx II
    accepts both and walks the routing edges.
 3. ✅ `routing` walk in `applyExecutor`
-   (`packages/axe-fx-ii/src/tools/applyExecutor.ts:414-490`). Validates
+   (`packages/fractal-gen2/src/tools/applyExecutor.ts:414-490`). Validates
    adjacent-column constraint + block-id references before any wire
    write fires.
 4. ✅ Shunt synthesis (routing follow-on):

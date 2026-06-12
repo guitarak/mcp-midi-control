@@ -31,7 +31,7 @@ import {
   parseGen3StateBroadcastHead,
   parseGen3StateBroadcastBody,
   isGen3BroadcastFrame,
-} from 'fractal-midi/axe-fx-iii';
+} from 'fractal-midi/gen3/axe-fx-iii';
 
 const FM9_MODEL = 0x12;
 const DISTORT_PAN_PARAMID = 2; // amp "Balance" in the device-true FM9 catalog

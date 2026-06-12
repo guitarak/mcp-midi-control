@@ -31,7 +31,7 @@ import {
   FN_BROADCAST_END,
   SUB_PLACED_FLAG,
   SUB_LAYOUT_MAP,
-} from '@mcp-midi-control/fractal-modern/simResponders.js';
+} from '@mcp-midi-control/fractal-gen3/simResponders.js';
 
 export interface CaptureFrame {
   dir: 'OUT' | 'IN';

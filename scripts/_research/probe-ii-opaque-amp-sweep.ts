@@ -21,12 +21,12 @@
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { connectAxeFxII } from '@mcp-midi-control/axe-fx-ii/midi.js';
+import { connectAxeFxII } from '@mcp-midi-control/fractal-gen2/midi.js';
 import {
   buildGetBlockParameterValue,
   isGetBlockParameterResponse,
   parseGetBlockParameterResponse,
-} from 'fractal-midi/axe-fx-ii';
+} from 'fractal-midi/gen2/axe-fx-ii';
 
 const AMP_EFFECT_ID = parseInt(process.env.AMP_EFFECT_ID ?? '106', 10);
 const II_MODEL = 0x07;

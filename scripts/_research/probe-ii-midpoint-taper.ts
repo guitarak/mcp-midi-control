@@ -20,8 +20,8 @@ import {
   isGetBlockParameterResponse,
   parseGetBlockParameterResponse,
   buildSetBlockParameterValueInteger,
-} from 'fractal-midi/axe-fx-ii';
-import { IDS_BY_GROUP } from '../../packages/fractal-midi/src/axe-fx-ii/blockTypes.js';
+} from 'fractal-midi/gen2/axe-fx-ii';
+import { IDS_BY_GROUP } from '../../packages/fractal-midi/src/gen2/axe-fx-ii/blockTypes.js';
 import { createSysExAssembler } from '../../packages/core/src/midi/transport.js';
 
 const PACE_MS = 90, SETTLE_MS = 130, TIMEOUT_MS = 900, MID = 32767;

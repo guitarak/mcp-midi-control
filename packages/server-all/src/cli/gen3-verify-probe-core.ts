@@ -20,11 +20,36 @@
  *     fired with that number so the CLI can also reload on Ctrl-C.
  *   - RELOADS the active preset at the end (the master undo: reloading from flash
  *     discards the working buffer), then RE-READS the preset number and warns if
- *     it does not match (e.g. the device has PC-Mapping on, which would defeat
- *     the reload).
+ *     it does not match. The reload uses the SysEx-native fn=0x01 sub=0x27
+ *     switch (FM3-hardware-confirmed), NOT MIDI Program Change: PC is 7-bit and
+ *     the FM3 ignores CC32 Bank Select with the 'standard' encoding, so a PC
+ *     restore of preset >127 lands on preset mod 128 (field-confirmed on FM3
+ *     fw 12.00, 2026-06-12: restore of 438 landed on 54). sub=0x27 carries the
+ *     full 14-bit preset number and has no bank-mode / MIDI-channel dependency.
+ *
+ * PLACEMENT IS GATED ON fn=0x13 STATUS_DUMP, NOT ON POLL ANSWERS. The FM3 field
+ * test (fw 12.00, 2026-06-12) proved the fn=0x1F bulk-read poll ANSWERS for
+ * UNPLACED blocks (35/42 block types answered while the device's own 0x13
+ * status dump listed only 3 placed blocks), so "the block answered a poll" is
+ * NOT evidence the block is in the preset — that run's reverb writes were
+ * wire-acked but inaudible (the reverb was never placed). The probe therefore
+ * reads the 0x13 placed-block list up front and gates the reverb tests and the
+ * set_block test (before AND after placement) on it; pollBlock is kept only
+ * for VALUE read-back. If the 0x13 reply is absent/unparseable, the probe
+ * falls back to the old poll-based detection and records a warning.
+ *
+ * PARAM IDS ARE DEVICE-SPECIFIC. The reverb Mix/Type paramIds differ across the
+ * gen-3 family (FM9: mix=0, type=10; III + FM3: type=0, mix=13), so the caller
+ * MUST pass the device-true ids via `reverbIds` (the CLI resolves them from the
+ * device's own catalog). Hardcoded FM9-shaped ids mis-addressed the FM3 field
+ * test 2026-06-12: the "mix" test actually set reverb TYPE (float 0.75
+ * quantized to ordinal 58/78 of the 79-entry enum) and the "type" test set
+ * REVERB_LOWCUT (float32(45.0) landed as 45.0 Hz — wire 11540 under the log10
+ * 20..2000 calibration, exact). Both decodes were byte-perfect; only the
+ * addressing was wrong.
  */
-import type { MidiConnection } from '@mcp-midi-control/fractal-modern/midi.js';
-import { toHex } from '@mcp-midi-control/fractal-modern/midi.js';
+import type { MidiConnection } from '@mcp-midi-control/fractal-gen3/midi.js';
+import { toHex } from '@mcp-midi-control/fractal-gen3/midi.js';
 import { fractalChecksum } from 'fractal-midi/shared';
 import {
   buildBlockBulkReadPoll,
@@ -37,15 +62,14 @@ import {
   buildSetScene,
   buildGetScene,
   buildSetGridCell,
-  buildSwitchPresetPC,
+  buildStatusDump,
+  buildSwitchPresetSysEx,
   buildQueryPatchName,
   isQueryPatchNameResponse,
   parseQueryPatchNameResponse,
-} from 'fractal-midi/axe-fx-iii';
+} from 'fractal-midi/gen3/axe-fx-iii';
 
 const REVERB_EFFECT_ID = 66;
-const REVERB_MIX_PARAM_ID = 0;
-const REVERB_TYPE_PARAM_ID = 10;
 // A discrete type SET carries float32(read-ordinal) at pos 12 (sub 09 00). Use a
 // NON-power-of-2 ordinal so success proves the corrected wire specifically: ord 16
 // encodes identically under the old (retired pos-15 packValue16) and new wire and
@@ -75,11 +99,21 @@ function buildDragSetFloat(eff: number, pid: number, normalized: number, model: 
   return [...body, fractalChecksum(body), 0xf7];
 }
 
+/** Device-true reverb paramIds — these DIFFER across the gen-3 family. */
+export interface VerifyProbeReverbIds {
+  /** paramId of reverb Mix (continuous). FM9: 0; III + FM3: 13. */
+  mixParamId: number;
+  /** paramId of reverb Type (discrete enum). FM9: 10; III + FM3: 0. */
+  typeParamId: number;
+}
+
 export interface VerifyProbeOptions {
   conn: MidiConnection;
   modelByte: number;
   gridRows: number;
   label: string;
+  /** Device-true reverb paramIds, resolved from the device's own catalog. */
+  reverbIds: VerifyProbeReverbIds;
   timing?: { pollMs?: number; setMs?: number; queryMs?: number; settleMs?: number };
   log?: (line: string) => void;
   /** Fired once the restore point (active preset number) is known, so the CLI
@@ -91,7 +125,7 @@ export interface TestResult { tool: string; status: 'pass' | 'fail' | 'skipped';
 
 export interface VerifyReport {
   probe: 'gen3-verify-probe';
-  version: 1;
+  version: 2;
   device: string;
   modelByte: number;
   activePreset?: number;
@@ -104,6 +138,7 @@ export interface VerifyReport {
 
 export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyReport> {
   const { conn, modelByte: MODEL, gridRows, label } = opts;
+  const { mixParamId: REVERB_MIX_PARAM_ID, typeParamId: REVERB_TYPE_PARAM_ID } = opts.reverbIds;
   const log = opts.log ?? ((): void => {});
   const pollMs = opts.timing?.pollMs ?? POLL_WINDOW_MS;
   const setMs = opts.timing?.setMs ?? SET_ECHO_WINDOW_MS;
@@ -146,6 +181,32 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
     }
   }
 
+  // ── fn=0x13 STATUS_DUMP placement read ───────────────────────────
+  // The device's own placed-block list, the ONLY trustworthy placement signal
+  // (fn=0x1F polls answer for unplaced blocks too — FM3 fw 12.00 field test,
+  // 2026-06-12). Returns undefined when the reply is absent/unparseable so the
+  // caller can fall back to poll-based detection instead of bricking the run.
+  const isStatusDumpReply = (f: number[]): boolean =>
+    f.length >= 8 && f[0] === 0xf0 && f[1] === 0x00 && f[2] === 0x01 && f[3] === 0x74
+    && f[4] === MODEL && f[5] === 0x13;
+
+  async function readPlacedBlocks(): Promise<Set<number> | undefined> {
+    const frames = await sendAndCollect(buildStatusDump(MODEL), queryMs, (fs) => fs.some(isStatusDumpReply));
+    const frame = frames.find(isStatusDumpReply);
+    if (!frame) return undefined;
+    // Payload is `id_lo id_hi dd` triples (SYSEX-MAP fn=0x13; dd bit 0 =
+    // bypass, bits 3:1 = channel, bits 6:4 = channel count). The codec's
+    // parseStatusDumpResponse implements this exact shape but is model-locked
+    // to the III's 0x10 envelope, so decode the triples here for FM3/FM9 too.
+    const payload = frame.slice(6, -2);
+    if (payload.length % 3 !== 0) return undefined;
+    const ids = new Set<number>();
+    for (let i = 0; i < payload.length; i += 3) {
+      ids.add((payload[i] & 0x7f) | ((payload[i + 1] & 0x7f) << 7));
+    }
+    return ids;
+  }
+
   /** Send a SET (caller-built frame), capture any 0x64 reject + 60-byte echo. */
   async function sendSetAndCaptureEcho(
     frame: number[], effectId: number, paramId: number,
@@ -176,7 +237,10 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
     await sleep(settleMs);
     const after = await pollBlock(REVERB_EFFECT_ID);
     const readBack = after?.values[REVERB_MIX_PARAM_ID];
-    const expectedNorm = targetWire / 65535;
+    // /65534 (NOT /65535): the shipped codec normalizes wire/65534 (see
+    // fractal-gen3 writer.ts), so the probe frame is byte-identical to a
+    // shipped set_param frame for the same wire value.
+    const expectedNorm = targetWire / 65534;
     const echoMatches = echo !== undefined && Math.abs(echo.normalizedValue - expectedNorm) < 0.02;
     const readMatches = readBack !== undefined && Math.abs(readBack - targetWire) <= 256;
     const data = { form, sentWire: targetWire, echoNormalized: echo?.normalizedValue, expectedNorm, readBackWire: readBack, origWire: origMix };
@@ -191,15 +255,38 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
       record(tool, 'fail', `wrote ${targetWire}, read back ${readBack ?? 'no response'}, echo ${echo?.normalizedValue.toFixed(4) ?? 'none'} (expected ~${expectedNorm.toFixed(4)}). This form was not applied.`, data);
     }
     // Restore the original mix (52 00 float form) before the next sub-test.
-    await sendSetAndCaptureEcho(buildDragSetFloat(REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID, origMix / 65535, MODEL), REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID);
+    await sendSetAndCaptureEcho(buildDragSetFloat(REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID, origMix / 65534, MODEL), REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID);
     await sleep(settleMs);
   }
 
   async function runWriteTests(): Promise<void> {
-    const reverb = await pollBlock(REVERB_EFFECT_ID);
-    if (reverb === undefined) {
+    // Placement ground truth: the 0x13 status dump. A poll answer is NOT
+    // placement evidence (unplaced blocks answer fn=0x1F polls — FM3 field
+    // test 2026-06-12, where reverb writes wire-acked against an unplaced
+    // block and were inaudible).
+    const placed = await readPlacedBlocks();
+    if (placed === undefined) {
+      record('status_dump (fn=0x13) placement read', 'skipped',
+        'no parseable fn=0x13 STATUS_DUMP reply; falling back to fn=0x1F poll-answer placement '
+        + 'detection, which the FM3 field test (fw 12.00, 2026-06-12) proved can false-positive '
+        + '(unplaced blocks answer polls). Treat the reverb/set_block verdicts with caution.');
+    }
+
+    const reverbPlaced = placed !== undefined
+      ? placed.has(REVERB_EFFECT_ID)
+      : (await pollBlock(REVERB_EFFECT_ID)) !== undefined;
+    // pollBlock stays the VALUE read-back (the 0x13 dump carries no param values).
+    const reverb = reverbPlaced ? await pollBlock(REVERB_EFFECT_ID) : undefined;
+    if (!reverbPlaced) {
       record('set_param/set_bypass (reverb tests)', 'skipped',
-        'Reverb 1 (eff 66) is not in the loaded preset. Load a preset that contains a Reverb block, then re-run for the param tests.');
+        'Reverb 1 (effect 66) is not in the device\'s 0x13 placed-block list. Writes to an '
+        + 'unplaced block are wire-acked but INAUDIBLE (FM3 field test 2026-06-12), so the test '
+        + 'would prove nothing. Load a preset that contains a Reverb block, then re-run.');
+    } else if (reverb === undefined) {
+      record('set_param/set_bypass (reverb tests)', 'skipped',
+        'Reverb 1 (effect 66) is placed per the 0x13 status dump, but the fn=0x1F bulk read of its '
+        + 'values failed, so the original mix value cannot be captured/restored. Re-run; if it '
+        + 'persists, check nothing else is holding the MIDI port.');
     } else {
       const origMix = reverb.values[REVERB_MIX_PARAM_ID] ?? 0;
       const target = origMix < 32768 ? 49152 : 16384;
@@ -208,7 +295,7 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
       // = wire/65534) at pos 12 — the same form shipped set_param emits for a
       // continuous param and the same FM9-Edit emits for a knob drag. (The
       // retired 09 00 packValue16-int form is gone; it was never the wire.)
-      await continuousFormTest('52 00 float (shipped continuous set_param form)', buildDragSetFloat(REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID, target / 65535, MODEL), target, origMix);
+      await continuousFormTest('52 00 float (shipped continuous set_param form)', buildDragSetFloat(REVERB_EFFECT_ID, REVERB_MIX_PARAM_ID, target / 65534, MODEL), target, origMix);
 
       // T2: set_param ENUM (discrete) round-trip on Reverb Type. Sends
       // float32(ordinal 45) at pos 12 (sub 09 00) and reads the ordinal back.
@@ -254,20 +341,32 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
       { sceneQueryReply: sceneQuery.map(toHex) });
 
     // T5: set_block. Only run if our test cell's block type (Drive) is NOT
-    // already present, so we never clear a block the user already had. Place a
-    // Drive, confirm a Drive appears, then clear it; the reload is the backstop.
-    if ((await pollBlock(DRIVE_EFFECT_ID)) !== undefined) {
-      record('set_block', 'skipped', 'a Drive block is already in this preset, so the placement test would risk clearing it. Load a preset without a Drive to test set_block.');
+    // already placed, so we never clear a block the user already had. Placement
+    // is judged by the 0x13 placed-block list both BEFORE (skip detection) and
+    // AFTER (did the insert land?) — a fn=0x1F poll answers even for unplaced
+    // blocks, so it can neither detect a pre-existing Drive nor confirm the
+    // placement (FM3 field test 2026-06-12). Poll fallback only when 0x13 is
+    // unavailable. Place a Drive, confirm via a FRESH 0x13, then clear it; the
+    // end-of-probe reload is the backstop.
+    const drivePlacedBefore = placed !== undefined
+      ? placed.has(DRIVE_EFFECT_ID)
+      : (await pollBlock(DRIVE_EFFECT_ID)) !== undefined;
+    if (drivePlacedBefore) {
+      record('set_block', 'skipped', 'a Drive block is already in this preset (per the 0x13 status dump), so the placement test would risk clearing it. Load a preset without a Drive to test set_block.');
     } else {
       const cell = { row: 1, col: gridRows === 6 ? 14 : 12, rows: gridRows };
       const placeReply = await sendAndCollect(buildSetGridCell({ ...cell, blockId: DRIVE_EFFECT_ID }, MODEL), setMs);
       await sleep(settleMs);
-      const drivePresent = (await pollBlock(DRIVE_EFFECT_ID)) !== undefined;
+      const placedAfter = await readPlacedBlocks();
+      const drivePresent = placedAfter !== undefined
+        ? placedAfter.has(DRIVE_EFFECT_ID)
+        : (await pollBlock(DRIVE_EFFECT_ID)) !== undefined;
       if (drivePresent) await sendAndCollect(buildSetGridCell({ ...cell, blockId: 0 }, MODEL), setMs); // clear only what we placed
       const placeRejected = placeReply.some((f) => f[5] === 0x64);
+      const confirmSource = placedAfter !== undefined ? 'the 0x13 status dump' : 'a poll (0x13 unavailable — weak evidence)';
       record('set_block', placeRejected ? 'fail' : (drivePresent ? 'pass' : 'fail'),
         placeRejected ? 'device REJECTED set_block (0x64).'
-          : drivePresent ? `placed Drive at r${cell.row}c${cell.col} and a poll then found it. Block placement lands.` : 'sent the insert but a poll did not find a Drive (cell may have been occupied, or placement was not applied).',
+          : drivePresent ? `placed Drive at r${cell.row}c${cell.col} and ${confirmSource} then listed it. Block placement lands.` : `sent the insert but ${confirmSource} did not list a Drive (cell may have been occupied, or placement was not applied).`,
         { cell });
     }
 
@@ -301,16 +400,23 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
         await runWriteTests();
       } finally {
         // Master undo: reload the active preset to discard the working buffer,
-        // then confirm we landed back on it (PC-Mapping or a missed PC would
-        // leave us elsewhere with the working buffer NOT restored).
-        conn.send(buildSwitchPresetPC(activePreset));
-        await sleep(settleMs);
+        // then confirm we landed back on it. Uses the SysEx-native fn=0x01
+        // sub=0x27 switch (full 14-bit preset number, FM3-hardware-confirmed)
+        // instead of MIDI Program Change — PC is 7-bit and the FM3 ignores
+        // CC32 Bank Select, so a PC restore of preset >127 landed on
+        // preset mod 128 (FM3 fw 12.00 field test, 2026-06-12).
+        conn.send(buildSwitchPresetSysEx(activePreset, MODEL));
+        // A preset SWITCH loads a whole preset from flash, which takes longer
+        // than a param write settles — give it 3× the param-write settle before
+        // the confirmation re-read (the re-read's own query window then adds
+        // its full timeout on top).
+        await sleep(settleMs * 3);
         const back = await readActivePreset();
         restoreConfirmed = back?.number === activePreset;
         if (restoreConfirmed) {
           log(`\nReloaded preset ${activePreset} to discard all probe changes.`);
         } else {
-          record('restore_check', 'fail', `after the restore Program Change, the active preset read back as ${back?.number ?? 'unknown'}, not ${activePreset}. If your device has MIDI > PC Mapping ON, turn it OFF and manually reload preset ${activePreset} to discard the probe's working-buffer changes.`);
+          record('restore_check', 'fail', `after the restore switch (SysEx sub=0x27), the active preset read back as ${back?.number ?? 'unknown'}, not ${activePreset}. Manually reload preset ${activePreset} to discard the probe's working-buffer changes.`);
           log(`\nWARNING: could not confirm the reload. Manually reload preset ${activePreset} on the device.`);
         }
       }
@@ -321,13 +427,13 @@ export async function runVerifyProbe(opts: VerifyProbeOptions): Promise<VerifyRe
 
   return {
     probe: 'gen3-verify-probe',
-    version: 1,
+    version: 2,
     device: label,
     modelByte: MODEL,
     activePreset,
     presetName: presetName?.trim(),
     restoreConfirmed,
-    note: 'WRITE-VERIFY round-trip. Never saves; reloads the active preset at the end to discard changes. T1 tests BOTH continuous wire forms (typed 09 00 int = shipped set_param; drag 52 00 float = editor knob) so the report says which the device accepts.',
+    note: 'WRITE-VERIFY round-trip. Never saves; reloads the active preset at the end (SysEx sub=0x27 switch — full 14-bit preset number) to discard changes. Reverb paramIds are resolved from the device-true catalog (they differ across the gen-3 family). Block placement is gated on the fn=0x13 STATUS_DUMP placed-block list, not on poll answers (unplaced blocks answer fn=0x1F polls — FM3 field test 2026-06-12). v2 fixes the FM3 field-test bugs: PC-restore 7-bit truncation and FM9-shaped hardcoded paramIds.',
     summary: {
       passed: results.filter((r) => r.status === 'pass').length,
       failed: results.filter((r) => r.status === 'fail').length,

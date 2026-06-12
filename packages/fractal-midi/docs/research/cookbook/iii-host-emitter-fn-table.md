@@ -88,7 +88,7 @@ because the editor binary uses them in the wild.
 ## Verification path
 
 `scripts/cookbook-verify.ts#case-iii-host-emitter-fn-table` checks that
-every `FN_*` constant in `fractal-midi/src/axe-fx-iii/setParam.ts`
+every `FN_*` constant in `fractal-midi/src/gen3/axe-fx-iii/setParam.ts`
 appears in the mined fn-byte-name map text dump.
 
 Live wire-byte validation is partial: a subset of fn bytes have

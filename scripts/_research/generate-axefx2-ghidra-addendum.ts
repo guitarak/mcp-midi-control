@@ -6,9 +6,9 @@
  * paramtables.json`, produced by `scripts/ghidra/SeekParamTablesII.java`)
  * holds 1,113 family-pure (paramId, symbolicName) pairs recovered
  * from Axe-Edit.exe. 643 of these already ship in the codec's
- * `fractal-midi/src/axe-fx-ii/params.ts` (Session 98 extraction moved
+ * `fractal-midi/src/gen2/axe-fx-ii/params.ts` (Session 98 extraction moved
  * the param registry into the sibling `fractal-midi` repo; before
- * that it lived at `packages/axe-fx-ii/src/params.ts`). The remaining
+ * that it lived at `packages/fractal-gen2/src/params.ts`). The remaining
  * 470 entries are NEW — the editor binary knows the params, the wiki
  * never indexed them.
  *
@@ -23,7 +23,7 @@
  *
  *   2. samples/captured/decoded/axefx2-ghidra-addendum.ts.txt
  *      Paste-ready TypeScript snippet for direct insertion into the
- *      codec's `fractal-midi/src/axe-fx-ii/params.ts` as an addendum
+ *      codec's `fractal-midi/src/gen2/axe-fx-ii/params.ts` as an addendum
  *      block. The merge happens in the fractal-midi repo, then
  *      pack+install back here.
  *
@@ -58,14 +58,14 @@ const XML_CATALOG_JSON =
   'samples/captured/decoded/labels/axe-edit-catalog.json';
 // params.ts lives in the fractal-midi workspace package.
 const FRACTAL_MIDI_REPO = process.env.FRACTAL_MIDI_REPO ?? 'packages/fractal-midi';
-const PARAMS_TS = `${FRACTAL_MIDI_REPO}/src/axe-fx-ii/params.ts`;
+const PARAMS_TS = `${FRACTAL_MIDI_REPO}/src/gen2/axe-fx-ii/params.ts`;
 const OUT_JSON =
   'samples/captured/decoded/axefx2-ghidra-addendum.json';
 const OUT_SNIPPET =
   'samples/captured/decoded/axefx2-ghidra-addendum.ts.txt';
 
 // Fractal family prefix → II (groupCode, block-slug) used in
-// `packages/axe-fx-ii/src/params.ts`. Derived by inspecting the
+// `packages/fractal-gen2/src/params.ts`. Derived by inspecting the
 // shipping entries — every parameterName "FAMILY_*" that ships in
 // params.ts goes under exactly one groupCode (with one wiring
 // duplicate: OUTPUT_LEVEL*/OUTPUT_PAN* appears under both FXL and

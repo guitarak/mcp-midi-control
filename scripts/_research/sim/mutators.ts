@@ -26,7 +26,7 @@ import {
   SUB_STORE_PRESET,
   SUB_ROUTING,
   SUB_TYPED_GET,
-} from '@mcp-midi-control/fractal-modern/simResponders.js';
+} from '@mcp-midi-control/fractal-gen3/simResponders.js';
 import type { SimDeviceState, BlockState } from './types.js';
 
 const SHUNT_HIGH_SEPTET = 0x08;
