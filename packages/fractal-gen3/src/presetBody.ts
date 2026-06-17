@@ -234,7 +234,12 @@ const EFFECT_BASES: Record<number, string> = {
   166: 'Looper', 178: 'Plex Delay', 182: 'Send', 186: 'Return', 191: 'Multiplexer',
 };
 
-function effectName(eid: number): string | undefined {
+/**
+ * Resolve a gen-3 effect ID to its display name + instance (e.g. 58 → "Amp 1",
+ * 119 → "Drive 2"). Exported so the LIVE grid reader (sub=0x2E) labels cells
+ * with the SAME convention as the stored-dump grid decode.
+ */
+export function effectName(eid: number): string | undefined {
   if (eid in EFFECT_BASES) return `${EFFECT_BASES[eid]} 1`;
   for (const [baseStr, name] of Object.entries(EFFECT_BASES)) {
     const base = Number(baseStr);

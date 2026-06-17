@@ -41,14 +41,20 @@ import type {
   GetPresetOptions,
   PresetBinaryDump,
   Gen3WholePresetView,
+  Gen3GridCellView,
   OverwriteTargetInfo,
   LocationRef,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { DispatchError } from '@mcp-midi-control/core/protocol-generic/types.js';
 import type { ModernFractalCodec, Gen3BlockBulkRead } from 'fractal-midi/gen3/axe-fx-iii';
-import { buildRequestPresetDump, parseGen3StateBroadcastHead } from 'fractal-midi/gen3/axe-fx-iii';
+import {
+  buildRequestPresetDump,
+  parseGen3StateBroadcastHead,
+  buildRequestGridLayout,
+  parseGen3GridLayout,
+} from 'fractal-midi/gen3/axe-fx-iii';
 import { parsePresetDump, extractPresetName } from './presetDump.js';
-import { decodeGen3PresetDump } from './presetBody.js';
+import { decodeGen3PresetDump, effectName } from './presetBody.js';
 import type { Gen3DecodedPreset } from './presetBody.js';
 import type { ModernCatalog } from './catalog.js';
 
@@ -270,6 +276,79 @@ function collectStoredPresetDump(
     // Send AFTER subscribing.
     ctx.conn.send(buildRequestPresetDump(presetNum, codec.modelByte));
   });
+}
+
+/**
+ * Read the LIVE routing grid of the active buffer in one round-trip:
+ * `fn=0x01 sub=0x2E` empty-target query → a single ~755-byte reply carrying the
+ * 7-bit-packed grid bitstream. Subscribes BEFORE sending (the reply can land in
+ * the same USB callback). Resolves with the reply frame, or throws no_ack on
+ * timeout. Gates on a LARGE sub=0x2E inbound frame so a small echo/value frame
+ * for the same sub-action isn't mistaken for the grid dump.
+ */
+async function collectGridLayout(
+  ctx: DispatchCtx,
+  codec: ModernFractalCodec,
+  deviceLabel: string,
+  timeoutMs: number,
+): Promise<number[]> {
+  let frame: number[] | undefined;
+  let resolveDone!: () => void;
+  const done = new Promise<void>((res) => {
+    resolveDone = res;
+  });
+  const unsubscribe = ctx.conn.onMessage((bytes) => {
+    // fn=0x01 sub=0x2E reply; the grid dump is the large (~755B) one.
+    if (bytes[1] === 0x00 && bytes[5] === 0x01 && bytes[6] === 0x2e && bytes.length > 400) {
+      if (frame) return;
+      frame = [...bytes];
+      resolveDone();
+    }
+  });
+  const timer = setTimeout(resolveDone, timeoutMs);
+  try {
+    ctx.conn.send(buildRequestGridLayout(codec.modelByte));
+    await done;
+  } finally {
+    clearTimeout(timer);
+    unsubscribe();
+  }
+  if (!frame) {
+    throw new DispatchError(
+      'no_ack',
+      deviceLabel,
+      `get_preset: no live grid (fn=0x01 sub=0x2E) reply from ${deviceLabel} within ${timeoutMs}ms.`,
+    );
+  }
+  return frame;
+}
+
+/**
+ * Convert a live sub=0x2E grid reply into the same `Gen3GridCellView[]` shape as
+ * the stored-dump grid (`whole_preset.grid`), labeling blocks with the SAME
+ * `effectName` convention. The cable bitmask is carried raw in `route_flag`;
+ * `from_rows` (edge direction) is intentionally NOT emitted — its decode is
+ * community-beta and unvalidated, and a wrong edge is worse than none.
+ */
+export function liveGridView(frame: number[], modelByte: number): Gen3GridCellView[] {
+  return parseGen3GridLayout(frame, modelByte).map((c) =>
+    c.isShunt
+      ? {
+          effect_id: c.shuntIndex ?? 0,
+          row: c.row,
+          col: c.col,
+          route_flag: c.cableInputMask,
+          name: `Shunt ${c.shuntIndex ?? 0}`,
+          is_shunt: true,
+        }
+      : {
+          effect_id: c.effectId ?? 0,
+          row: c.row,
+          col: c.col,
+          route_flag: c.cableInputMask,
+          name: effectName(c.effectId ?? -1) ?? `eid_${c.effectId}`,
+        },
+  );
 }
 
 /** Map a fully-decoded gen-3 preset to the rich `whole_preset` view. */
@@ -618,16 +697,33 @@ export function makeReader(opts: {
         return snapshotFromDecoded(decoded, 'stored-dump', deviceLabel, readStartedMs);
       }
 
-      // ACTIVE BUFFER: the live edit-buffer dump (fn=0x43 -> 0x51/0x52) is a
-      // DIFFERENT, not-yet-decoded format than the stored 0x77/0x78/0x79 dump
-      // the body codec reads, so the active read stays the fn=0x1F block
-      // inventory below. Whole-preset decode of the live buffer is unlocked once
-      // the 0x51/0x52 layout is captured + decoded.
+      // ACTIVE BUFFER. The whole-patch body (amp/scenes/modifiers) still isn't
+      // decodable live (the edit-buffer dump fn=0x43 -> 0x51/0x52 is a different,
+      // undecoded format than the stored 0x77/0x78/0x79 dump). But the live
+      // ROUTING GRID is now readable in ONE round-trip via fn=0x01 sub=0x2E, so
+      // we read it first: it gives the positioned signal chain (`live_grid`) the
+      // poll inventory below never had, AND lets us poll ONLY the blocks the grid
+      // says are placed instead of probing every catalog block.
+      const warnings: string[] = [];
+      let liveGrid: Gen3GridCellView[] | undefined;
+      let placedEffectIds: Set<number> | undefined;
+      try {
+        const gridFrame = await collectGridLayout(ctx, codec, deviceLabel, getResponseTimeoutMs);
+        liveGrid = liveGridView(gridFrame, codec.modelByte);
+        placedEffectIds = new Set(liveGrid.filter((c) => !c.is_shunt).map((c) => c.effect_id));
+      } catch {
+        // No grid reply (older firmware / port held / III-FM3 unconfirmed):
+        // fall back to probing every catalog block, as before.
+        warnings.push(
+          'gen-3 live grid read (fn=0x01 sub=0x2E) returned nothing; fell back to polling every ' +
+            'catalog block. The snapshot has no positioned routing (live_grid absent).',
+        );
+      }
+
       // Short per-block cap: a real burst lands in ~1ms and an unplaced block
       // NACKs nearly as fast; this only bounds a block that neither answers.
       const POLL_TIMEOUT_MS = Math.min(250, getResponseTimeoutMs);
       const slots: PresetSnapshotSlot[] = [];
-      const warnings: string[] = [];
       let placedIndex = 0;
       for (const slug of Object.keys(catalog.blocks)) {
         let effectId: number;
@@ -636,6 +732,10 @@ export function makeReader(opts: {
         } catch {
           continue; // block exposes no effect id; not pollable
         }
+        // When the grid is known, skip blocks it reports as unplaced — same
+        // coverage as the poll (which reads each block's instance-1 effectId),
+        // minus the wasted round-trips on absent blocks.
+        if (placedEffectIds && !placedEffectIds.has(effectId)) continue;
         let bulk;
         try {
           bulk = await collectBlockBulkRead(ctx, codec, effectId, deviceLabel, POLL_TIMEOUT_MS);
@@ -666,22 +766,32 @@ export function makeReader(opts: {
         slots.push({ slot: placedIndex, block_type: slug, params });
       }
       warnings.push(
-        'gen-3 get_preset is a block inventory, not a positioned grid read: slot indices are ' +
-          'sequential placeholders (no decoded grid read), so the snapshot is not round-trippable ' +
-          'through apply_preset by position. Per-channel params are reported as their channel-A ' +
-          'copy (use get_param with a channel arg for a specific channel). Enum params read back ' +
-          'as ordinal labels; uncalibrated continuous params read back as raw wire values. ' +
-          'Community beta: the server-driven fn=0x1F poll is not yet hardware-confirmed end to end.',
+        liveGrid
+          ? 'gen-3 get_preset: `live_grid` holds the positioned routing (row/col + block per cell) ' +
+              'from the live fn=0x01 sub=0x2E read; `slots` carries the per-block param VALUES (a flat ' +
+              'inventory — its `slot` numbers are sequential, not grid positions; match a slot to its ' +
+              'cell via block_type/effect name in live_grid). Cable directions are surfaced raw in ' +
+              'live_grid[].route_flag (edge decode is community-beta, not asserted). Per-channel params ' +
+              'are the channel-A copy (use get_param with a channel arg); enum params read as ordinal ' +
+              'labels, uncalibrated continuous as raw wire. Community beta: server-issued reads are not ' +
+              'yet hardware-confirmed end to end.'
+          : 'gen-3 get_preset is a block inventory, not a positioned grid read: slot indices are ' +
+              'sequential placeholders (no grid read), so the snapshot is not round-trippable ' +
+              'through apply_preset by position. Per-channel params are reported as their channel-A ' +
+              'copy (use get_param with a channel arg for a specific channel). Enum params read back ' +
+              'as ordinal labels; uncalibrated continuous params read back as raw wire values. ' +
+              'Community beta: the server-driven fn=0x1F poll is not yet hardware-confirmed end to end.',
       );
       return {
         name: undefined,
         slots,
+        ...(liveGrid ? { live_grid: liveGrid } : {}),
         read_warnings: warnings,
         _meta: {
           device: deviceLabel,
           read_at_ms: readStartedMs,
           active_scene_only: true,
-          routing_omitted: true,
+          routing_omitted: liveGrid === undefined,
           channel_state_omitted: true,
           read_duration_ms: Date.now() - readStartedMs,
         },

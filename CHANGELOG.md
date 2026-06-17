@@ -8,6 +8,43 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
+## [0.5.0]
+
+Two gen-3 read unlocks adopted from — and cross-validated against — the
+MIT-licensed `ai-tone-assistant` community project, plus the first independent
+FM9 hardware confirmation of this server's own read + continuous-write path.
+
+### Added
+
+- **Live routing-grid read for the modern Fractal family (Axe-Fx III / FM3 /
+  FM9).** `get_preset` on the active buffer now returns `live_grid`: the
+  positioned signal chain (row/col + the block in each cell) read in one
+  round-trip via `fn=0x01 sub=0x2E`, the live counterpart to the stored
+  `whole_preset.grid`. The grid also gates the per-block read poll to only the
+  placed blocks. The decode was cross-validated against a real FM9 capture
+  (every effect ID resolves to a known block; Input→…→Output coherent).
+  Community-beta (FM9-validated; the III shares the codec, the FM3 4-row region
+  offset is unconfirmed); the cable-input bitmask is surfaced raw and not yet
+  decoded into edges.
+
+- **Amp type-knob applicability for the gen-3 family.** `find_compatible_types`
+  and the `apply_preset` type-knob pre-flight now answer for gen-3 amps (they
+  previously returned `applicability_known: false`): an agent is told which amp
+  models actually expose a given knob, and warned before writing a knob that is
+  inert on the selected model — the same guard the AM4 already had. Backed by a
+  331-model valid-parameter table validated against our own amp roster and
+  parameter catalog.
+
+### Changed
+
+- **FM9 read + continuous-write path is now community hardware-confirmed.** An
+  FM9 owner test (firmware 11.0, macOS) round-tripped `get_param` and continuous
+  `set_param` on the device through this server — acknowledged, with values
+  confirmed on the FM9-Editor display — plus channel-specific reads and alias
+  resolution. The support-status language across the FM9 descriptor, agent
+  guidance, and docs reflects this. Discrete set-by-name, `save_preset`,
+  `set_block`, and the new live grid read remain community-beta on the FM9.
+
 ## [0.4.0]
 
 The FM3's first hardware field test, the fixes and protocol findings it

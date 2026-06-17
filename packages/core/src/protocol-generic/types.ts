@@ -897,6 +897,23 @@ export interface PresetSnapshot {
    * gen-3 active-buffer reads that fell back to the fn=0x1F poll inventory.
    */
   whole_preset?: Gen3WholePresetView;
+  /**
+   * gen-3 only: the LIVE routing grid of the ACTIVE preset, read in one
+   * round-trip via `fn=0x01 sub=0x2E` (empty-target query). Each cell carries
+   * its position (row/col), the placed block's effect id + display name, the
+   * raw input-cable bitmask (`route_flag`), and `is_shunt`. This is the live
+   * counterpart to `whole_preset.grid` (which only comes from a stored/dumped
+   * preset) — it tells an agent the actual signal-chain layout of the buffer
+   * being edited, which the fn=0x1F poll inventory (`slots`) cannot.
+   *
+   * Block POSITIONS + IDENTITIES are cross-validated against our FM9 capture
+   * (every effect id resolves; Input→…→Output coherent). The cable bitmask is
+   * surfaced raw; edge-direction decode is community-beta and NOT asserted as
+   * `from_rows` here. Present only when the live grid read succeeded; absent on
+   * II/AM4/Hydra, on stored-by-location gen-3 reads (use `whole_preset.grid`),
+   * and when the grid read returned nothing (then `slots` is the poll inventory).
+   */
+  live_grid?: readonly Gen3GridCellView[];
   _meta: PresetSnapshotMeta;
 }
 

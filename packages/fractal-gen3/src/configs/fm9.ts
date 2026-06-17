@@ -54,9 +54,13 @@ export const FM9_CONFIG: FractalModernConfig = {
     'Param catalog is FM9-true (mined from FM9-Edit\'s own parameter tables; paramIds are ' +
     'device-specific, not reused from the III). A real FM9 fn=0x01 capture exists (FM9-Edit ' +
     'driving a reverb-mix change on hardware), confirming the model byte + fn=0x01 envelope ' +
-    'on a live FM9 — but it uses the editor\'s selected-block SET sub-action, NOT the ' +
-    'explicit-effectId SET this codec emits. That SET path and enum set-by-name stay beta ' +
-    'pending one owner round-trip of our own builder.',
+    'on a live FM9. UPDATE 2026-06-17 (community FM9 owner test, fw 11.0 / macOS, driving THIS ' +
+    'server): get_param + continuous set_param round-trip acked on the device with values ' +
+    'confirmed on the FM9-Editor display; channel-specific reads and alias resolution (gain→drive) ' +
+    'confirmed too. The READ path and the CONTINUOUS SET path are now FM9-hardware-confirmed ' +
+    'end-to-end through this codec\'s own frames. Still community-beta pending the same owner\'s ' +
+    'confirmation: discrete enum set-by-name (FM3-hardware-confirmed via the shared codec), ' +
+    'save_preset, set_block placement, and the live grid read (fn=0x01 sub=0x2E).',
   params_by_family: FM9_PARAMS_BY_FAMILY,
   device_true_roster: true,
   // Device-true FM9 model rosters, mined from the FM9-Edit effectDefinitions
@@ -85,8 +89,10 @@ export const FM9_CONFIG: FractalModernConfig = {
       'are settable AND readable BY NAME using the FM9\'s own model names',
       '(e.g. amp "Texas Star Clean", drive "Blues OD", reverb "Music Hall"):',
       'the full device-true rosters are wired, not just a few captured points.',
-      'The fn=0x01 SET envelope is not yet FM9-hardware-confirmed, so confirm',
-      'every write on the device.',
+      'get_param, continuous set_param, and channel-specific reads are',
+      'FM9-hardware-confirmed (community owner test, fw 11.0). Discrete',
+      'set-by-name, save_preset, set_block, and the live grid read are',
+      'decoded but not yet FM9-confirmed — confirm those on the device.',
     ].join('\n'),
   },
   example_spec: WIDE_GRID_EXAMPLE_SPEC,

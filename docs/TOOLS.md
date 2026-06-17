@@ -13,7 +13,7 @@
 | Read (read-only) | 10 |
 | Write (reversible) | 25 |
 | Write (destructive) | 5 |
-| Average description length | 638 chars |
+| Average description length | 639 chars |
 | Tools over 600 chars | 17 |
 | Tools over 1000 chars | 4 |
 
@@ -31,7 +31,7 @@ No device state changes. `readOnlyHint: true`. Hosts group these as read tools.
 | `find_compatible_types` | 613 ⚠ | Returns the subset of block.type values that expose EVERY knob you list (AND-semantics). |
 | `get_param` | 761 ⚠ | Read one parameter from a device in display units (knob 0..10, dB, ms, %, enum name). |
 | `get_params` | 434 | Batch-read parameters from a device. |
-| `get_preset` | 1169 ⚠️ over 1000 | Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. |
+| `get_preset` | 1189 ⚠️ over 1000 | Snapshot the active working buffer: every placed block with current params in a PresetSpec-shaped envelope. |
 | `list_midi_ports` | 579 | List every MIDI input + output port the OS exposes. |
 | `list_params` | 736 ⚠ | Enumerate a device's params with units and display ranges. |
 | `lookup_lineage` | 966 ⚠ | Look up authored lineage for a block type: real hardware modeled, manufacturer notes, developer/forum quotes. |
@@ -89,6 +89,6 @@ Tools with descriptions over 1000 chars. Migration to structured response fields
 | Tool | Description length |
 |---|---|
 | `apply_patch` | 3776 chars |
-| `get_preset` | 1169 chars |
+| `get_preset` | 1189 chars |
 | `describe_device` | 1119 chars |
 | `apply_preset` | 1084 chars |

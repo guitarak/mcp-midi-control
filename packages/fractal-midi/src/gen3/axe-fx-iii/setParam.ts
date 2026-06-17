@@ -878,6 +878,20 @@ export function buildSetGridCell(opts: {
 //   b23      = ((|destRow−3| + (srcCol even ? 2 : 0)) % 4) << 5
 // Row-1 even srcCol refused — encoding not yet captured (6-row only).
 //
+// CANDIDATE FILL (community, hardware-unconfirmed): the MIT-licensed
+// `ai-tone-assistant` project encodes cables from an explicit from/to pair:
+//   from_pos = (srcCol−1)·6 + (srcRow−1);  to_pos = (destCol−1)·6 + (destRow−1)
+//   d9 = from_pos >> 1                       ← equals our b21 = floor(srcGp/2)
+//   d10 = (to_pos >> 2) | ((from_pos & 1) << 6)
+//   d11 = (to_pos & 3) << 5
+// This is byte-IDENTICAL to ours for the captured corpus (source rows 2-3);
+// it DIVERGES at source row 1 and predicts the row-1 even-col fill we refuse.
+// Do NOT adopt into the active path: his row-1 prediction is itself
+// hardware-unconfirmed and his low-bits model differs from our colTerm/
+// destSign law, so it could regress validated cells. Close it with the R4
+// source-row-1 capture (r1c2→r1c3) before wiring; see
+// docs/_private/gen3-routing-capture-protocol.md (R4).
+//
 // ── 4-row grids (FM3 model=0x11) ──────────────────────────────────
 // Decoded via FM3-Edit loopMIDI (10 cables, 2026-06-05):
 //   srcGp    = (srcCol − 1) × 4 + (srcRow − 1)

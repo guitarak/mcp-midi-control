@@ -33,6 +33,7 @@ import {
   type Param,
 } from 'fractal-midi/gen3/axe-fx-iii';
 import { mockConnect } from '@mcp-midi-control/core/midi/transport.js';
+import { makeGen3BroadcastMockResponder } from '@mcp-midi-control/fractal-gen3/parityMock.js';
 import { FM3_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm3';
 import { FM9_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/fm9';
 import { VP4_PARAMS_BY_FAMILY } from 'fractal-midi/gen3/vp4';
@@ -1071,6 +1072,69 @@ async function readerChecks(): Promise<void> {
 }
 
 await readerChecks();
+
+// ── 9b. Live grid read (fn=0x01 sub=0x2E) + amp applicability ───────
+//
+// Drives the real DeviceReader.getPreset (active buffer) against the parity
+// mock, which now answers the sub=0x2E grid query with a coherent grid (Input
+// + the placed effect IDs). Confirms get_preset returns a positioned live_grid
+// AND that the grid gates the fn=0x1F poll to placed blocks. Then exercises the
+// adopted amp type-knob applicability (findCompatibleTypes) on the FM9 descriptor.
+async function liveGridChecks(): Promise<void> {
+  console.log('\nGen-3 live grid read + amp applicability (mock connection):');
+
+  // (a) grid available → live_grid positioned, routing_omitted false.
+  {
+    const conn = mockConnect({
+      responder: makeGen3BroadcastMockResponder({ modelByte: 0x12, placedEffectIds: [58, 66, 70] }),
+      ackLatencyMs: 1,
+    });
+    const ctx = { conn, descriptor: FM9_DESCRIPTOR } as unknown as Parameters<NonNullable<DeviceDescriptor['reader']>['getParam']>[0];
+    const snap = await FM9_DESCRIPTOR.reader!.getPreset!(ctx);
+    const grid = snap.live_grid ?? [];
+    check('FM9 get_preset(active) returns a non-empty live_grid', grid.length > 0, `len=${grid.length}`);
+    check('FM9 live_grid cells carry integer row/col positions', grid.every((c) => Number.isInteger(c.row) && Number.isInteger(c.col)), JSON.stringify(grid[0]));
+    check('FM9 live_grid contains the placed Amp', grid.some((c) => typeof c.name === 'string' && c.name.startsWith('Amp')), grid.map((c) => c.name).join(','));
+    check('FM9 live_grid carries Input at col 0', grid.some((c) => c.col === 0 && /Input/i.test(c.name ?? '')), grid.map((c) => `${c.name}@${c.col}`).join(','));
+    check('FM9 get_preset routing_omitted=false when grid read', snap._meta.routing_omitted === false, JSON.stringify(snap._meta.routing_omitted));
+    check('FM9 get_preset slots populated from placed blocks', snap.slots.length > 0, `slots=${snap.slots.length}`);
+  }
+
+  // (b) no grid reply → graceful fallback (no live_grid, routing_omitted true,
+  //     slots still populated via the full poll).
+  {
+    const conn = mockConnect({
+      // Answer only the fn=0x1F poll; ignore the sub=0x2E grid query.
+      responder: (out) =>
+        makeGen3BroadcastMockResponder({ modelByte: 0x12, placedEffectIds: [58, 66, 70] })(
+          out[5] === 0x01 && out[6] === 0x2e ? [] : out,
+        ),
+      ackLatencyMs: 1,
+    });
+    const ctx = { conn, descriptor: FM9_DESCRIPTOR } as unknown as Parameters<NonNullable<DeviceDescriptor['reader']>['getParam']>[0];
+    const snap = await FM9_DESCRIPTOR.reader!.getPreset!(ctx);
+    check('FM9 get_preset falls back gracefully when no grid reply (no live_grid)', snap.live_grid === undefined, JSON.stringify(snap.live_grid));
+    check('FM9 get_preset fallback sets routing_omitted=true', snap._meta.routing_omitted === true, JSON.stringify(snap._meta.routing_omitted));
+    check('FM9 get_preset fallback still polls placed blocks', snap.slots.length > 0, `slots=${snap.slots.length}`);
+  }
+
+  // (c) amp type-knob applicability (adopted from ai-tone-assistant).
+  {
+    const fct = FM9_DESCRIPTOR.findCompatibleTypes;
+    check('FM9 descriptor implements findCompatibleTypes', typeof fct === 'function');
+    if (typeof fct === 'function') {
+      const depth = fct({ block: 'amp', params: ['depth'] });
+      check('FM9 find_compatible_types amp+depth: applicability_known', depth.applicability_known === true);
+      check('FM9 find_compatible_types amp+depth: a strict subset', depth.compatible_types.length > 0 && depth.compatible_types.length < depth.total_types, `${depth.compatible_types.length}/${depth.total_types}`);
+      const drive = fct({ block: 'amp', params: ['drive'] });
+      check('FM9 find_compatible_types amp+drive: universal (all amps)', drive.compatible_types.length === drive.total_types && drive.total_types === 331, `${drive.compatible_types.length}/${drive.total_types}`);
+      const reverb = fct({ block: 'reverb', params: ['time'] });
+      check('FM9 find_compatible_types non-amp: applicability_known false', reverb.applicability_known === false);
+    }
+  }
+}
+
+await liveGridChecks();
 
 // ── 10. A6: SET value-echo → display_value, with sent-value fallback ─
 //

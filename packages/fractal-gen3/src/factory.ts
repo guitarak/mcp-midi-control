@@ -33,6 +33,8 @@ import type {
   PresetSpec,
   CanonicalTermMap,
   SupportTier,
+  CompatibleTypesQuery,
+  CompatibleTypesResult,
 } from '@mcp-midi-control/core/protocol-generic/types.js';
 import { listConceptKeysForDevice } from '@mcp-midi-control/core/protocol-generic/concept-keys.js';
 import {
@@ -40,6 +42,7 @@ import {
   AXE_FX_III_BLOCKS,
   resolveEffectId,
   GEN3_READ_ROSTERS,
+  ampOrdinalsExposingParams,
 } from 'fractal-midi/gen3/axe-fx-iii';
 import {
   VP4_MODEL_ID,
@@ -244,6 +247,46 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
     conceptKeys[entry.conceptKey] = entry.localName;
   }
 
+  // find_compatible_types + apply_preset's type-knob-applicability pre-flight
+  // for the AMP block: given knob names, return the amp models that expose them
+  // all. Backed by the per-amp-model valid-param table (ampTypeValidParams).
+  // Amp-only for now (the only block with a validity table); other blocks fall
+  // through to applicability_known:false (unfiltered, as before).
+  function findCompatibleTypes(query: CompatibleTypesQuery): CompatibleTypesResult {
+    const ampBlock = catalog.blocks['amp'];
+    const typeEnum = ampBlock?.params['type']?.enum_values;
+    const base = { block: query.block, params_queried: query.params };
+    if (query.block.toLowerCase() !== 'amp' || ampBlock === undefined || typeEnum === undefined) {
+      return { ...base, compatible_types: [], total_types: 0, applicability_known: false,
+        note: `no structured type-applicability data for "${query.block}" — full type list, no filtering.` };
+    }
+    const totalTypes = Object.keys(typeEnum).length;
+    // Resolve each queried knob to its canonical DISTORT_* name; skip unknowns.
+    const distortNames: string[] = [];
+    const skipped: string[] = [];
+    for (const p of query.params) {
+      try {
+        distortNames.push(catalog.resolveParamOrThrow('amp', p, deviceLabel).param.name);
+      } catch {
+        skipped.push(p);
+      }
+    }
+    if (distortNames.length === 0) {
+      return { ...base, compatible_types: Object.values(typeEnum), total_types: totalTypes,
+        applicability_known: false, note: `none of [${query.params.join(', ')}] resolved to an amp param.` };
+    }
+    const compatible = ampOrdinalsExposingParams(distortNames)
+      .map((ord) => typeEnum[ord])
+      .filter((n): n is string => typeof n === 'string');
+    return {
+      ...base,
+      compatible_types: compatible,
+      total_types: totalTypes,
+      applicability_known: true,
+      note: skipped.length > 0 ? `Skipped (not amp params, treated as always-on): ${skipped.join(', ')}.` : undefined,
+    };
+  }
+
   return {
     id: config.id,
     display_name: config.display_name,
@@ -316,6 +359,7 @@ export function createModernFractalDescriptor(config: FractalModernConfig): Devi
       betaWarning,
       getResponseTimeoutMs: GET_RESPONSE_TIMEOUT_MS,
     }),
+    findCompatibleTypes,
     agent_guidance: config.agent_guidance,
     example_spec: config.example_spec,
     block_params_summary: config.block_params_summary,

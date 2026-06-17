@@ -989,6 +989,7 @@ block-edit ops. All are `fn=0x01` with a sub-action byte at position 6; the
 | `0x30` | cell RESET / CLEAR (also the insert companion) | gridPos @12-13 | matched; semantics Ghidra-anchored (see the 2026-06-09 mine section below) |
 | `0x26` | STORE / save-to-location | presetNum @12-13 (LSB-first) | matched |
 | `0x35` | routing / connect | 26-byte frame; b21/b22/b23 encode src+dest cell | matched (6-row + 4-row) |
+| `0x2E` | live grid READ (empty target) | request `01 2e 00` + zeros; reply ~755B with grid bitstream @byte 361 | decoded; FM9-cross-validated (read below) |
 
 `gridPos = col*ROWS + row` (0-indexed, column-major). **Grid shapes
 (wire + official-spec confirmed): III / FM9 = 6 rows × 14 cols; FM3 = 4
@@ -1043,6 +1044,43 @@ Key structural differences:
 - 6-row b23 is centered at row 3 with mod-4 wrap; 4-row is a flat `(destRow−1)×32` linear map.
 
 Captures archived: `samples/captured/fm3-routing-probe-*.json` (gitignored).
+
+#### sub=0x2E SET_GRID_LAYOUT (live grid READ) — decoded, FM9-cross-validated
+
+The editors read a preset's whole routing grid live with an **empty-target**
+`fn=0x01 sub=0x2E` query (no block id in the target slot):
+
+```
+request (23B):  F0 00 01 74 <model> 01 2E 00 00 00 00 00 00 00 00 00 00 00 00 00 00 <cs> F7
+reply (~755B):  F0 00 01 74 <model> 01 2E 00 … <grid bitstream> … <cs> F7
+```
+
+The grid lives in a **7-bit-packed bitstream** starting at **byte 361** of the
+reply (offset into the mido data, i.e. after `F0`). Cells are addressed by:
+
+```
+cell_start_bit = 46 + col·192 + row·32        (cols 0..13; rows 0..5 III/FM9, 0..3 FM3)
+bits  0-7  = (effectId | shuntIndex) << 1
+bits  8-15 = block type   (0x08 = shunt, 0x00 = real block)
+bits 16-23 = incoming-cable bitmask
+```
+
+Bits are read **MSB-first within each 7-bit byte** (`(data[bit/7] >> (6 - bit%7)) & 1`);
+an 8-bit reader yields garbage (the tell-tale `0xE8/0xD8` "block type").
+
+**Provenance + evidence:** decode contributed by the MIT-licensed
+`ai-tone-assistant` community project (from its own FM9 captures) and
+INDEPENDENTLY cross-validated here against our FM9 capture
+`fm9-receive-preset-from-device-harp-2026-06-04` (model 0x12): all 10
+empty-target sub=0x2E replies decode identically to a coherent grid
+(Input@col0 → Pitch/Comp/Amp/Phaser/Drive/GEQ/Filter/Chorus/Amp/Cab/… →
+Output@col11, 14 sequentially-indexed shunts) whose every real-block effect ID
+resolves in `blockTypes.ts` (Amp 58, Cab 62, Comp 46, GEQ 50, Chorus 78, Drive
+118). Cross-oracle validation = ships community-beta; awaits a device key-press
+to confirm. Codec: `gridLayout.ts` (`buildRequestGridLayout` / `parseGen3GridLayout`);
+goldens `test/gen3/axe-fx-iii/gridlayout.test.ts`; cross-validation
+`scripts/verify-gen3-grid-layout.ts`. **Region offset + strides are
+FM9-validated; III shares the codec, FM3 (4-row) region offset unconfirmed.**
 
 ### Ghidra-decoded write surface, 2026-06-09 actions-and-shapes mine (decoded / hardware-unverified)
 

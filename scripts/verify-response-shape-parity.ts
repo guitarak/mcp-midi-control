@@ -100,6 +100,7 @@ const PRESET_SNAPSHOT_CONTRACT: ShapeContract = {
     'routing',
     'chain_integrity',
     'read_warnings',
+    'live_grid',
   ],
 };
 
@@ -140,6 +141,9 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       scenes: 'AM4 get_preset is active-scene-only (v1); per-scene table not serialized.',
       // Routing edges are never read (routing_omitted: true in _meta).
       routing: 'AM4 has no routing grid; routing edges are not a concept.',
+      // live_grid is the gen-3 live sub=0x2E routing-grid read; AM4 is a
+      // linear 4-slot device with no grid, so there is no grid to read.
+      live_grid: 'AM4 is a linear 4-slot device with no routing grid; the gen-3 live_grid read does not apply.',
       // The preset name field is only populated when present; the AM4
       // reader omits the key entirely on the working-buffer snapshot.
       name: 'AM4 working-buffer snapshot does not read the preset name into the envelope.',
@@ -156,6 +160,9 @@ const ALLOWLIST: Record<string, DeviceAllowlist> = {
       // and routing edges are deferred to a v2 PresetSnapshot field add.
       scenes: 'Axe-Fx II get_preset is active-scene-only (v1); per-scene table deferred to v2.',
       routing: 'Axe-Fx II routing edges are deferred to v2 (routing_omitted: true in _meta).',
+      // live_grid is the gen-3 live sub=0x2E grid read; the Axe-Fx II is a
+      // different (gen-2) codec with no sub=0x2E grid query.
+      live_grid: 'Axe-Fx II is a gen-2 device; the gen-3 live_grid (fn=0x01 sub=0x2E) read does not apply.',
       // read_warnings is conditional on BOTH devices: present only when a
       // partial read fails. On a clean read neither device emits it.
       read_warnings: 'Conditional field, present only on a partial-read failure; absent on a clean read.',

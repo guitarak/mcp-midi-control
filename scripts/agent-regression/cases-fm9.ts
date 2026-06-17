@@ -120,4 +120,68 @@ export const FM9_CASES: AgentRegressionCase[] = [
       max_wall_seconds: 360,
     },
   },
+  {
+    id: 'fm9-read-live-grid',
+    device: 'fm9',
+    description:
+      'Read the active FM9 preset and report its signal-chain LAYOUT. Proves get_preset surfaces ' +
+      'the live routing grid (live_grid, fn=0x01 sub=0x2E) so the agent can describe where blocks ' +
+      'sit — not just a flat block list — and does NOT claim gen-3 routing is unreadable.',
+    prompt:
+      "What's currently on my FM9? Show me the signal chain — which blocks are in the preset and " +
+      'where they sit in the grid. Just read it, don\'t change anything.',
+    expectations: {
+      must_call: ['get_preset'],
+      must_not_call: ['apply_preset', 'set_param', 'set_block', 'save_preset'],
+      max_tools: 6,
+      // The mock preset places Input + Amp + Reverb + Delay; the agent should
+      // describe the chain (mention at least the amp), proving it read live_grid.
+      text_contains_any: [['Amp'], ['amp'], ['amplifier']],
+      // Must not claim it can't see the routing/layout (the pre-grid gap).
+      text_not_contains: [
+        'no routing', 'routing is not', "can't read the grid", 'cannot read the grid',
+        'no positioned grid', 'not able to read', 'layout is unavailable', 'I saved',
+      ],
+      max_wall_seconds: 240,
+    },
+  },
+  {
+    id: 'fm9-amp-applicability',
+    device: 'fm9',
+    description:
+      'Ask which FM9 amp models expose a specific knob. Proves the gen-3 amp type-knob ' +
+      'applicability is reachable (find_compatible_types / list_params) so the agent narrows by ' +
+      'capability instead of claiming it cannot tell which amps have the control.',
+    prompt:
+      'On my FM9, I want an amp model that has a Depth (sag) control. Which amp models expose a ' +
+      'Depth knob? Just tell me — no need to change the preset.',
+    expectations: {
+      // Either the dedicated tool or list_params is an acceptable path.
+      must_call_any: [['find_compatible_types'], ['list_params']],
+      must_not_call: ['apply_preset', 'save_preset'],
+      max_tools: 6,
+      tool_call_validators: [
+        {
+          tool: 'find_compatible_types',
+          optional: true,
+          check: (args) => {
+            const block = String((args as { block?: string }).block ?? '').toLowerCase();
+            if (block !== 'amp') return `find_compatible_types called for "${block}", expected amp.`;
+            const params = (args as { params?: unknown }).params;
+            const list = Array.isArray(params) ? params.map((p) => String(p).toLowerCase()) : [];
+            if (!list.some((p) => p.includes('depth'))) {
+              return `find_compatible_types params ${JSON.stringify(params)} should include depth.`;
+            }
+            return true;
+          },
+        },
+      ],
+      // Must not hedge that gen-3 applicability is unknowable.
+      text_not_contains: [
+        "can't tell which", 'cannot tell which', 'no way to know', 'not able to determine',
+        'all amps have', 'every amp has',
+      ],
+      max_wall_seconds: 240,
+    },
+  },
 ];

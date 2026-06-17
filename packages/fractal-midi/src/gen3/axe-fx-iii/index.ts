@@ -144,3 +144,21 @@ export type {
   ModernFractalCodec,
   Gen3BankSelectMode,
 } from './setParam.js';
+
+// Live routing-grid read (fn=0x01 sub=0x2E). Cross-validated against our
+// FM9 capture vs blockTypes.ts; community beta. See `gridLayout.ts`.
+export {
+  SUB_ACTION_GRID_LAYOUT,
+  GRID_COLS,
+  buildRequestGridLayout,
+  parseGen3GridLayout,
+} from './gridLayout.js';
+export type { Gen3GridLayoutCell } from './gridLayout.js';
+
+// Per-amp-model valid-DISTORT-param table (powers findCompatibleTypes for the
+// amp block). See `ampTypeValidParams.generated.ts`.
+export {
+  AMP_TYPE_VALID_PARAMS,
+  AMP_ALL_PARAMS,
+  ampOrdinalsExposingParams,
+} from './ampTypeValidParams.generated.js';

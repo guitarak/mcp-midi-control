@@ -76,6 +76,37 @@ function envelope(modelByte: number, fn: number, payload: readonly number[]): nu
   return [...body, fractalChecksum(body), SYSEX_END];
 }
 
+/** MSB-first bit writer into a 7-bit-packed stream (inverse of the grid reader). */
+function writeGridBits(region: number[], bit: number, value: number, n: number): void {
+  for (let i = 0; i < n; i++) {
+    const b = bit + i;
+    region[Math.floor(b / 7)] = (region[Math.floor(b / 7)] ?? 0) | (((value >> (n - 1 - i)) & 1) << (6 - (b % 7)));
+  }
+}
+
+/**
+ * Build the device's reply to an empty-target `fn=0x01 sub=0x2E` grid query: a
+ * ~754-byte frame whose tail (mido byte 361+) carries the 7-bit-packed grid.
+ * Lays the placed effect IDs across row 0 (Input at col 0), so the reader
+ * decodes a coherent live grid (used by get_preset's active path). Geometry
+ * matches gridLayout.ts: cell_start_bit = 46 + col*192 + row*32.
+ */
+function buildGridLayoutResponse(modelByte: number, placedEffectIds: readonly number[]): number[] {
+  const region = new Array(391).fill(0);
+  // Input (effect id 37) at col 0, then each placed block in its own column, row 0.
+  const chain = [37, ...placedEffectIds];
+  chain.forEach((eid, col) => {
+    const base = 46 + col * 192;
+    writeGridBits(region, base, eid << 1, 8); // bits 0-7: effectId<<1
+    writeGridBits(region, base + 8, 0x00, 8); // bits 8-15: 0x00 = real block
+  });
+  const header = [SYSEX_START, ...MFR_PREFIX, modelByte, 0x01, 0x2e];
+  const frame = [...header];
+  while (frame.length < 362) frame.push(0x00); // pad to mido offset 361 (frame idx 362)
+  frame.push(...region, SYSEX_END);
+  return frame;
+}
+
 /**
  * Build the 0x74/0x75/0x76 burst the device emits in answer to an fn=0x1F poll
  * for `effectId`. One 0x75 body section carries `MOCK_ITEM_COUNT` mid-scale
@@ -221,6 +252,10 @@ export function makeGen3BroadcastMockResponder(opts: Gen3ParityMockOptions = {})
     // Stored-preset dump request (get_preset(location) / translate source_location,
     // export_preset(location)): reply with a CRC-valid 0x77/0x78/0x79 dump.
     if (outgoing[5] === FN_REQUEST_PRESET_DUMP) return buildStoredPresetDump(modelByte);
+    // Live grid query (get_preset active buffer): fn=0x01 sub=0x2E empty-target.
+    if (outgoing[5] === 0x01 && outgoing[6] === 0x2e) {
+      return [buildGridLayoutResponse(modelByte, [...placed])];
+    }
     if (outgoing.length < 10) return [];
     if (outgoing[5] !== FN_BLOCK_BULK_READ) return [];
     const effectId = (outgoing[6] & 0x7f) | ((outgoing[7] & 0x7f) << 7);
