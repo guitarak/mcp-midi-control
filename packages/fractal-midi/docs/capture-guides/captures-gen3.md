@@ -74,6 +74,16 @@ The ask is now for **FM3, Axe-Fx III, and VP4 owners**, and it is bigger than am
 
 **One requirement:** the editor must have actually connected to your device at least once (that sync is what fills the file). A never-connected install writes a placeholder stub with no names and filler ranges; if your file is one of those, connect the editor to the device once and let it finish syncing, then grab the file again. **Ask for the cache file before asking anyone to sweep dropdowns or capture wire traffic.**
 
+> **Why this is the top III/FM3/VP4 ask right now (concrete payoff):** the III/FM3/VP4
+> cache copies currently on hand are exactly those unsynced placeholder stubs — the
+> III's has 1,737 records but **zero** enum-vocabulary entries; the FM3 and VP4 copies
+> are 3–33-record stubs. Without enum data, those devices route every type/mode
+> selector (amp/drive/reverb *model*, delay/pitch *type*, etc.) generically. A
+> **device-synced** cache carries the per-param enum kind + counts, and that single
+> file is what let the FM9 correct **~351 parameters** from wrong-wire to right-wire
+> (type selectors now send as discrete ordinals instead of continuous floats). One
+> synced cache does the same for your III / FM3 / VP4, offline, with no capture tools.
+
 **Wire-sweep fallback (only if the cache is unavailable):** the wire records the ordinal, a screenshot records the name.
 
 1. Load a preset with an Amp block placed. Open FM9-Edit.

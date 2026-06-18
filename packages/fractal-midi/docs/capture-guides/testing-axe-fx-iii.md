@@ -1,8 +1,23 @@
 # Testing: Axe-Fx III
 
-> **Highest value:** the write confirmation (T2 below). The codec is verified from public captures but has never moved a knob on real III hardware via the server. A one-sentence "yes, the panel changed" closes this gap.
+> **Foundation confirmed (2026-06-17):** a community III owner (firmware 25.04)
+> hardware-confirmed the server's continuous `set_param` (amp gain, channel A) with a
+> device echo, and a `get_param` read-back matching the front panel — the first
+> on-device confirmation of the III, the gen-3 byte-identity anchor. A full SET→GET
+> roundtrip across the entire III catalog followed (2026-06-18). **Please do NOT
+> re-run reads or continuous writes — those are done.**
 >
-> Beyond the tests below, the two highest-value III artifacts need no capture tools: the editor's cache file (the device's complete parameter dictionary, offline -- see [captures-gen3.md C2](captures-gen3.md)) and a run of the one-command read-only [harvest script](harvest-script.md).
+> **Highest-value III ask now: the editor cache file** (offline, no tools, no
+> hardware time — see [captures-gen3.md C2](captures-gen3.md)). The III cache copies we
+> currently hold are *unsynced placeholder stubs* (no enum/model vocabulary), so the
+> III still routes its type/mode selectors generically. A cache from an III-Edit
+> install that has **synced to your device** carries the full model rosters and the
+> per-param enum data — the same file unlocked ~351 corrected params on the FM9. This
+> is the single biggest III unlock and needs zero capture tooling.
+>
+> **Remaining write confirmations** (short front-panel checks): discrete set-by-name
+> (T3), `save_preset` (T4), and `set_block`. Continuous writes (T3's gain example)
+> are already confirmed.
 
 See [README.md](README.md) for setup. Want to record captures too? See [captures-gen3.md](captures-gen3.md).
 
@@ -37,7 +52,11 @@ Paste the full JSON response and what the front panel shows. A working response 
 
 Report whether the front panel moved and paste both responses. If it reports success but the panel doesn't change, that's the most valuable finding -- paste both responses.
 
-This is the single highest-value test: the SET opcode is verified from 10+ public captures but has never been confirmed to move a knob via the server's own path on real III hardware.
+Continuous knob writes like this gain example are **already hardware-confirmed**
+(2026-06-17). The write still worth confirming is **discrete set-by-name** — changing
+an amp or drive *model* by name (e.g. "set Amp 1 to a Plexi"), which rides a different
+sub-action (`sub=0x09`) than the continuous drag. Try that and report whether the
+model on the panel changes.
 
 ---
 

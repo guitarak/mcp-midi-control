@@ -229,6 +229,38 @@ function makeEnumEncode(
   };
 }
 
+/**
+ * Discrete ordinal encode for an enum param whose COUNT is device-true (mined
+ * from the editor cache) but whose name vocabulary has not been correlated yet.
+ * Accepts a numeric ordinal (or numeric string) bounded to 0..maxOrdinal and
+ * refuses a name with a clear message (no vocab to resolve against). The wire
+ * form is DISCRETE (float32(ordinal), sub 09 00) — the whole point of this path
+ * is that a count-known enum must NOT fall through to the continuous float wire.
+ */
+function makeOrdinalEncode(
+  family: string,
+  paramKey: string,
+  maxOrdinal: number,
+): ParamSchema['encode'] {
+  return (value: number | string): number => {
+    const asNum = typeof value === 'number' ? value : Number(value);
+    const isNumeric =
+      typeof value === 'number' || (value.trim() !== '' && Number.isFinite(asNum));
+    if (!isNumeric) {
+      throw new Error(
+        `${family}.${paramKey} is a discrete selector with ${maxOrdinal + 1} options but no ` +
+          `name table yet; pass a numeric ordinal 0..${maxOrdinal}, not "${value}".`,
+      );
+    }
+    if (!Number.isInteger(asNum) || asNum < 0 || asNum > maxOrdinal) {
+      throw new Error(
+        `${family}.${paramKey} expects an ordinal 0..${maxOrdinal}: ${value}`,
+      );
+    }
+    return asNum;
+  };
+}
+
 /** Resolved display↔wire calibration for one param, or undefined if none. */
 interface CalibrationOpts {
   readonly displayMin: number;
@@ -247,6 +279,16 @@ export interface DeviceParamRange {
   readonly kind: 'enum' | 'float';
   readonly displayMin: number;
   readonly displayMax: number;
+  /**
+   * Enum-kind rows only: the number of valid ordinals (0..enumCount-1), mined
+   * from the device's editor cache. Lets the catalog route an enum param as
+   * DISCRETE (sub 09 00, float32(ordinal)) even when no name vocabulary has
+   * been correlated yet — sending it CONTINUOUS (the prior default for any
+   * param the AM4/XML overlay missed) makes the device store the wrong ordinal
+   * (confirmed by the FM9 full-roundtrip hardware sweep, 2026-06-18: ~49 FM9
+   * type/mode selectors the overlay missed were stored wrong as continuous).
+   */
+  readonly enumCount?: number;
 }
 
 /** Device-true ranges keyed family → paramId → range (e.g. `FM9_RANGES`). */
@@ -374,12 +416,28 @@ function buildParamSchema(
       ? { ...(sharedRoster ?? {}), ...(overlay?.values ?? {}), ...(deviceOverlayValues ?? {}) }
       : undefined;
 
+  // Device-cache enum WITHOUT a correlated name table: the editor cache marks
+  // this paramId enum (kind:'enum' + enumCount) but the AM4/XML/roster overlays
+  // gave it no vocabulary. It MUST still route DISCRETE — sending a known enum
+  // as a continuous float makes the device store the wrong ordinal (the FM9
+  // full-roundtrip sweep, 2026-06-18, caught ~49 such selectors). We route it
+  // discrete with a numeric-ordinal encode bounded by the cache's enumCount;
+  // names drop in later (roster mining) without changing the wire path.
+  const deviceEnumNoNames =
+    enumValues === undefined &&
+    deviceRange?.kind === 'enum' &&
+    typeof deviceRange.enumCount === 'number' &&
+    deviceRange.enumCount > 1;
+
   // Display-first: a non-enum param with a calibrated range encodes/decodes
   // through the II resolver. Enum params encode name→ordinal (the discrete-SET
   // value, float32(ordinal)) and decode ordinal→label; numeric wire passes
   // through either way. When a device-true cache range is present (FM9), it
-  // overrides the catalog's AM4-overlay bounds inside resolveCalibration.
-  const cal = enumValues === undefined ? resolveCalibration(param, deviceRange) : undefined;
+  // overrides the catalog's AM4-overlay bounds inside resolveCalibration. A
+  // count-known device-cache enum (deviceEnumNoNames) skips calibration too.
+  const cal = enumValues === undefined && !deviceEnumNoNames
+    ? resolveCalibration(param, deviceRange)
+    : undefined;
 
   // Surface the device-true bounds (not the inherited inference) on the schema
   // so list_params / describe_device report the FM9's real range. Only a
@@ -394,6 +452,11 @@ function buildParamSchema(
     // ordinal the decode labels with. The wire form is DISCRETE (sub 09 00).
     encode = makeEnumEncode(family, key, enumValues);
     decode = (wire: number): number | string => enumValues[wire] ?? wire;
+  } else if (deviceEnumNoNames) {
+    // Count-known device-cache enum, no names yet: discrete numeric-ordinal
+    // wire (the ordinal passes straight through on decode).
+    encode = makeOrdinalEncode(family, key, deviceRange!.enumCount! - 1);
+    decode = (wire: number): number => wire;
   } else if (cal !== undefined) {
     encode = makeCalibratedEncode(family, key, cal);
     decode = makeCalibratedDecode(cal);
@@ -406,17 +469,24 @@ function buildParamSchema(
     key,
     schema: {
       display_name: humanize(key),
-      unit: param.unit,
+      // A count-known device-cache enum reports 'enum' even though its catalog
+      // entry was 'unverified' — the editor cache is the authority on kind.
+      unit: deviceEnumNoNames ? 'enum' : param.unit,
       display_min: displayMin,
       display_max: displayMax,
       enum_values: enumValues,
       // gen-3 SET wire form: enum/type selectors are DISCRETE (float32(ordinal),
       // sub 09 00); every other param is CONTINUOUS (float32(normalized), 52 00).
-      wire_kind: enumValues !== undefined ? 'discrete' : 'continuous',
+      // A device-cache enum routes discrete by COUNT even with no name table.
+      wire_kind: enumValues !== undefined || deviceEnumNoNames ? 'discrete' : 'continuous',
       // A captured/correlated table is partial (only some ordinals named), so
       // numeric ordinals outside it must pass through, not error. A pure family
-      // overlay (no device/shared contribution) stays a complete vocab.
-      enum_partial: (deviceOverlayValues !== undefined || sharedRoster !== undefined) ? true : undefined,
+      // overlay (no device/shared contribution) stays a complete vocab. A
+      // count-known enum with NO names is partial by definition (numeric only).
+      enum_partial:
+        (deviceOverlayValues !== undefined || sharedRoster !== undefined || deviceEnumNoNames)
+          ? true
+          : undefined,
       encode,
       decode,
       parameter_name: param.name,

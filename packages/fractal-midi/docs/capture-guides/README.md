@@ -3,15 +3,24 @@
 This server controls Fractal Audio gear by conversation. The modern Fractal
 family (Axe-Fx III / FM3 / FM9, and VP4 with reads plus first writes) already works today: you can
 set amps, drives, and reverbs by their real model names, build presets, switch
-scenes, and read the device back. It is **community beta**: the FM3's read and
-continuous-write paths are hardware-confirmed end-to-end (2026-06-12 field
-test) and its set-by-name discrete write is hardware-confirmed via a
-2026-06-10 community session, while the III's and several remaining ops are
-byte-verified against the published spec and real captures but not yet
-confirmed moving a knob on real hardware. Gen-1 (Axe-Fx Standard /
-Ultra) supports full parameter WRITES (set_param / set_params) plus reads, also
-decoded from the spec and hardware-unconfirmed; preset authoring there awaits
-one structural capture (see the gen-1 row below).
+scenes, and read the device back. It is **community beta**, and three of the
+modern devices now have on-hardware confirmation:
+
+- **FM9** — reads and continuous `set_param` hardware-confirmed (2026-06-17 owner
+  test, firmware 11.0), plus a full SET→GET roundtrip across the entire parameter
+  catalog (2026-06-18). Model rosters and ranges complete from a synced cache.
+- **Axe-Fx III** — continuous `set_param` + `get_param` hardware-confirmed
+  (2026-06-17, firmware 25.04) and a full catalog roundtrip (2026-06-18). This is
+  the gen-3 byte-identity anchor, so confirming it raises confidence family-wide.
+- **FM3** — read and continuous-write paths hardware-confirmed end-to-end
+  (2026-06-12 field test); set-by-name discrete write confirmed via a 2026-06-10
+  community session.
+
+Still unconfirmed on these (short front-panel checks, not sweeps): discrete
+set-by-name on the III/FM9, `save_preset`, and `set_block`. Gen-1 (Axe-Fx
+Standard / Ultra) supports full parameter WRITES (set_param / set_params) plus
+reads, decoded from the spec and hardware-unconfirmed; preset authoring there
+awaits one structural capture (see the gen-1 row below).
 
 Four ways to move a device forward, **in priority order** -- try them top to
 bottom and stop as soon as one works; the higher ones are easier and cover more:

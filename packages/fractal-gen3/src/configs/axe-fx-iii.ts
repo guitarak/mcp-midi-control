@@ -60,9 +60,11 @@ const AXEFX3_AGENT_GUIDANCE: Record<string, string> = {
   ...MODERN_AGENT_GUIDANCE,
   device_note: [
     'This is the Axe-Fx III (community beta) — the gen-3 byte-identity anchor.',
-    '6x14 grid, 8 scenes, A-D channels. The fn=0x01 SET envelope is byte-',
-    'verified against public captures but not yet confirmed end-to-end on a',
-    'real III; confirm writes on the device front panel.',
+    '6x14 grid, 8 scenes, A-D channels. get_param and continuous set_param are',
+    'now III-hardware-confirmed (community owner test: amp gain on channel A',
+    'acked with device echo, read-back matched the front panel). Discrete',
+    'set-by-name, save_preset, set_block, and the live grid read stay community-',
+    'beta on the III; confirm those writes on the device front panel.',
   ].join('\n'),
 };
 
@@ -122,8 +124,11 @@ export const AXE_FX_III_CONFIG: FractalModernConfig = {
   preset_location_format: /^(?:\d{1,4})$/,
   support_tier: 'community-beta',
   verification:
-    'fn=0x01 SET byte-verified against 10 public captures; GET-response shape and ' +
-    'II-ported set_block / save / rename envelopes unconfirmed on real III hardware.',
+    'fn=0x01 SET byte-verified against 10 public captures, and now III-hardware-confirmed ' +
+    'end-to-end (community owner test 2026-06-17: continuous set_param amp gain on channel A ' +
+    'acked with device echo, get_param read-back matched the front panel display). This is the ' +
+    'first on-device confirmation of the III, the gen-3 byte-identity anchor. Still beta on real ' +
+    'III hardware: discrete set-by-name, save_preset, set_block, and the live grid read (sub=0x2E).',
   // The III's own catalog — the byte-identity anchor for the family.
   params_by_family: PARAMS_BY_FAMILY,
   canonical_terms: {

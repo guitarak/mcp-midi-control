@@ -8,6 +8,51 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Each released version has one entry here and one corresponding commit. Fixes
 ship as patch releases.
 
+## [0.5.1]
+
+A community contributor ran a full SET→GET roundtrip across the entire FM9 and
+Axe-Fx III parameter catalogs on real hardware. It confirmed the read +
+continuous-write paths catalog-wide and surfaced one real catalog bug, fixed
+here. Two evidence axes are kept deliberately separate below: *device-behavior*
+confirmation (the contributor's independent rig and his own encoder observed the
+device behave as expected) is not the same as *this server's wire* being
+confirmed end-to-end.
+
+### Fixed
+
+- **FM9 enum/type selectors were sent as continuous floats instead of discrete
+  ordinals.** The catalog builder derived a param's discrete-vs-continuous wire
+  form only from name-overlays, never from the device editor cache's own enum
+  flag. Any enum the overlay missed (type/mode/model selectors like delay model,
+  pitch type, drive type) shipped as continuous, so `set_param` sent a normalized
+  float and the device stored the wrong ordinal. The cache's `kind:'enum'` +
+  count now flows into the catalog: **~351 FM9 params are corrected from
+  continuous to discrete** (`sub=0x09` float32(ordinal)). The fix is gated on the
+  device editor cache, so only the FM9 changes; the III/FM3/VP4 are untouched and
+  the III byte-identity is intact. Evidence: the FM9 editor cache `kind` is
+  typecode-derived (self-validating), and the direction is confirmed by the
+  contributor's hardware roundtrip (device-behavior-confirmed on his rig); this
+  server's own discrete `sub=0x09` frame is byte-exact against captures but is
+  not yet confirmed end-to-end on this server's path. New gate
+  `verify-gen3-enum-flow`.
+
+### Changed
+
+- **Axe-Fx III and FM9 reads + continuous writes are now community
+  hardware-confirmed.** A 2026-06-17 owner test ran `get_param` + continuous
+  `set_param` on both devices (FM9 fw 11.0; III fw 25.04) with device echoes and
+  read-backs matching the front panel — the first on-device confirmation of the
+  III, the gen-3 byte-identity anchor. Status language updated across the device
+  configs, server instructions, and docs. Still community-beta on both: discrete
+  set-by-name, `save_preset`, `set_block`, and the live grid read.
+
+- **Capture/testing guides re-prioritized after the contribution.** The
+  catalog-wide roundtrip and the read/continuous-write confirmations are marked
+  done (no longer asked for). The top remaining gen-3 ask is now a
+  device-synced editor cache for the III / FM3 / VP4 (the copies on hand are
+  unsynced stubs with no enum vocabulary) — the same offline, no-tools file that
+  unlocked the FM9 enum routing above.
+
 ## [0.5.0]
 
 Two gen-3 read unlocks adopted from — and cross-validated against — the

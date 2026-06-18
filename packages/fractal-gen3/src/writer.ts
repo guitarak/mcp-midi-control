@@ -270,6 +270,10 @@ export function makeWriter(opts: {
   ): { wire: number; display: number | string } | undefined {
     const schema = catalog.blocks[blockSlug]?.params[name];
     if (schema === undefined) return undefined;
+    // Discrete selectors (named enums AND count-known device-cache enums) carry
+    // float32(ordinal), not a normalized knob, so the [0,1]→wire16 inversion
+    // does not apply; the caller decodes the ordinal it sent.
+    if (schema.wire_kind === 'discrete') return undefined;
     if (schema.enum_values !== undefined) return undefined; // enum: not a wire16 normalize
     if (!Number.isFinite(normalizedValue)) return undefined;
     const wire = Math.round(Math.min(1, Math.max(0, normalizedValue)) * 65534);
